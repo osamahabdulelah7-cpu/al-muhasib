@@ -23,7 +23,10 @@ class AlMuhasibApp extends StatelessWidget {
       title: 'تطبيق المحاسب',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar', ''),
-      supportedLocales: const [Locale('ar', '')],
+      supportedLocales: const [
+        Locale('ar', ''),
+        Locale('en', ''),
+      ],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
