@@ -21,7 +21,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final provider = Provider.of<AccountProvider>(context);
 
     List<Map<String, dynamic>> filteredCustomers = provider.customers.where((c) {
-      final matchesSearch = c['name'].toString().contains(searchQuery) || (c['phone'] ?? '').contains(searchQuery);
+      final String name = (c['name'] ?? '').toString();
+      final String phone = (c['phone'] ?? '').toString();
+      
+      final matchesSearch = name.contains(searchQuery) || phone.contains(searchQuery);
       final matchesCategory = selectedCategoryId == null || c['category_id'] == selectedCategoryId;
       return matchesSearch && matchesCategory;
     }).toList();
@@ -71,11 +74,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemCount: filteredCustomers.length,
                     itemBuilder: (ctx, i) {
                       final customer = filteredCustomers[i];
+                      final String custName = (customer['name'] ?? 'حساب').toString();
+                      final String firstLetter = custName.isNotEmpty ? custName[0] : '?';
+
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         child: ListTile(
-                          leading: CircleAvatar(child: Text(customer['name'][0])),
-                          title: Text(customer['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                          leading: CircleAvatar(child: Text(firstLetter)),
+                          title: Text(custName, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text('العملة: ${customer['currency']} | ${customer['phone'] ?? ''}'),
                           onTap: () {
                             Navigator.push(
@@ -107,12 +113,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final provider = Provider.of<AccountProvider>(context, listen: false);
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
-    String selectedCurrency = provider.currencies.isNotEmpty ? provider.currencies.first['name'] : 'ريال يمني';
-    int selectedCat = provider.categories.isNotEmpty ? provider.categories.first['id'] : 1;
+    String selectedCurrency = provider.currencies.isNotEmpty ? provider.currencies.first['name'].toString() : 'ريال يمني';
+    int selectedCat = provider.categories.isNotEmpty ? provider.categories.first['id'] as int : 1;
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulWidget(
+      builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('إضافة حساب جديد'),
           content: SingleChildScrollView(
@@ -126,12 +132,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: selectedCurrency,
                   decoration: const InputDecoration(labelText: 'العملة'),
                   items: provider.currencies.map((c) {
+                    final String cName = c['name'].toString();
                     return DropdownMenuItem<String>(
-                      value: c['name'].toString(),
-                      child: Text(c['name']),
+                      value: cName,
+                      child: Text(cName),
                     );
                   }).toList(),
-                  onChanged: (val) => setDialogState(() => selectedCurrency = val!),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedCurrency = val);
+                    }
+                  },
                 ),
                 DropdownButtonFormField<int>(
                   value: selectedCat,
@@ -139,10 +150,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   items: provider.categories.map((c) {
                     return DropdownMenuItem<int>(
                       value: c['id'] as int,
-                      child: Text(c['name']),
+                      child: Text(c['name'].toString()),
                     );
                   }).toList(),
-                  onChanged: (val) => setDialogState(() => selectedCat = val!),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedCat = val);
+                    }
+                  },
                 ),
               ],
             ),
@@ -151,8 +166,8 @@ class _HomeScreenState extends State<HomeScreen> {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
             ElevatedButton(
               onPressed: () {
-                if (nameCtrl.text.isNotEmpty) {
-                  provider.addCustomer(nameCtrl.text, phoneCtrl.text, selectedCurrency, selectedCat);
+                if (nameCtrl.text.trim().isNotEmpty) {
+                  provider.addCustomer(nameCtrl.text.trim(), phoneCtrl.text.trim(), selectedCurrency, selectedCat);
                   Navigator.pop(ctx);
                 }
               },
