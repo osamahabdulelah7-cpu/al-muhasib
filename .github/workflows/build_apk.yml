@@ -1,9 +1,10 @@
-name: Build Android APK
+name: Build Al-Mohaseb APK
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -21,25 +22,17 @@ jobs:
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.19.0'
+        flutter-version: '3.19.x'
         channel: 'stable'
 
-    - name: Create Flutter Project Structure
-      run: |
-        cd ..
-        flutter create temp_app
-        cp -r temp_app/android $GITHUB_WORKSPACE/
-        cp -r temp_app/ios $GITHUB_WORKSPACE/
-        cp -r temp_app/web $GITHUB_WORKSPACE/
-
-    - name: Install Dependencies
+    - name: Get dependencies
       run: flutter pub get
 
     - name: Build APK
-      run: flutter build apk --release --no-tree-shake-icons
+      run: flutter build apk --release
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v3
       with:
-        name: al-muhasib-app
+        name: release-apk
         path: build/app/outputs/flutter-apk/app-release.apk
