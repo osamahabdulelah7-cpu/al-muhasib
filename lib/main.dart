@@ -9,7 +9,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     ChangeNotifierProvider(
-      create: (_) => AccountProvider()..loadInitialData(),
+      create: (_) => AppAccountProvider()..loadInitialData(),
       child: const AlMuhasibApp(),
     ),
   );
@@ -18,15 +18,15 @@ void main() async {
 // ----------------------------------------------------
 // 1. قاعدة البيانات (Database Helper)
 // ----------------------------------------------------
-class DBHelper {
-  static final DBHelper instance = DBHelper._init();
+class AppDBHelper {
+  static final AppDBHelper instance = AppDBHelper._init();
   static Database? _db;
 
-  DBHelper._init();
+  AppDBHelper._init();
 
   Future<Database> get database async {
     if (_db != null) return _db!;
-    _db = await _initDB('al_muhasib_unified.db');
+    _db = await _initDB('al_muhasib_final_db.db');
     return _db!;
   }
 
@@ -84,9 +84,9 @@ class DBHelper {
 }
 
 // ----------------------------------------------------
-// 2. إدارة البيانات (Account Provider)
+// 2. إدارة البيانات (App Account Provider)
 // ----------------------------------------------------
-class AccountProvider extends ChangeNotifier {
+class AppAccountProvider extends ChangeNotifier {
   List<Map<String, dynamic>> customers = [];
   List<Map<String, dynamic>> categories = [];
   List<Map<String, dynamic>> currencies = [];
@@ -99,43 +99,43 @@ class AccountProvider extends ChangeNotifier {
   }
 
   Future<void> loadCategories() async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     categories = await db.query('categories');
     notifyListeners();
   }
 
   Future<void> addCategory(String name) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.insert('categories', {'name': name});
     await loadCategories();
   }
 
   Future<void> deleteCategory(int id) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.delete('categories', where: 'id = ?', whereArgs: [id]);
     await loadCategories();
   }
 
   Future<void> loadCurrencies() async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     currencies = await db.query('currencies');
     notifyListeners();
   }
 
   Future<void> addCurrency(String name, String symbol) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.insert('currencies', {'name': name, 'symbol': symbol});
     await loadCurrencies();
   }
 
   Future<void> loadCustomers() async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     customers = await db.query('customers');
     notifyListeners();
   }
 
   Future<void> addCustomer(String name, String phone, String currency, int categoryId) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.insert('customers', {
       'name': name,
       'phone': phone,
@@ -146,20 +146,20 @@ class AccountProvider extends ChangeNotifier {
   }
 
   Future<void> deleteCustomer(int id) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.delete('transactions', where: 'customer_id = ?', whereArgs: [id]);
     await db.delete('customers', where: 'id = ?', whereArgs: [id]);
     await loadCustomers();
   }
 
   Future<void> loadTransactions(int customerId) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     currentTransactions = await db.query('transactions', where: 'customer_id = ?', whereArgs: [customerId], orderBy: 'id DESC');
     notifyListeners();
   }
 
   Future<void> addTransaction(int customerId, double amount, String type, String details, String date) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.insert('transactions', {
       'customer_id': customerId,
       'amount': amount,
@@ -171,7 +171,7 @@ class AccountProvider extends ChangeNotifier {
   }
 
   Future<void> deleteTransaction(int id, int customerId) async {
-    final db = await DBHelper.instance.database;
+    final db = await AppDBHelper.instance.database;
     await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
     await loadTransactions(customerId);
   }
@@ -232,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<AccountProvider>(context);
+    final provider = Provider.of<AppAccountProvider>(context);
 
     List<Map<String, dynamic>> filteredCustomers = provider.customers.where((c) {
       final String name = (c['name'] ?? '').toString();
@@ -293,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListTile(
                           leading: CircleAvatar(child: Text(firstLetter)),
                           title: Text(custName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('العملة: ${customer['currency']} \vert{}${customer['phone'] ?? ''}'),
+                          subtitle: Text('العملة: ${customer['currency']} | ${customer['phone'] ?? ''}'),
                           onTap: () {
                             Navigator.push(
                               context,
@@ -321,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showAddCustomerDialog(BuildContext context) {
-    final provider = Provider.of<AccountProvider>(context, listen: false);
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     String selectedCurrency = provider.currencies.isNotEmpty ? provider.currencies.first['name'].toString() : 'ريال يمني';
@@ -397,12 +397,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void initState() {
     super.initState();
     Future.microtask(() =>
-        Provider.of<AccountProvider>(context, listen: false).loadTransactions(widget.customer['id']));
+        Provider.of<AppAccountProvider>(context, listen: false).loadTransactions(widget.customer['id']));
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<AccountProvider>(context);
+    final provider = Provider.of<AppAccountProvider>(context);
     final transactions = provider.currentTransactions;
     final balance = provider.getCustomerBalance(transactions);
 
@@ -454,7 +454,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               color: isGive ? Colors.green : Colors.red,
                             ),
                           ),
-                          title: Text('${tx['amount']}${widget.customer['currency']}'),
+                          title: Text('${tx['amount']} ${widget.customer['currency']}'),
                           subtitle: Text('${tx['details'] ?? ''}\n${tx['date']}'),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete, color: Colors.grey),
@@ -516,7 +516,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               final amount = double.tryParse(amountCtrl.text);
               if (amount != null) {
                 final dateStr = DateTime.now().toString().split('.')[0];
-                Provider.of<AccountProvider>(context, listen: false).addTransaction(
+                Provider.of<AppAccountProvider>(context, listen: false).addTransaction(
                   widget.customer['id'],
                   amount,
                   type,
@@ -554,7 +554,7 @@ class CategoriesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<AccountProvider>(context);
+    final provider = Provider.of<AppAccountProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('إدارة التصنيفات'), centerTitle: true),
@@ -573,5 +573,92 @@ class CategoriesScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),
-        child
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
 
+  void _showAddDialog(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إضافة تصنيف جديد'),
+        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'اسم التصنيف')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Provider.of<AppAccountProvider>(context, listen: false).addCategory(controller.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// 7. شاشة إدارة العملات
+// ----------------------------------------------------
+class CurrenciesScreen extends StatelessWidget {
+  const CurrenciesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<AppAccountProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('إدارة العملات'), centerTitle: true),
+      body: ListView.builder(
+        itemCount: provider.currencies.length,
+        itemBuilder: (ctx, i) {
+          final curr = provider.currencies[i];
+          return ListTile(
+            title: Text(curr['name'].toString()),
+            subtitle: Text('الرمز: ${curr['symbol']}'),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showAddDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final symbolCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إضافة عملة جديدة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'اسم العملة')),
+            TextField(controller: symbolCtrl, decoration: const InputDecoration(labelText: 'رمز العملة (مثل: ر.ي)')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty && symbolCtrl.text.trim().isNotEmpty) {
+                Provider.of<AppAccountProvider>(context, listen: false).addCurrency(nameCtrl.text.trim(), symbolCtrl.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          )
+        ],
+      ),
+    );
+  }
+}
