@@ -1,7 +1,6 @@
 name: al_muhasib
-description: "تطبيق المحاسبة"
+description: "تطبيق المحاسب وإدارة الحسابات الشامل"
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -10,12 +9,22 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   sqflite: ^2.3.0
   path: ^1.8.3
+  provider: ^6.1.1
+  intl: ^0.18.1
+  url_launcher: ^6.2.1
+  excel: ^4.0.0
+  share_plus: ^7.2.1
+  pdf: ^3.10.7
+  printing: ^5.11.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
