@@ -574,3 +574,4 @@ class CategoriesScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),
         child
+
