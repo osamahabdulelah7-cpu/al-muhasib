@@ -24,6 +24,14 @@ jobs:
         flutter-version: '3.19.0'
         channel: 'stable'
 
+    - name: Create Flutter Project Structure
+      run: |
+        cd ..
+        flutter create temp_app
+        cp -r temp_app/android $GITHUB_WORKSPACE/
+        cp -r temp_app/ios $GITHUB_WORKSPACE/
+        cp -r temp_app/web $GITHUB_WORKSPACE/
+
     - name: Install Dependencies
       run: flutter pub get
 
