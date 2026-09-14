@@ -17,7 +17,7 @@ class DatabaseHelper {
   }
 
   static Future<Database> initDb() async {
-    String path = p.join(await getDatabasesPath(), 'al_muhasib_v2.db');
+    String path = p.join(await getDatabasesPath(), 'al_muhasib_v3.db');
     return await openDatabase(
       path,
       version: 1,
@@ -123,9 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Theme.of(context).primaryColor,
           bottom: TabBar(
             isScrollable: true,
-            labelColor: Colors.yellowAccent, // لون النص عند اختيار التبويب لضمان الوضوح
-            unselectedLabelColor: Colors.white, // لون باقي التبويبات الغير محددة
-            indicatorColor: Colors.yellowAccent, // لون الخط السفلي التوضيحي
+            labelColor: Colors.yellowAccent,
+            unselectedLabelColor: Colors.white,
+            indicatorColor: Colors.yellowAccent,
             indicatorWeight: 3.0,
             tabs: categories.map((cat) => Tab(child: Text(cat, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))).toList(),
           ),
@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulWidget(
+      builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('إضافة حساب جديد'),
           content: SingleChildScrollView(
@@ -214,9 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     'type': selectedType,
                   });
                   Navigator.pop(context);
-                  setState(() {
-                    _refreshTotals();
-                  });
+                  _refreshTotals();
                 }
               },
               child: const Text('حفظ'),
