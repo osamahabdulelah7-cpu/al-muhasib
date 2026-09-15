@@ -13,17 +13,14 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   
-  # إدارة الحالة وقواعد البيانات
-  provider: ^6.1.2
-  sqflite: ^2.3.2
-  path: ^1.9.0
+  provider: ^6.1.1
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  url_launcher: ^6.2.1
 
-  # التفاعل مع الروابط وواتساب
-  url_launcher: ^6.2.5
-
-  # إنشاء وطباعة ملفات PDF
-  pdf: ^3.10.8
-  printing: ^5.13.0
+  # إصدارات متوافقة مع Flutter 3.19.6
+  pdf: 3.10.7
+  printing: 5.11.1
 
 dev_dependencies:
   flutter_test:
