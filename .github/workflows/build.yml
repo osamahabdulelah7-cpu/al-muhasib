@@ -37,7 +37,7 @@ jobs:
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.3.3
         with:
           name: Al-Mohaseb-APK
           path: build/app/outputs/flutter-apk/app-release.apk
