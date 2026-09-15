@@ -1,5 +1,5 @@
 name: al_muhasib
-description: "تطبيق المحاسب الشامل"
+description: "تطبيق دفتر المحاسب الشامل لجميع الحسابات والعملات"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -12,16 +12,23 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  provider: ^6.0.5
-  sqflite: ^2.3.0
-  path: ^1.8.3
-  url_launcher: ^6.2.1
-  intl: any
+  
+  # إدارة الحالة وقواعد البيانات
+  provider: ^6.1.2
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # التفاعل مع الروابط وواتساب
+  url_launcher: ^6.2.5
+
+  # إنشاء وطباعة ملفات PDF
+  pdf: ^3.10.8
+  printing: ^5.13.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
