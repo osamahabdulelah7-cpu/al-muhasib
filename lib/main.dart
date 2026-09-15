@@ -347,7 +347,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   child: ListTile(
                                     leading: CircleAvatar(child: Text(firstLetter)),
-                                    // عرض اسم الحساب وبجانبه المبلغ الصافي مباشرة بنفس السطر
                                     title: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
@@ -400,7 +399,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                             ),
                     ),
-                    // شريط الإجماليات السفلي لتبويب التصنيف المفتوح
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                       color: Colors.indigo.shade50,
@@ -507,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ----------------------------------------------------
-// 5. شاشة تفاصيل الحساب والتصدير PDF الملون
+// 5. شاشة تفاصيل الحساب والتصدير PDF
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
