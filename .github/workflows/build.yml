@@ -28,7 +28,7 @@ jobs:
       - name: Repair Android Project Structure
         run: |
           rm -rf android
-          flutter create --platforms=android .
+          flutter create --platforms=android --project-name al_muhasib .
 
       - name: Install Dependencies
         run: flutter pub get
