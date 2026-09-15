@@ -293,7 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
             body: AnimatedBuilder(
               animation: tabController,
               builder: (context, _) {
-                final currentCatId = int.parse(categories[tabController.index]['id'].toString());
+                final activeIndex = tabController.index < categories.length ? tabController.index : 0;
+                final currentCatId = int.parse(categories[activeIndex]['id'].toString());
 
                 final categoryCustomers = provider.customers.where((c) {
                   final int customerCatId = int.parse(c['category_id'].toString());
@@ -384,7 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     trailing: IconButton(
                                       icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                      onPressed: () => provider.deleteCustomer(cId),
+                                      onPressed: () => _confirmDeleteCustomer(context, provider, cId, custName),
                                     ),
                                     onTap: () {
                                       Navigator.push(
@@ -430,14 +431,35 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             floatingActionButton: FloatingActionButton(
               onPressed: () {
-                final currentTabIndex = tabController.index;
-                final activeCategoryId = int.parse(categories[currentTabIndex]['id'].toString());
+                final activeIndex = tabController.index < categories.length ? tabController.index : 0;
+                final activeCategoryId = int.parse(categories[activeIndex]['id'].toString());
                 _showAddCustomerDialog(context, activeCategoryId);
               },
               child: const Icon(Icons.add),
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _confirmDeleteCustomer(BuildContext context, AppAccountProvider provider, int id, String name) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: Text('هل أنت أخيرًا متأكد من حذف الحساب "$name" وجميع العمليات التابعة له؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              provider.deleteCustomer(id);
+              Navigator.pop(ctx);
+            },
+            child: const Text('حذف'),
+          )
+        ],
       ),
     );
   }
@@ -505,7 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ----------------------------------------------------
-// 5. شاشة تفاصيل الحساب (العرض في جدول بدلاً من بطاقات)
+// 5. شاشة تفاصيل الحساب (العرض في جدول)
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -560,20 +582,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             onPressed: () => _exportToPdf(processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
-            icon: const Icon(Icons.phone),
+            icon: const Icon(Icons.send),
             onPressed: () => _sendWhatsApp(widget.customer['phone']?.toString(), finalBalance),
           )
         ],
       ),
       body: Column(
         children: [
-          // تم إزالة الشريط العلوي للرصيد الإجمالي
           Expanded(
             child: displayTransactions.isEmpty
                 ? const Center(child: Text('لا توجد عمليات مسجلة'))
                 : Column(
                     children: [
-                      // رأس الجدول
                       Container(
                         color: Colors.lightBlue.shade600,
                         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -583,11 +603,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             Expanded(flex: 2, child: Text('المبلغ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
                             Expanded(flex: 3, child: Text('التفاصيل', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
                             Expanded(flex: 2, child: Text('الرصيد', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
-                            SizedBox(width: 32), // مساحة لزر الحذف
+                            SizedBox(width: 32),
                           ],
                         ),
                       ),
-                      // صفوف الجدول
                       Expanded(
                         child: ListView.separated(
                           itemCount: displayTransactions.length,
@@ -602,7 +621,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                               child: Row(
                                 children: [
-                                  // التاريخ
                                   Expanded(
                                     flex: 3,
                                     child: Text(
@@ -611,7 +629,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       style: const TextStyle(fontSize: 11, color: Colors.black87),
                                     ),
                                   ),
-                                  // المبلغ
                                   Expanded(
                                     flex: 2,
                                     child: Container(
@@ -627,7 +644,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       ),
                                     ),
                                   ),
-                                  // التفاصيل
                                   Expanded(
                                     flex: 3,
                                     child: Text(
@@ -636,7 +652,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                                     ),
                                   ),
-                                  // الرصيد
                                   Expanded(
                                     flex: 2,
                                     child: Container(
@@ -656,7 +671,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       ),
                                     ),
                                   ),
-                                  // زر الحذف
                                   SizedBox(
                                     width: 32,
                                     child: IconButton(
@@ -677,7 +691,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          // الشريط السفلي للجامع
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             color: Colors.grey.shade200,
@@ -702,7 +715,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ],
             ),
           ),
-          // أزرار إضافة العمليات
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -858,15 +870,30 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  Future<void> _sendWhatsApp(String? phone, double balance) async {
-    if (phone == null || phone.isEmpty) return;
+  Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
+    if (rawPhone == null || rawPhone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب')),
+      );
+      return;
+    }
+    
+    // تنظيف رقم الهاتف
+    String phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
     String message = "كشف حساب من تطبيق المحاسب:\n"
         "العميل: ${widget.customer['name']}\n"
-        "المبلغ الحالي: ${balance.abs()} ${widget.customer['currency']} ($status)";
+        "المبلغ الحالي: ${balance.abs().toStringAsFixed(1)} ${widget.customer['currency']} ($status)";
+        
     final Uri url = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('عذراً، تعذر فتح تطبيق واتساب')),
+        );
+      }
     }
   }
 }
