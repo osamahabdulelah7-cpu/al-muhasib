@@ -275,7 +275,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const DrawerHeader(
                     decoration: BoxDecoration(color: Colors.indigo),
-                    child: Center(child: Text('تطبيق المحاسب', style: TextStyle(color: Colors.white, fontSize: 22))),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'تطبيق المحاسب',
+                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'المهندس : اسامه الاضرعي',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '770638276',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
                   ),
                   ListTile(
                     leading: const Icon(Icons.category),
@@ -354,11 +372,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    // تم إزالة subtitle نهائياً كما طلبت (العملة ورقم الهاتف)
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // عرض المبلغ فقط ملون بالأخضر أو الأحمر بدون نص (له/عليه)
                                         Text(
                                           bal.abs().toStringAsFixed(1),
                                           style: TextStyle(
@@ -430,20 +446,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // نافذة تأكيد الحذف
   void _confirmDeleteCustomer(BuildContext context, AppAccountProvider provider, int id) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('تأكيد الحذف'),
-        content: const Text('هل أنت متأكد من عملية الحذف؟'), // تم التعديل كما طلبت
+        content: const Text('هل أنت متأكد من عملية الحذف؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               provider.deleteCustomer(id);
-              Navigator.pop(ctx); // إغلاق النافذة بعد الحذف
+              Navigator.pop(ctx);
             },
             child: const Text('حذف'),
           )
@@ -563,7 +578,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // تم التعديل لعرض الاسم وتحته الهاتف مباشرة في الـ AppBar
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -676,7 +690,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       padding: EdgeInsets.zero,
                                       icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
                                       onPressed: () {
-                                         // يمكن إضافة تأكيد حذف للعملية هنا أيضاً إذا أردت مستقبلاً
                                          provider.deleteTransaction(
                                             int.parse(tx['id'].toString()),
                                             int.parse(widget.customer['id'].toString()),
@@ -785,11 +798,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // تم تفعيل الخط العربي Cairo ودعم RTL هنا لحل مشكلة الـ PDF
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
     final pdf = pw.Document();
     
-    // جلب الخط العربي تلقائياً من جوجل فونتس لدعم اللغة العربية دون مشاكل مربعات
     final font = await PdfGoogleFonts.cairoRegular();
     final fontBold = await PdfGoogleFonts.cairoBold();
 
@@ -799,7 +810,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        textDirection: pw.TextDirection.rtl, // تفعيل اتجاه النص من اليمين لليسار
+        textDirection: pw.TextDirection.rtl,
         build: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
