@@ -218,7 +218,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// 4. الشاشة الرئيسية بالتصنيفات بالتنقل (Home Screen with Tabs)
+// 4. الشاشة الرئيسية (Home Screen)
 // ----------------------------------------------------
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -235,7 +235,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final provider = Provider.of<AppAccountProvider>(context);
     final categories = provider.categories;
 
-    // حالة عدم وجود تصنيفات
     if (categories.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('دفتر المحاسب الشامل'), centerTitle: true),
@@ -245,114 +244,124 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return DefaultTabController(
       length: categories.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('دفتر المحاسب الشامل'),
-          centerTitle: true,
-          bottom: TabBar(
-            isScrollable: true,
-            tabs: categories.map((cat) => Tab(text: cat['name'].toString())).toList(),
-          ),
-        ),
-        drawer: Drawer(
-          child: ListView(
-            children: [
-              const DrawerHeader(
-                decoration: BoxDecoration(color: Colors.indigo),
-                child: Center(child: Text('تطبيق المحاسب', style: TextStyle(color: Colors.white, fontSize: 22))),
+      child: Builder(
+        builder: (context) {
+          final TabController tabController = DefaultTabController.of(context);
+
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('دفتر المحاسب الشامل'),
+              centerTitle: true,
+              bottom: TabBar(
+                isScrollable: true,
+                tabs: categories.map((cat) => Tab(text: cat['name'].toString())).toList(),
               ),
-              ListTile(
-                leading: const Icon(Icons.category),
-                title: const Text('إدارة التصنيفات'),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+            ),
+            drawer: Drawer(
+              child: ListView(
+                children: [
+                  const DrawerHeader(
+                    decoration: BoxDecoration(color: Colors.indigo),
+                    child: Center(child: Text('تطبيق المحاسب', style: TextStyle(color: Colors.white, fontSize: 22))),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.category),
+                    title: const Text('إدارة التصنيفات'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.attach_money),
+                    title: const Text('إدارة العملات'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.attach_money),
-                title: const Text('إدارة العملات'),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
-              ),
-            ],
-          ),
-        ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: TextField(
-                decoration: const InputDecoration(
-                  labelText: 'بحث عن حساب...',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
+            ),
+            body: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'بحث عن حساب...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (val) => setState(() => searchQuery = val),
+                  ),
                 ),
-                onChanged: (val) => setState(() => searchQuery = val),
-              ),
-            ),
-            Expanded(
-              child: TabBarView(
-                children: categories.map((category) {
-                  final catId = category['id'] as int;
+                Expanded(
+                  child: TabBarView(
+                    children: categories.map((category) {
+                      final int currentCatId = int.parse(category['id'].toString());
 
-                  // فلترة الحسابات حسب التصنيف الحالي وبحث النص
-                  final filteredCustomers = provider.customers.where((c) {
-                    final matchesCategory = c['category_id'] == catId;
-                    final String name = (c['name'] ?? '').toString();
-                    final String phone = (c['phone'] ?? '').toString();
-                    final matchesSearch = name.contains(searchQuery) || phone.contains(searchQuery);
-                    return matchesCategory && matchesSearch;
-                  }).toList();
+                      final filteredCustomers = provider.customers.where((c) {
+                        final int customerCatId = int.parse(c['category_id'].toString());
+                        final matchesCategory = customerCatId == currentCatId;
+                        final String name = (c['name'] ?? '').toString();
+                        final String phone = (c['phone'] ?? '').toString();
+                        final matchesSearch = name.contains(searchQuery) || phone.contains(searchQuery);
+                        return matchesCategory && matchesSearch;
+                      }).toList();
 
-                  if (filteredCustomers.isEmpty) {
-                    return const Center(child: Text('لا توجد حسابات مضافة في هذا التصنيف'));
-                  }
+                      if (filteredCustomers.isEmpty) {
+                        return const Center(child: Text('لا توجد حسابات مضافة في هذا التصنيف'));
+                      }
 
-                  return ListView.builder(
-                    itemCount: filteredCustomers.length,
-                    itemBuilder: (ctx, i) {
-                      final customer = filteredCustomers[i];
-                      final String custName = (customer['name'] ?? 'حساب').toString();
-                      final String firstLetter = custName.isNotEmpty ? custName[0] : '?';
+                      return ListView.builder(
+                        itemCount: filteredCustomers.length,
+                        itemBuilder: (ctx, i) {
+                          final customer = filteredCustomers[i];
+                          final String custName = (customer['name'] ?? 'حساب').toString();
+                          final String firstLetter = custName.isNotEmpty ? custName[0] : '?';
 
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        child: ListTile(
-                          leading: CircleAvatar(child: Text(firstLetter)),
-                          title: Text(custName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('العملة: ${customer['currency']} | ${customer['phone'] ?? ''}'),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CustomerDetailsScreen(customer: customer),
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            child: ListTile(
+                              leading: CircleAvatar(child: Text(firstLetter)),
+                              title: Text(custName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('العملة: ${customer['currency']} | ${customer['phone'] ?? ''}'),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CustomerDetailsScreen(customer: customer),
+                                  ),
+                                );
+                              },
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                onPressed: () => provider.deleteCustomer(int.parse(customer['id'].toString())),
                               ),
-                            );
-                          },
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_forever, color: Colors.red),
-                            onPressed: () => provider.deleteCustomer(customer['id']),
-                          ),
-                        ),
+                            ),
+                          );
+                        },
                       );
-                    },
-                  );
-                }).toList(),
-              ),
+                    }).toList(),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _showAddCustomerDialog(context),
-          child: const Icon(Icons.add),
-        ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () {
+                final currentTabIndex = tabController.index;
+                final activeCategoryId = int.parse(categories[currentTabIndex]['id'].toString());
+                _showAddCustomerDialog(context, activeCategoryId);
+              },
+              child: const Icon(Icons.add),
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _showAddCustomerDialog(BuildContext context) {
+  void _showAddCustomerDialog(BuildContext context, int defaultCatId) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     String selectedCurrency = provider.currencies.isNotEmpty ? provider.currencies.first['name'].toString() : 'ريال يمني';
-    int selectedCat = provider.categories.isNotEmpty ? provider.categories.first['id'] as int : 1;
+    int selectedCat = defaultCatId;
 
     showDialog(
       context: context,
@@ -381,7 +390,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: selectedCat,
                   decoration: const InputDecoration(labelText: 'التصنيف'),
                   items: provider.categories.map((c) {
-                    return DropdownMenuItem<int>(value: c['id'] as int, child: Text(c['name'].toString()));
+                    final int cId = int.parse(c['id'].toString());
+                    return DropdownMenuItem<int>(value: cId, child: Text(c['name'].toString()));
                   }).toList(),
                   onChanged: (val) {
                     if (val != null) setDialogState(() => selectedCat = val);
@@ -424,7 +434,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void initState() {
     super.initState();
     Future.microtask(() =>
-        Provider.of<AppAccountProvider>(context, listen: false).loadTransactions(widget.customer['id']));
+        Provider.of<AppAccountProvider>(context, listen: false).loadTransactions(int.parse(widget.customer['id'].toString())));
   }
 
   @override
@@ -485,7 +495,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           subtitle: Text('${tx['details'] ?? ''}\n${tx['date']}'),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete, color: Colors.grey),
-                            onPressed: () => provider.deleteTransaction(tx['id'], widget.customer['id']),
+                            onPressed: () => provider.deleteTransaction(int.parse(tx['id'].toString()), int.parse(widget.customer['id'].toString())),
                           ),
                         ),
                       );
@@ -544,7 +554,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               if (amount != null) {
                 final dateStr = DateTime.now().toString().split('.')[0];
                 Provider.of<AppAccountProvider>(context, listen: false).addTransaction(
-                  widget.customer['id'],
+                  int.parse(widget.customer['id'].toString()),
                   amount,
                   type,
                   detailsCtrl.text,
@@ -593,7 +603,7 @@ class CategoriesScreen extends StatelessWidget {
             title: Text(cat['name'].toString()),
             trailing: IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => provider.deleteCategory(cat['id']),
+              onPressed: () => provider.deleteCategory(int.parse(cat['id'].toString())),
             ),
           );
         },
