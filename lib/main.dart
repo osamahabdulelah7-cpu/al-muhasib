@@ -346,46 +346,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                 return Card(
                                   margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  elevation: 2,
                                   child: ListTile(
                                     leading: CircleAvatar(child: Text(firstLetter)),
-                                    title: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    title: Text(
+                                      custName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    // تم إزالة subtitle نهائياً كما طلبت (العملة ورقم الهاتف)
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Expanded(
-                                          child: Text(
-                                            custName,
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                            overflow: TextOverflow.ellipsis,
+                                        // عرض المبلغ فقط ملون بالأخضر أو الأحمر بدون نص (له/عليه)
+                                        Text(
+                                          bal.abs().toStringAsFixed(1),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: isGive ? Colors.green.shade700 : Colors.red.shade700,
                                           ),
                                         ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: isGive ? Colors.green.shade50 : Colors.red.shade50,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: isGive ? Colors.green.shade300 : Colors.red.shade300,
-                                              width: 0.8,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '${bal.abs().toStringAsFixed(1)} (${isGive ? "له" : "عليه"})',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: isGive ? Colors.green.shade800 : Colors.red.shade800,
-                                            ),
-                                          ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                          onPressed: () => _confirmDeleteCustomer(context, provider, cId),
                                         ),
                                       ],
-                                    ),
-                                    subtitle: Padding(
-                                      padding: const EdgeInsets.only(top: 4.0),
-                                      child: Text('العملة: ${customer['currency']} | الهاتف: ${customer['phone'] ?? "لا يوجد"}'),
-                                    ),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                      onPressed: () => _confirmDeleteCustomer(context, provider, cId, custName),
                                     ),
                                     onTap: () {
                                       Navigator.push(
@@ -443,19 +430,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _confirmDeleteCustomer(BuildContext context, AppAccountProvider provider, int id, String name) {
+  // نافذة تأكيد الحذف
+  void _confirmDeleteCustomer(BuildContext context, AppAccountProvider provider, int id) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('تأكيد الحذف'),
-        content: Text('هل أنت أخيرًا متأكد من حذف الحساب "$name" وجميع العمليات التابعة له؟'),
+        content: const Text('هل أنت متأكد من عملية الحذف؟'), // تم التعديل كما طلبت
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               provider.deleteCustomer(id);
-              Navigator.pop(ctx);
+              Navigator.pop(ctx); // إغلاق النافذة بعد الحذف
             },
             child: const Text('حذف'),
           )
@@ -575,7 +563,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.customer['name'].toString()),
+        // تم التعديل لعرض الاسم وتحته الهاتف مباشرة في الـ AppBar
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.customer['name'].toString(), style: const TextStyle(fontSize: 18)),
+            if (widget.customer['phone'] != null && widget.customer['phone'].toString().trim().isNotEmpty)
+              Text(
+                widget.customer['phone'].toString(),
+                style: const TextStyle(fontSize: 13, color: Colors.white70),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
@@ -676,10 +675,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     child: IconButton(
                                       padding: EdgeInsets.zero,
                                       icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                                      onPressed: () => provider.deleteTransaction(
-                                        int.parse(tx['id'].toString()),
-                                        int.parse(widget.customer['id'].toString()),
-                                      ),
+                                      onPressed: () {
+                                         // يمكن إضافة تأكيد حذف للعملية هنا أيضاً إذا أردت مستقبلاً
+                                         provider.deleteTransaction(
+                                            int.parse(tx['id'].toString()),
+                                            int.parse(widget.customer['id'].toString()),
+                                         );
+                                      }
                                     ),
                                   ),
                                 ],
@@ -783,8 +785,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // تم تفعيل الخط العربي Cairo ودعم RTL هنا لحل مشكلة الـ PDF
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
     final pdf = pw.Document();
+    
+    // جلب الخط العربي تلقائياً من جوجل فونتس لدعم اللغة العربية دون مشاكل مربعات
     final font = await PdfGoogleFonts.cairoRegular();
     final fontBold = await PdfGoogleFonts.cairoBold();
 
@@ -794,7 +799,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        textDirection: pw.TextDirection.rtl,
+        textDirection: pw.TextDirection.rtl, // تفعيل اتجاه النص من اليمين لليسار
         build: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -878,7 +883,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       return;
     }
     
-    // تنظيف رقم الهاتف
     String phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
     String message = "كشف حساب من تطبيق المحاسب:\n"
