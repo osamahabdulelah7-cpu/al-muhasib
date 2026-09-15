@@ -218,7 +218,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// 4. الشاشة الرئيسية (Home Screen)
+// 4. الشاشة الرئيسية بالتصنيفات بالتنقل (Home Screen with Tabs)
 // ----------------------------------------------------
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -233,55 +233,79 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context);
+    final categories = provider.categories;
 
-    List<Map<String, dynamic>> filteredCustomers = provider.customers.where((c) {
-      final String name = (c['name'] ?? '').toString();
-      final String phone = (c['phone'] ?? '').toString();
-      return name.contains(searchQuery) || phone.contains(searchQuery);
-    }).toList();
+    // حالة عدم وجود تصنيفات
+    if (categories.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('دفتر المحاسب الشامل'), centerTitle: true),
+        body: const Center(child: Text('لا توجد تصنيفات مضافة')),
+      );
+    }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('دفتر المحاسب الشامل'),
-        centerTitle: true,
-      ),
-      drawer: Drawer(
-        child: ListView(
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.indigo),
-              child: Center(child: Text('تطبيق المحاسب', style: TextStyle(color: Colors.white, fontSize: 22))),
-            ),
-            ListTile(
-              leading: const Icon(Icons.category),
-              title: const Text('إدارة التصنيفات'),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_money),
-              title: const Text('إدارة العملات'),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
-            ),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              decoration: const InputDecoration(
-                labelText: 'بحث عن حساب...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (val) => setState(() => searchQuery = val),
-            ),
+    return DefaultTabController(
+      length: categories.length,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('دفتر المحاسب الشامل'),
+          centerTitle: true,
+          bottom: TabBar(
+            isScrollable: true,
+            tabs: categories.map((cat) => Tab(text: cat['name'].toString())).toList(),
           ),
-          Expanded(
-            child: filteredCustomers.isEmpty
-                ? const Center(child: Text('لا توجد حسابات مضافة'))
-                : ListView.builder(
+        ),
+        drawer: Drawer(
+          child: ListView(
+            children: [
+              const DrawerHeader(
+                decoration: BoxDecoration(color: Colors.indigo),
+                child: Center(child: Text('تطبيق المحاسب', style: TextStyle(color: Colors.white, fontSize: 22))),
+              ),
+              ListTile(
+                leading: const Icon(Icons.category),
+                title: const Text('إدارة التصنيفات'),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+              ),
+              ListTile(
+                leading: const Icon(Icons.attach_money),
+                title: const Text('إدارة العملات'),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
+              ),
+            ],
+          ),
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: TextField(
+                decoration: const InputDecoration(
+                  labelText: 'بحث عن حساب...',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (val) => setState(() => searchQuery = val),
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: categories.map((category) {
+                  final catId = category['id'] as int;
+
+                  // فلترة الحسابات حسب التصنيف الحالي وبحث النص
+                  final filteredCustomers = provider.customers.where((c) {
+                    final matchesCategory = c['category_id'] == catId;
+                    final String name = (c['name'] ?? '').toString();
+                    final String phone = (c['phone'] ?? '').toString();
+                    final matchesSearch = name.contains(searchQuery) || phone.contains(searchQuery);
+                    return matchesCategory && matchesSearch;
+                  }).toList();
+
+                  if (filteredCustomers.isEmpty) {
+                    return const Center(child: Text('لا توجد حسابات مضافة في هذا التصنيف'));
+                  }
+
+                  return ListView.builder(
                     itemCount: filteredCustomers.length,
                     itemBuilder: (ctx, i) {
                       final customer = filteredCustomers[i];
@@ -309,13 +333,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       );
                     },
-                  ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddCustomerDialog(context),
-        child: const Icon(Icons.add),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showAddCustomerDialog(context),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
