@@ -379,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ],
                                     ),
                                     subtitle: Padding(
-                                      padding: const EdgeInsets.top(4.0),
+                                      padding: const EdgeInsets.only(top: 4.0),
                                       child: Text('العملة: ${customer['currency']} | الهاتف: ${customer['phone'] ?? "لا يوجد"}'),
                                     ),
                                     trailing: IconButton(
@@ -729,7 +729,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         textDirection: pw.TextDirection.rtl,
         build: (pw.Context context) {
           return pw.Column(
-            cross: pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Center(
                 child: pw.Text('كشف حساب: ${widget.customer['name']}', style: pw.TextStyle(font: fontBold, fontSize: 18)),
