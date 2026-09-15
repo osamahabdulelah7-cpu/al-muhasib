@@ -29,7 +29,7 @@ class AppDBHelper {
 
   Future<Database> get database async {
     if (_db != null) return _db!;
-    _db = await _initDB('al_muhasib_final_v5.db');
+    _db = await _initDB('al_muhasib_final_v6.db');
     return _db!;
   }
 
@@ -505,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ----------------------------------------------------
-// 5. شاشة تفاصيل الحساب والتصدير PDF
+// 5. شاشة تفاصيل الحساب (العرض في جدول بدلاً من بطاقات)
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -549,6 +549,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
 
     final double finalBalance = cumulative;
+    final displayTransactions = processedTransactions.reversed.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -566,63 +567,117 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ),
       body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: Colors.indigo.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('الرصيد الإجمالي:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text(
-                  '${finalBalance.abs().toStringAsFixed(1)} ${widget.customer['currency']} (${finalBalance >= 0 ? "له" : "عليه"})',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: finalBalance >= 0 ? Colors.green.shade700 : Colors.red.shade700,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // تم إزالة الشريط العلوي للرصيد الإجمالي
           Expanded(
-            child: processedTransactions.isEmpty
+            child: displayTransactions.isEmpty
                 ? const Center(child: Text('لا توجد عمليات مسجلة'))
-                : ListView.builder(
-                    itemCount: processedTransactions.length,
-                    itemBuilder: (ctx, i) {
-                      final tx = processedTransactions[processedTransactions.length - 1 - i];
-                      final isGive = tx['type'] == 'give';
-                      final double runBal = tx['running_balance'];
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isGive ? Colors.green.shade100 : Colors.red.shade100,
-                            child: Icon(
-                              isGive ? Icons.arrow_downward : Icons.arrow_upward,
-                              color: isGive ? Colors.green.shade700 : Colors.red.shade700,
-                            ),
-                          ),
-                          title: Text(
-                            '${tx['amount']} ${widget.customer['currency']} - (${isGive ? "له" : "عليه"})',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: isGive ? Colors.green.shade700 : Colors.red.shade700,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${tx['details'] ?? ''}\nالتاريخ: ${tx['date']}\nالرصيد المتبقي: ${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.grey),
-                            onPressed: () => provider.deleteTransaction(int.parse(tx['id'].toString()), int.parse(widget.customer['id'].toString())),
-                          ),
+                : Column(
+                    children: [
+                      // رأس الجدول
+                      Container(
+                        color: Colors.lightBlue.shade600,
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                        child: const Row(
+                          children: [
+                            Expanded(flex: 3, child: Text('التاريخ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            Expanded(flex: 2, child: Text('المبلغ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            Expanded(flex: 3, child: Text('التفاصيل', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            Expanded(flex: 2, child: Text('الرصيد', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            SizedBox(width: 32), // مساحة لزر الحذف
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                      // صفوف الجدول
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: displayTransactions.length,
+                          separatorBuilder: (ctx, index) => const Divider(height: 1, color: Colors.grey),
+                          itemBuilder: (ctx, i) {
+                            final tx = displayTransactions[i];
+                            final bool isGive = tx['type'] == 'give';
+                            final double runBal = tx['running_balance'];
+                            final double amt = (tx['amount'] as num).toDouble();
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                              child: Row(
+                                children: [
+                                  // التاريخ
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(
+                                      tx['date'].toString(),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 11, color: Colors.black87),
+                                    ),
+                                  ),
+                                  // المبلغ
+                                  Expanded(
+                                    flex: 2,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                      decoration: BoxDecoration(
+                                        color: isGive ? Colors.green : Colors.red.shade400,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        amt.toStringAsFixed(0),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ),
+                                  ),
+                                  // التفاصيل
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(
+                                      (tx['details'] ?? '').toString(),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                  // الرصيد
+                                  Expanded(
+                                    flex: 2,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                      decoration: BoxDecoration(
+                                        color: runBal >= 0 ? Colors.green.shade100 : Colors.red.shade200,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        runBal.abs().toStringAsFixed(0),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: runBal >= 0 ? Colors.green.shade900 : Colors.red.shade900,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // زر الحذف
+                                  SizedBox(
+                                    width: 32,
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
+                                      onPressed: () => provider.deleteTransaction(
+                                        int.parse(tx['id'].toString()),
+                                        int.parse(widget.customer['id'].toString()),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
           ),
+          // الشريط السفلي للجامع
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             color: Colors.grey.shade200,
@@ -647,6 +702,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ],
             ),
           ),
+          // أزرار إضافة العمليات
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
