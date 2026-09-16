@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +31,7 @@ class AppDBHelper {
   AppDBHelper._init();
 
   Future<Database> get database async {
-    if (_db != null) return _db!;
+    if (_db != null && _db!.isOpen) return _db!;
     _db = await _initDB('al_muhasib_final_v6.db');
     return _db!;
   }
@@ -83,6 +86,19 @@ class AppDBHelper {
     await db.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
     await db.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
     await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
+  }
+
+  // دالة استبدال قاعدة البيانات واستعادتها
+  Future<void> restoreDatabase(File newDbFile) async {
+    if (_db != null && _db!.isOpen) {
+      await _db!.close();
+      _db = null;
+    }
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, 'al_muhasib_final_v6.db');
+
+    await newDbFile.copy(path);
+    _db = await openDatabase(path);
   }
 }
 
@@ -201,6 +217,31 @@ class AppAccountProvider extends ChangeNotifier {
     await loadTransactions(customerId);
     await loadCustomers();
   }
+
+  // --- حفظ واسترجاع النسخ الاحتياطية ---
+  Future<void> exportBackup() async {
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, 'al_muhasib_final_v6.db');
+    final file = File(path);
+    if (await file.exists()) {
+      await Share.shareXFiles([XFile(path)], text: 'نسخة احتياطية - تطبيق المحاسب');
+    }
+  }
+
+  Future<bool> importBackup() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles();
+      if (result != null && result.files.single.path != null) {
+        File selectedFile = File(result.files.single.path!);
+        await AppDBHelper.instance.restoreDatabase(selectedFile);
+        await loadInitialData();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('خطأ أثناء الاستعادة: $e');
+    }
+    return false;
+  }
 }
 
 // ----------------------------------------------------
@@ -242,6 +283,45 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String searchQuery = '';
+
+  void _showBackupDialog(BuildContext context) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('النسخ الاحتياطي والاستعادة'),
+        content: const Text('اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.download),
+            label: const Text('استعادة نسخة'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              bool success = await provider.importBackup();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      success ? 'تمت استعادة البيانات بنجاح' : 'تعذر استعادة الملف (تأكد من صيغة الملف)',
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.upload),
+            label: const Text('حفظ نسخة'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              provider.exportBackup();
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -304,6 +384,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     leading: const Icon(Icons.attach_money),
                     title: const Text('إدارة العملات'),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.backup, color: Colors.indigo),
+                    title: const Text('النسخ الاحتياطي والاستعادة'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showBackupDialog(context);
+                    },
                   ),
                 ],
               ),
@@ -530,7 +619,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ----------------------------------------------------
-// 5. شاشة تفاصيل الحساب (العرض في جدول)
+// 5. شاشة تفاصيل الحساب
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
