@@ -88,7 +88,6 @@ class AppDBHelper {
     await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
   }
 
-  // دالة استبدال قاعدة البيانات واستعادتها
   Future<void> restoreDatabase(File newDbFile) async {
     if (_db != null && _db!.isOpen) {
       await _db!.close();
@@ -303,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      success ? 'تمت استعادة البيانات بنجاح' : 'تعذر استعادة الملف (تأكد من صيغة الملف)',
+                      success ? 'تمت استعادة البيانات بنجاح' : 'تعذر استعادة الملف (تأكد من اختيار ملف قاعدة بيانات صحيح)',
                     ),
                   ),
                 );
@@ -386,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
                   ),
                   const Divider(),
+                  // --- الخيار الجديد للنسخ الاحتياطي والاستعادة ---
                   ListTile(
                     leading: const Icon(Icons.backup, color: Colors.indigo),
                     title: const Text('النسخ الاحتياطي والاستعادة'),
