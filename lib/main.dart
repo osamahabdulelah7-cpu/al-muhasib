@@ -22,7 +22,7 @@ void main() async {
 }
 
 // ----------------------------------------------------
-// 1. قاعدة البيانات (Database Helper المعدلة للتوافق)
+// 1. قاعدة البيانات (Database Helper)
 // ----------------------------------------------------
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
@@ -39,28 +39,19 @@ class AppDBHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, filePath);
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) async {
-        await _createTables(db);
-      },
-      onOpen: (db) async {
-        await _migrateOldSchemaIfNeeded(db);
-      },
-    );
+    return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
-  Future<void> _createTables(Database db) async {
+  Future _createDB(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS categories (
+      CREATE TABLE categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL
       )
     ''');
 
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS currencies (
+      CREATE TABLE currencies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         symbol TEXT NOT NULL
@@ -68,7 +59,7 @@ class AppDBHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS customers (
+      CREATE TABLE customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         phone TEXT,
@@ -78,7 +69,7 @@ class AppDBHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS transactions (
+      CREATE TABLE transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL,
         amount REAL NOT NULL,
@@ -88,147 +79,13 @@ class AppDBHelper {
       )
     ''');
 
-    final catCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM categories'));
-    if (catCount == 0) {
-      await db.insert('categories', {'name': 'عام'});
-      await db.insert('categories', {'name': 'عملاء'});
-      await db.insert('categories', {'name': 'موردون'});
-    }
+    await db.insert('categories', {'name': 'عام'});
+    await db.insert('categories', {'name': 'عملاء'});
+    await db.insert('categories', {'name': 'موردون'});
 
-    final curCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM currencies'));
-    if (curCount == 0) {
-      await db.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
-      await db.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
-      await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
-    }
-  }
-
-  // آلية معالجة وتحويل الجداول القديمة إلى الهيكل الجديد
-  Future<void> _migrateOldSchemaIfNeeded(Database db) async {
-    final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'");
-    final tableNames = tables.map((t) => t['name'].toString()).toList();
-
-    // التأكد من وجود الجداول الأساسية
-    await _createTables(db);
-
-    // إذا وُجد جدول groups القديم ولم تنقل بياناته بعد
-    if (tableNames.contains('groups')) {
-      final oldGroups = await db.query('groups');
-      for (var g in oldGroups) {
-        String gName = (g['name'] ?? '').toString().trim();
-        if (gName.isNotEmpty) {
-          final exist = await db.query('categories', where: 'name = ?', whereArgs: [gName]);
-          if (exist.isEmpty) {
-            await db.insert('categories', {'name': gName});
-          }
-        }
-      }
-    }
-
-    // إذا وُجد جدول customers وكان يحتوي على أعمدة الهيكل القديم (g_id, gsm)
-    if (tableNames.contains('customers')) {
-      final columns = await db.rawQuery("PRAGMA table_info(customers)");
-      final colNames = columns.map((c) => c['name'].toString()).toList();
-
-      if (colNames.contains('g_id') || !colNames.contains('category_id')) {
-        final oldCustomers = await db.query('customers');
-        final oldTransactions = tableNames.contains('transactions') ? await db.query('transactions') : [];
-
-        // إنشاء جداول مؤقتة بالهيكل الحديث
-        await db.execute('DROP TABLE IF EXISTS customers_new');
-        await db.execute('DROP TABLE IF EXISTS transactions_new');
-
-        await db.execute('''
-          CREATE TABLE customers_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            phone TEXT,
-            currency TEXT NOT NULL,
-            category_id INTEGER
-          )
-        ''');
-
-        await db.execute('''
-          CREATE TABLE transactions_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_id INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            type TEXT NOT NULL,
-            details TEXT,
-            date TEXT NOT NULL
-          )
-        ''');
-
-        Map<int, int> idMapping = {};
-
-        for (var oldC in oldCustomers) {
-          int oldId = int.parse(oldC['ID']?.toString() ?? oldC['id'].toString());
-          String name = (oldC['name'] ?? 'بدون اسم').toString();
-          String phone = (oldC['gsm'] ?? oldC['phone'] ?? '').toString();
-          
-          int newCatId = 1; // الافتراضي: عام
-          int oldGId = int.tryParse(oldC['g_id']?.toString() ?? '') ?? 0;
-          
-          if (oldGId > 0 && tableNames.contains('groups')) {
-            final gMatch = await db.query('groups', where: 'ID = ?', whereArgs: [oldGId]);
-            if (gMatch.isNotEmpty) {
-              String gName = gMatch.first['name'].toString().trim();
-              final cMatch = await db.query('categories', where: 'name = ?', whereArgs: [gName]);
-              if (cMatch.isNotEmpty) {
-                newCatId = int.parse(cMatch.first['id'].toString());
-              }
-            }
-          }
-
-          int newCustId = await db.insert('customers_new', {
-            'name': name,
-            'phone': phone,
-            'currency': 'ريال يمني',
-            'category_id': newCatId,
-          });
-
-          idMapping[oldId] = newCustId;
-        }
-
-        // نقل حركة الحسابات القديمة (in/out) إلى النظام الجديد (give/take)
-        for (var oldT in oldTransactions) {
-          int oldCusId = int.tryParse(oldT['cus_id']?.toString() ?? oldT['customer_id']?.toString() ?? '0') ?? 0;
-          int? newCusId = idMapping[oldCusId];
-
-          if (newCusId != null) {
-            double inAmt = double.tryParse(oldT['in']?.toString() ?? '0') ?? 0.0;
-            double outAmt = double.tryParse(oldT['out']?.toString() ?? '0') ?? 0.0;
-            String details = (oldT['remarks'] ?? oldT['details'] ?? '').toString();
-            String dateStr = (oldT['date_'] ?? oldT['date'] ?? DateTime.now().toString()).toString();
-
-            if (inAmt > 0) {
-              await db.insert('transactions_new', {
-                'customer_id': newCusId,
-                'amount': inAmt,
-                'type': 'give',
-                'details': details,
-                'date': dateStr,
-              });
-            }
-            if (outAmt > 0) {
-              await db.insert('transactions_new', {
-                'customer_id': newCusId,
-                'amount': outAmt,
-                'type': 'take',
-                'details': details,
-                'date': dateStr,
-              });
-            }
-          }
-        }
-
-        // استبدال الجداول القديمة بالمحدثة
-        await db.execute('DROP TABLE customers');
-        await db.execute('DROP TABLE transactions');
-        await db.execute('ALTER TABLE customers_new RENAME TO customers');
-        await db.execute('ALTER TABLE transactions_new RENAME TO transactions');
-      }
-    }
+    await db.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
+    await db.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
+    await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
   }
 
   Future<void> restoreDatabase(File newDbFile) async {
@@ -240,12 +97,7 @@ class AppDBHelper {
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
 
     await newDbFile.copy(path);
-    _db = await openDatabase(
-      path,
-      onOpen: (db) async {
-        await _migrateOldSchemaIfNeeded(db);
-      },
-    );
+    _db = await openDatabase(path);
   }
 }
 
@@ -365,6 +217,7 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
+  // --- حفظ واسترجاع النسخ الاحتياطية ---
   Future<void> exportBackup() async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
@@ -449,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      success ? 'تمت استعادة البيانات ونقلها بنجاح' : 'تعذر استعادة الملف (تأكد من اختيار ملف قاعدة بيانات صحيح)',
+                      success ? 'تمت استعادة البيانات بنجاح' : 'تعذر استعادة الملف (تأكد من اختيار ملف قاعدة بيانات صحيح)',
                     ),
                   ),
                 );
@@ -532,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
                   ),
                   const Divider(),
+                  // --- الخيار الجديد للنسخ الاحتياطي والاستعادة ---
                   ListTile(
                     leading: const Icon(Icons.backup, color: Colors.indigo),
                     title: const Text('النسخ الاحتياطي والاستعادة'),
@@ -1264,3 +1118,4 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
+
