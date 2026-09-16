@@ -22,6 +22,10 @@ dependencies:
   pdf: 3.10.7
   printing: 5.11.1
 
+  # مكتبات النسخ الاحتياطي والمشاركة
+  file_picker: ^8.0.0
+  share_plus: ^10.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
