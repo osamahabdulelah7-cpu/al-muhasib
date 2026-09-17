@@ -1131,7 +1131,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
-    // تحميل الخطوط المحلية مباشرة من مسار الأصول (Assets)
     final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
     final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
 
