@@ -1,12 +1,9 @@
-name: Build Al-Mohaseb APK
+Name: Build Al-Mohaseb APK
 
 on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
-
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   build:
@@ -28,10 +25,11 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Repair Android Project Structure
+      - name: Download Cairo Fonts Automatically
         run: |
-          rm -rf android
-          flutter create --platforms=android --project-name al_muhasib .
+          mkdir -p assets/fonts
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o assets/fonts/Cairo-Regular.ttf
+          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
 
       - name: Install Dependencies
         run: flutter pub get
