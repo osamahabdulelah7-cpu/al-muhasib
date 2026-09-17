@@ -1140,11 +1140,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
     try {
-      final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
-      final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+      pw.Font font;
+      pw.Font fontBold;
 
-      final font = pw.Font.ttf(fontData);
-      final fontBold = pw.Font.ttf(fontBoldData);
+      try {
+        final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+        final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+        font = pw.Font.ttf(fontData);
+        fontBold = pw.Font.ttf(fontBoldData);
+      } catch (_) {
+        // حماية في حال عدم تحميل الخط من الأصول
+        font = await PdfGoogleFonts.cairoRegular();
+        fontBold = await PdfGoogleFonts.cairoBold();
+      }
 
       final pdf = pw.Document(
         theme: pw.ThemeData.withFont(
