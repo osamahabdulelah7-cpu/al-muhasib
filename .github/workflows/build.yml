@@ -25,7 +25,7 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Download Cairo Fonts Automatically
+      - name: Prepare Fonts
         run: |
           mkdir -p assets/fonts
           curl -sL "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o assets/fonts/Cairo-Regular.ttf
@@ -35,10 +35,16 @@ jobs:
         run: flutter pub get
 
       - name: Build Release APK
-        run: flutter build apk --release --no-tree-shake-icons --no-shrink
+        run: flutter build apk --release
+
+      - name: Sign APK Automatically
+        run: |
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          $ANDROID_HOME/build-tools/30.0.3/zipalign -v 4 build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-release-aligned.apk
+          $ANDROID_HOME/build-tools/30.0.3/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out build/app/outputs/flutter-apk/app-release-signed.apk build/app/outputs/flutter-apk/app-release-aligned.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4.3.6
         with:
           name: Al-Mohaseb-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release-signed.apk
