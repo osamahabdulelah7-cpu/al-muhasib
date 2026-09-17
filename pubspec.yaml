@@ -18,11 +18,9 @@ dependencies:
   path: ^1.8.3
   url_launcher: ^6.2.1
 
-  # إصدارات متوافقة مع Flutter
   pdf: 3.10.7
   printing: 5.11.1
 
-  # مكتبات النسخ الاحتياطي والمشاركة
   file_picker: ^8.0.0
   share_plus: ^10.0.0
 
@@ -34,8 +32,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # مسارات الخطوط المحلية
-  # ملاحظة: يرجى التأكد من إنشاء مجلد باسم assets/fonts ووضع ملفات الخطوط بنفس المسميات (Cairo-Regular.ttf و Cairo-Bold.ttf) بداخله.
   assets:
     - assets/fonts/Cairo-Regular.ttf
     - assets/fonts/Cairo-Bold.ttf
