@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -1130,8 +1131,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
-    final font = await PdfGoogleFonts.cairoRegular();
-    final fontBold = await PdfGoogleFonts.cairoBold();
+    // تحميل الخطوط المحلية مباشرة من مسار الأصول (Assets)
+    final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+    final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+
+    final font = pw.Font.ttf(fontData);
+    final fontBold = pw.Font.ttf(fontBoldData);
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
