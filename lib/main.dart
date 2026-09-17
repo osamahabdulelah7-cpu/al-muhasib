@@ -184,6 +184,22 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
+  Future<void> updateCustomer(int id, String name, String phone, String currency, int categoryId) async {
+    final db = await AppDBHelper.instance.database;
+    await db.update(
+      'customers',
+      {
+        'name': name,
+        'phone': phone,
+        'currency': currency,
+        'category_id': categoryId,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    await loadCustomers();
+  }
+
   Future<void> deleteCustomer(int id) async {
     final db = await AppDBHelper.instance.database;
     await db.delete('transactions', where: 'customer_id = ?', whereArgs: [id]);
@@ -210,6 +226,22 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
+  Future<void> updateTransaction(int id, int customerId, double amount, String type, String details) async {
+    final db = await AppDBHelper.instance.database;
+    await db.update(
+      'transactions',
+      {
+        'amount': amount,
+        'type': type,
+        'details': details,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    await loadTransactions(customerId);
+    await loadCustomers();
+  }
+
   Future<void> deleteTransaction(int id, int customerId) async {
     final db = await AppDBHelper.instance.database;
     await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
@@ -217,7 +249,6 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
-  // --- حفظ واسترجاع النسخ الاحتياطية ---
   Future<void> exportBackup() async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
@@ -385,7 +416,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
                   ),
                   const Divider(),
-                  // --- الخيار الجديد للنسخ الاحتياطي والاستعادة ---
                   ListTile(
                     leading: const Icon(Icons.backup, color: Colors.indigo),
                     title: const Text('النسخ الاحتياطي والاستعادة'),
@@ -461,23 +491,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          bal.abs().toStringAsFixed(1),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: isGive ? Colors.green.shade700 : Colors.red.shade700,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        IconButton(
-                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                          onPressed: () => _confirmDeleteCustomer(context, provider, cId),
-                                        ),
-                                      ],
+                                    trailing: Text(
+                                      bal.abs().toStringAsFixed(1),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: isGive ? Colors.green.shade700 : Colors.red.shade700,
+                                      ),
                                     ),
                                     onTap: () {
                                       Navigator.push(
@@ -486,6 +506,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                           builder: (_) => CustomerDetailsScreen(customer: customer),
                                         ),
                                       );
+                                    },
+                                    onLongPress: () {
+                                      _showCustomerOptionsModal(context, provider, customer);
                                     },
                                   ),
                                 );
@@ -531,6 +554,111 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _showCustomerOptionsModal(BuildContext context, AppAccountProvider provider, Map<String, dynamic> customer) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.blue),
+                title: const Text('تعديل الحساب'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showEditCustomerDialog(context, customer);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('حذف الحساب'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDeleteCustomer(context, provider, int.parse(customer['id'].toString()));
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditCustomerDialog(BuildContext context, Map<String, dynamic> customer) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final nameCtrl = TextEditingController(text: customer['name'].toString());
+    final phoneCtrl = TextEditingController(text: customer['phone']?.toString() ?? '');
+    String selectedCurrency = customer['currency'].toString();
+    int selectedCat = int.parse(customer['category_id'].toString());
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('تعديل الحساب'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'اسم الحساب/العميل')),
+                TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'رقم الهاتف')),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: provider.currencies.any((c) => c['name'].toString() == selectedCurrency)
+                      ? selectedCurrency
+                      : (provider.currencies.isNotEmpty ? provider.currencies.first['name'].toString() : 'ريال يمني'),
+                  decoration: const InputDecoration(labelText: 'العملة'),
+                  items: provider.currencies.map((c) {
+                    final String cName = c['name'].toString();
+                    return DropdownMenuItem<String>(value: cName, child: Text(cName));
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedCurrency = val);
+                  },
+                ),
+                DropdownButtonFormField<int>(
+                  value: provider.categories.any((c) => int.parse(c['id'].toString()) == selectedCat)
+                      ? selectedCat
+                      : (provider.categories.isNotEmpty ? int.parse(provider.categories.first['id'].toString()) : selectedCat),
+                  decoration: const InputDecoration(labelText: 'التصنيف'),
+                  items: provider.categories.map((c) {
+                    final int cId = int.parse(c['id'].toString());
+                    return DropdownMenuItem<int>(value: cId, child: Text(c['name'].toString()));
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedCat = val);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: () {
+                if (nameCtrl.text.trim().isNotEmpty) {
+                  provider.updateCustomer(
+                    int.parse(customer['id'].toString()),
+                    nameCtrl.text.trim(),
+                    phoneCtrl.text.trim(),
+                    selectedCurrency,
+                    selectedCat,
+                  );
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -637,6 +765,117 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         Provider.of<AppAccountProvider>(context, listen: false).loadTransactions(int.parse(widget.customer['id'].toString())));
   }
 
+  Map<String, String> _formatDateTime(String rawDateTime) {
+    try {
+      DateTime dt = DateTime.parse(rawDateTime);
+      String dateStr = "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
+      
+      int hour = dt.hour;
+      String period = hour >= 12 ? 'م' : 'ص';
+      hour = hour % 12;
+      if (hour == 0) hour = 12;
+      
+      String timeStr = "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
+      return {'date': dateStr, 'time': timeStr};
+    } catch (e) {
+      List<String> parts = rawDateTime.split(' ');
+      if (parts.length >= 2) {
+        return {'date': parts[0], 'time': parts.sublist(1).join(' ')};
+      }
+      return {'date': rawDateTime, 'time': ''};
+    }
+  }
+
+  void _showTransactionOptionsModal(BuildContext context, AppAccountProvider provider, Map<String, dynamic> tx) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.blue),
+                title: const Text('تعديل العملية'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showEditTransactionDialog(context, tx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('حذف العملية'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  provider.deleteTransaction(
+                    int.parse(tx['id'].toString()),
+                    int.parse(widget.customer['id'].toString()),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
+    final amountCtrl = TextEditingController(text: (tx['amount'] as num).toString());
+    final detailsCtrl = TextEditingController(text: tx['details']?.toString() ?? '');
+    String selectedType = tx['type'].toString();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('تعديل العملية'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'المبلغ')),
+              TextField(controller: detailsCtrl, decoration: const InputDecoration(labelText: 'التفاصيل / البيان')),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedType,
+                decoration: const InputDecoration(labelText: 'نوع العملية'),
+                items: const [
+                  DropdownMenuItem(value: 'give', child: Text('له (قبض)')),
+                  DropdownMenuItem(value: 'take', child: Text('عليه (دفع)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedType = val);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: () {
+                final amount = double.tryParse(amountCtrl.text);
+                if (amount != null) {
+                  Provider.of<AppAccountProvider>(context, listen: false).updateTransaction(
+                    int.parse(tx['id'].toString()),
+                    int.parse(widget.customer['id'].toString()),
+                    amount,
+                    selectedType,
+                    detailsCtrl.text,
+                  );
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context);
@@ -701,11 +940,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                         child: const Row(
                           children: [
-                            Expanded(flex: 3, child: Text('التاريخ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            Expanded(flex: 2, child: Text('التاريخ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
                             Expanded(flex: 2, child: Text('المبلغ', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
-                            Expanded(flex: 3, child: Text('التفاصيل', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                            Expanded(flex: 4, child: Text('التفاصيل', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
                             Expanded(flex: 2, child: Text('الرصيد', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
-                            SizedBox(width: 32),
                           ],
                         ),
                       ),
@@ -718,75 +956,79 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             final bool isGive = tx['type'] == 'give';
                             final double runBal = tx['running_balance'];
                             final double amt = (tx['amount'] as num).toDouble();
+                            final dateTimeFormatted = _formatDateTime(tx['date'].toString());
 
-                            return Container(
-                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(
-                                      tx['date'].toString(),
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 11, color: Colors.black87),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                                      decoration: BoxDecoration(
-                                        color: isGive ? Colors.green : Colors.red.shade400,
-                                        borderRadius: BorderRadius.circular(4),
+                            return InkWell(
+                              onLongPress: () {
+                                _showTransactionOptionsModal(context, provider, tx);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            dateTimeFormatted['date']!,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          ),
+                                          if (dateTimeFormatted['time']!.isNotEmpty)
+                                            Text(
+                                              dateTimeFormatted['time']!,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(fontSize: 9, color: Colors.grey),
+                                            ),
+                                        ],
                                       ),
-                                      child: Text(
-                                        amt.toStringAsFixed(0),
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                                      ),
                                     ),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(
-                                      (tx['details'] ?? '').toString(),
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                                      decoration: BoxDecoration(
-                                        color: runBal >= 0 ? Colors.green.shade100 : Colors.red.shade200,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        runBal.abs().toStringAsFixed(0),
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: runBal >= 0 ? Colors.green.shade900 : Colors.red.shade900,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
+                                    Expanded(
+                                      flex: 2,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                        decoration: BoxDecoration(
+                                          color: isGive ? Colors.green : Colors.red.shade400,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          amt.toStringAsFixed(0),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  SizedBox(
-                                    width: 32,
-                                    child: IconButton(
-                                      padding: EdgeInsets.zero,
-                                      icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                                      onPressed: () {
-                                         provider.deleteTransaction(
-                                            int.parse(tx['id'].toString()),
-                                            int.parse(widget.customer['id'].toString()),
-                                         );
-                                      }
+                                    Expanded(
+                                      flex: 4,
+                                      child: Text(
+                                        (tx['details'] ?? '').toString(),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                    Expanded(
+                                      flex: 2,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                        decoration: BoxDecoration(
+                                          color: runBal >= 0 ? Colors.green.shade100 : Colors.red.shade200,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          runBal.abs().toStringAsFixed(0),
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: runBal >= 0 ? Colors.green.shade900 : Colors.red.shade900,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -1118,4 +1360,3 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
-
