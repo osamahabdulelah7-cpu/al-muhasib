@@ -4,9 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="تطبيق المحاسب"
+        android:label="المحاسب"
         android:name="android.app.Application"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@android:drawable/sym_def_app_icon">
 
         <activity
             android:name=".MainActivity"
