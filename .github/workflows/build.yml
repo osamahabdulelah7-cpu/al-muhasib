@@ -1,4 +1,4 @@
-name: Build Al-Mohaseb APK
+Name: Build Al-Mohaseb APK
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Release APK
-        run: flutter build apk --release --no-tree-shake-icons
+        run: flutter build apk --release --no-tree-shake-icons --no-shrink
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4.3.6
