@@ -1130,10 +1130,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
-    final pdf = pw.Document();
-    
     final font = await PdfGoogleFonts.cairoRegular();
     final fontBold = await PdfGoogleFonts.cairoBold();
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: font,
+        bold: fontBold,
+      ),
+    );
 
     final greenColor = PdfColor.fromHex("#2F855A");
     final redColor = PdfColor.fromHex("#C53030");
