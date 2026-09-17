@@ -1162,7 +1162,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           textDirection: pw.TextDirection.rtl,
           build: (pw.Context context) {
             return pw.Column(
-              cross: pw.CrossAxisAlignment.start,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Center(
                   child: pw.Text('كشف حساب: ${widget.customer['name']}', style: pw.TextStyle(font: fontBold, fontSize: 18)),
