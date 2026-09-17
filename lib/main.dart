@@ -14,9 +14,17 @@ import 'package:share_plus/share_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  final provider = AppAccountProvider();
+  try {
+    await provider.loadInitialData();
+  } catch (e) {
+    debugPrint("خطأ في تحميل البيانات الأولية: $e");
+  }
+
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppAccountProvider()..loadInitialData(),
+    ChangeNotifierProvider<AppAccountProvider>.value(
+      value: provider,
       child: const AlMuhasibApp(),
     ),
   );
@@ -1131,99 +1139,107 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
-    final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
-    final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+    try {
+      final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
 
-    final font = pw.Font.ttf(fontData);
-    final fontBold = pw.Font.ttf(fontBoldData);
+      final font = pw.Font.ttf(fontData);
+      final fontBold = pw.Font.ttf(fontBoldData);
 
-    final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(
-        base: font,
-        bold: fontBold,
-      ),
-    );
+      final pdf = pw.Document(
+        theme: pw.ThemeData.withFont(
+          base: font,
+          bold: fontBold,
+        ),
+      );
 
-    final greenColor = PdfColor.fromHex("#2F855A");
-    final redColor = PdfColor.fromHex("#C53030");
+      final greenColor = PdfColor.fromHex("#2F855A");
+      final redColor = PdfColor.fromHex("#C53030");
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        textDirection: pw.TextDirection.rtl,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Center(
-                child: pw.Text('كشف حساب: ${widget.customer['name']}', style: pw.TextStyle(font: fontBold, fontSize: 18)),
-              ),
-              pw.SizedBox(height: 5),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('الهاتف: ${widget.customer['phone'] ?? "غير مسجل"}', style: pw.TextStyle(font: font, fontSize: 12)),
-                  pw.Text('العملة: ${widget.customer['currency']}', style: pw.TextStyle(font: font, fontSize: 12)),
-                ],
-              ),
-              pw.SizedBox(height: 10),
-              pw.TableHelper.fromTextArray(
-                context: context,
-                border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-                headerStyle: pw.TextStyle(font: fontBold, fontSize: 10, color: PdfColors.white),
-                cellStyle: pw.TextStyle(font: font, fontSize: 9),
-                headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo700),
-                headers: ['التاريخ', 'التفاصيل', 'عليه', 'له', 'الرصيد التراكمي'],
-                data: txs.map((tx) {
-                  bool isGive = tx['type'] == 'give';
-                  double amt = (tx['amount'] as num).toDouble();
-                  double runBal = tx['running_balance'];
-
-                  return [
-                    tx['date'].toString(),
-                    tx['details'].toString(),
-                    isGive ? pw.Text('-', style: pw.TextStyle(font: font)) : pw.Text(amt.toStringAsFixed(1), style: pw.TextStyle(font: fontBold, color: redColor)),
-                    isGive ? pw.Text(amt.toStringAsFixed(1), style: pw.TextStyle(font: fontBold, color: greenColor)) : pw.Text('-', style: pw.TextStyle(font: font)),
-                    pw.Text(
-                      '${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
-                      style: pw.TextStyle(font: fontBold, color: runBal >= 0 ? greenColor : redColor),
-                    ),
-                  ];
-                }).toList(),
-              ),
-              pw.SizedBox(height: 15),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5, color: PdfColors.grey500)),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          textDirection: pw.TextDirection.rtl,
+          build: (pw.Context context) {
+            return pw.Column(
+              cross: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Center(
+                  child: pw.Text('كشف حساب: ${widget.customer['name']}', style: pw.TextStyle(font: fontBold, fontSize: 18)),
+                ),
+                pw.SizedBox(height: 5),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}', style: pw.TextStyle(font: fontBold, fontSize: 11, color: greenColor)),
-                    pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}', style: pw.TextStyle(font: fontBold, fontSize: 11, color: redColor)),
-                    pw.Text(
-                      'الرصيد النهائي: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
-                      style: pw.TextStyle(font: fontBold, fontSize: 11, color: finalBal >= 0 ? greenColor : redColor),
-                    ),
+                    pw.Text('الهاتف: ${widget.customer['phone'] ?? "غير مسجل"}', style: pw.TextStyle(font: font, fontSize: 12)),
+                    pw.Text('العملة: ${widget.customer['currency']}', style: pw.TextStyle(font: font, fontSize: 12)),
                   ],
                 ),
-              ),
-              pw.Spacer(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('بواسطة دفتر المحاسب الشامل', style: pw.TextStyle(font: font, fontSize: 9)),
-                  pw.Text(DateTime.now().toString().split(' ')[0], style: pw.TextStyle(font: font, fontSize: 9)),
-                ],
-              )
-            ],
-          );
-        },
-      ),
-    );
+                pw.SizedBox(height: 10),
+                pw.TableHelper.fromTextArray(
+                  context: context,
+                  border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
+                  headerStyle: pw.TextStyle(font: fontBold, fontSize: 10, color: PdfColors.white),
+                  cellStyle: pw.TextStyle(font: font, fontSize: 9),
+                  headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo700),
+                  headers: ['التاريخ', 'التفاصيل', 'عليه', 'له', 'الرصيد التراكمي'],
+                  data: txs.map((tx) {
+                    bool isGive = tx['type'] == 'give';
+                    double amt = (tx['amount'] as num).toDouble();
+                    double runBal = tx['running_balance'];
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-    );
+                    return [
+                      tx['date'].toString(),
+                      tx['details'].toString(),
+                      isGive ? pw.Text('-', style: pw.TextStyle(font: font)) : pw.Text(amt.toStringAsFixed(1), style: pw.TextStyle(font: fontBold, color: redColor)),
+                      isGive ? pw.Text(amt.toStringAsFixed(1), style: pw.TextStyle(font: fontBold, color: greenColor)) : pw.Text('-', style: pw.TextStyle(font: font)),
+                      pw.Text(
+                        '${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
+                        style: pw.TextStyle(font: fontBold, color: runBal >= 0 ? greenColor : redColor),
+                      ),
+                    ];
+                  }).toList(),
+                ),
+                pw.SizedBox(height: 15),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(10),
+                  decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5, color: PdfColors.grey500)),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                    children: [
+                      pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}', style: pw.TextStyle(font: fontBold, fontSize: 11, color: greenColor)),
+                      pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}', style: pw.TextStyle(font: fontBold, fontSize: 11, color: redColor)),
+                      pw.Text(
+                        'الرصيد النهائي: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                        style: pw.TextStyle(font: fontBold, fontSize: 11, color: finalBal >= 0 ? greenColor : redColor),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.Spacer(),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('بواسطة دفتر المحاسب الشامل', style: pw.TextStyle(font: font, fontSize: 9)),
+                    pw.Text(DateTime.now().toString().split(' ')[0], style: pw.TextStyle(font: font, fontSize: 9)),
+                  ],
+                )
+              ],
+            );
+          },
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر إنتاج ملف الـ PDF: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
@@ -1241,12 +1257,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         "المبلغ الحالي: ${balance.abs().toStringAsFixed(1)} ${widget.customer['currency']} ($status)";
         
     final Uri url = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
+    
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('عذراً، تعذر فتح تطبيق واتساب')),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('عذراً، تعذر فتح تطبيق واتساب')),
+          const SnackBar(content: Text('خطأ أثناء تشغيل رابط واتساب')),
         );
       }
     }
