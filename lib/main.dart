@@ -13,6 +13,20 @@ import 'package:printing/printing.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
+// ====================================================
+// الألوان الموحدة للتطبيق (نفس ألوان الشعار)
+// ====================================================
+class AppColors {
+  static const Color primary = Color(0xFF1A237E);      // كحلي داكن
+  static const Color primaryLight = Color(0xFF3949AB); // أزرق فاتح
+  static const Color gold = Color(0xFFFFB300);         // ذهبي
+  static const Color goldDark = Color(0xFFF57C00);     // ذهبي داكن
+  static const Color green = Color(0xFF2E7D32);        // أخضر (له)
+  static const Color red = Color(0xFFC62828);          // أحمر (عليه)
+  static const Color background = Color(0xFFF5F5F7);   // خلفية
+  static const Color cardBg = Colors.white;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -41,7 +55,7 @@ void main() async {
 }
 
 // ----------------------------------------------------
-// 1. قاعدة البيانات (Database Helper)
+// 1. قاعدة البيانات
 // ----------------------------------------------------
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
@@ -121,7 +135,7 @@ class AppDBHelper {
 }
 
 // ----------------------------------------------------
-// 2. إدارة البيانات (App Account Provider)
+// 2. إدارة البيانات
 // ----------------------------------------------------
 class AppAccountProvider extends ChangeNotifier {
   List<Map<String, dynamic>> customers = [];
@@ -305,7 +319,7 @@ class AppAccountProvider extends ChangeNotifier {
 }
 
 // ----------------------------------------------------
-// 3. التطبيق الرئيسي (Main App)
+// 3. التطبيق الرئيسي
 // ----------------------------------------------------
 class AlMuhasibApp extends StatelessWidget {
   const AlMuhasibApp({super.key});
@@ -323,7 +337,54 @@ class AlMuhasibApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: ThemeData(
-        primarySwatch: Colors.indigo,
+        primaryColor: AppColors.primary,
+        scaffoldBackgroundColor: AppColors.background,
+        colorScheme: const ColorScheme.light(
+          primary: AppColors.primary,
+          secondary: AppColors.gold,
+          surface: Colors.white,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: AppColors.gold,
+          foregroundColor: Colors.white,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.gold, width: 2),
+          ),
+          labelStyle: const TextStyle(color: AppColors.primary),
+        ),
+        cardTheme: CardTheme(
+          color: Colors.white,
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
         useMaterial3: false,
       ),
       home: const HomeScreen(),
@@ -332,7 +393,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// 4. الشاشة الرئيسية (Home Screen)
+// 4. الشاشة الرئيسية
 // ----------------------------------------------------
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -350,13 +411,21 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('النسخ الاحتياطي والاستعادة'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.backup, color: AppColors.gold),
+            SizedBox(width: 8),
+            Text('النسخ الاحتياطي'),
+          ],
+        ),
         content: const Text(
             'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
         actions: [
           TextButton.icon(
-            icon: const Icon(Icons.download),
-            label: const Text('استعادة نسخة'),
+            icon: const Icon(Icons.download, color: AppColors.green),
+            label: const Text('استعادة نسخة',
+                style: TextStyle(color: AppColors.green)),
             onPressed: () async {
               Navigator.pop(ctx);
               bool success = await provider.importBackup();
@@ -366,12 +435,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     content: Text(success
                         ? 'تمت استعادة البيانات بنجاح'
                         : 'تعذر استعادة الملف'),
+                    backgroundColor:
+                        success ? AppColors.green : AppColors.red,
                   ),
                 );
               }
             },
           ),
           ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
             icon: const Icon(Icons.upload),
             label: const Text('حفظ نسخة'),
             onPressed: () {
@@ -391,8 +463,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (categories.isEmpty) {
       return Scaffold(
-        appBar:
-            AppBar(title: const Text('دفتر المحاسب الشامل'), centerTitle: true),
+        appBar: AppBar(
+          title: const Text('دفتر المحاسب الشامل'),
+        ),
         body: const Center(child: Text('لا توجد تصنيفات مضافة')),
       );
     }
@@ -406,66 +479,144 @@ class _HomeScreenState extends State<HomeScreen> {
           return Scaffold(
             appBar: AppBar(
               title: const Text('دفتر المحاسب الشامل'),
-              centerTitle: true,
               bottom: TabBar(
                 isScrollable: true,
+                indicatorColor: AppColors.gold,
+                indicatorWeight: 3,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                labelStyle: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15),
                 tabs: categories
                     .map((cat) => Tab(text: cat['name'].toString()))
                     .toList(),
               ),
             ),
             drawer: Drawer(
-              child: ListView(
+              child: Column(
                 children: [
-                  const DrawerHeader(
-                    decoration: BoxDecoration(color: Colors.indigo),
+                  // ============= رأس القائمة =============
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryLight],
+                        begin: Alignment.topRight,
+                        end: Alignment.bottomLeft,
+                      ),
+                    ),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.gold, width: 3),
+                          ),
+                          child: const Icon(
+                            Icons.account_balance_wallet,
+                            color: AppColors.primary,
+                            size: 40,
+                          ),
+                        ),
+                        const SizedBox(height: 15),
+                        const Text(
                           'تطبيق المحاسب',
                           style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold),
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        SizedBox(height: 8),
-                        Text(
+                        const SizedBox(height: 8),
+                        const Text(
                           'المهندس : اسامه الاضرعي',
                           style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          '770638276',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: const [
+                            Icon(Icons.phone,
+                                color: AppColors.gold, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              '770638276',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 14),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
+
+                  // ============= عناصر القائمة =============
+                  const SizedBox(height: 10),
                   ListTile(
-                    leading: const Icon(Icons.category),
-                    title: const Text('إدارة التصنيفات'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.category,
+                          color: AppColors.primary),
+                    ),
+                    title: const Text('إدارة التصنيفات',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                             builder: (_) => const CategoriesScreen())),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.attach_money),
-                    title: const Text('إدارة العملات'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.gold.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.attach_money,
+                          color: AppColors.goldDark),
+                    ),
+                    title: const Text('إدارة العملات',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                             builder: (_) => const CurrenciesScreen())),
                   ),
-                  const Divider(),
+                  const Divider(height: 20, indent: 20, endIndent: 20),
                   ListTile(
-                    leading: const Icon(Icons.backup, color: Colors.indigo),
-                    title: const Text('النسخ الاحتياطي والاستعادة'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.green.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.cloud_sync,
+                          color: AppColors.green),
+                    ),
+                    title: const Text('النسخ الاحتياطي والاستعادة',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     onTap: () {
                       Navigator.pop(context);
                       _showBackupDialog(context);
                     },
+                  ),
+
+                  const Spacer(),
+
+                  // ============= توقيع أسفل القائمة =============
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    child: const Text(
+                      'دفتر المحاسب الشامل © 2026',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -505,23 +656,53 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
+                    // ============= شريط البحث =============
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      color: AppColors.primary,
                       child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'بحث عن حساب...',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
+                        style: const TextStyle(color: Colors.white),
+                        cursorColor: AppColors.gold,
+                        decoration: InputDecoration(
+                          hintText: 'بحث عن حساب...',
+                          hintStyle: const TextStyle(color: Colors.white70),
+                          prefixIcon:
+                              const Icon(Icons.search, color: AppColors.gold),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.15),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(25),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 20),
                         ),
                         onChanged: (val) => setState(() => searchQuery = val),
                       ),
                     ),
+
+                    // ============= قائمة العملاء =============
                     Expanded(
                       child: categoryCustomers.isEmpty
-                          ? const Center(
-                              child:
-                                  Text('لا توجد حسابات مضافة في هذا التصنيف'))
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.inbox,
+                                      size: 80,
+                                      color: Colors.grey.shade300),
+                                  const SizedBox(height: 15),
+                                  Text(
+                                    'لا توجد حسابات مضافة في هذا التصنيف',
+                                    style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 15),
+                                  ),
+                                ],
+                              ),
+                            )
                           : ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                               itemCount: categoryCustomers.length,
                               itemBuilder: (ctx, i) {
                                 final customer = categoryCustomers[i];
@@ -537,28 +718,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                 return Card(
                                   margin: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  elevation: 2,
-                                  child: ListTile(
-                                    leading:
-                                        CircleAvatar(child: Text(firstLetter)),
-                                    title: Text(
-                                      custName,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    trailing: Text(
-                                      bal.abs().toStringAsFixed(1),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                        color: isGive
-                                            ? Colors.green.shade700
-                                            : Colors.red.shade700,
-                                      ),
-                                    ),
+                                      horizontal: 12, vertical: 5),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
                                     onTap: () {
                                       Navigator.push(
                                         context,
@@ -572,42 +734,149 @@ class _HomeScreenState extends State<HomeScreen> {
                                       _showCustomerOptionsModal(
                                           context, provider, customer);
                                     },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Row(
+                                        children: [
+                                          // أفاتار دائري بتدرج
+                                          Container(
+                                            width: 50,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: isGive
+                                                    ? [
+                                                        AppColors.green,
+                                                        AppColors.green
+                                                            .withOpacity(0.7)
+                                                      ]
+                                                    : [
+                                                        AppColors.red,
+                                                        AppColors.red
+                                                            .withOpacity(0.7)
+                                                      ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              firstLetter,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 22,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          // اسم العميل
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  custName,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  customer['currency']
+                                                      .toString(),
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          // الرصيد
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: isGive
+                                                  ? AppColors.green
+                                                      .withOpacity(0.12)
+                                                  : AppColors.red
+                                                      .withOpacity(0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              bal.abs().toStringAsFixed(1),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: isGive
+                                                    ? AppColors.green
+                                                    : AppColors.red,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
                             ),
                     ),
+
+                    // ============= شريط الإجمالي السفلي =============
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 16),
-                      color: Colors.indigo.shade50,
+                          vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.primary, AppColors.primaryLight],
+                          begin: Alignment.topRight,
+                          end: Alignment.bottomLeft,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, -2),
+                          ),
+                        ],
+                      ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
-                              Text('له : ${totalGive.toStringAsFixed(1)}',
-                                  style: TextStyle(
-                                      color: Colors.green.shade700,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16)),
-                              Text('عليه : ${totalTake.toStringAsFixed(1)}',
-                                  style: TextStyle(
-                                      color: Colors.red.shade700,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16)),
+                              _buildTotalChip(
+                                  'له', totalGive, Icons.arrow_downward, true),
+                              _buildTotalChip('عليه', totalTake,
+                                  Icons.arrow_upward, false),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'الرصيد : ${netBalance.abs().toStringAsFixed(1)} (${netBalance >= 0 ? "له" : "عليه"})',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: netBalance >= 0
-                                  ? Colors.green.shade800
-                                  : Colors.red.shade800,
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.gold,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'الرصيد: ${netBalance.abs().toStringAsFixed(1)} ${netBalance >= 0 ? "له" : "عليه"}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
                         ],
@@ -626,11 +895,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     int.parse(categories[activeIndex]['id'].toString());
                 _showAddCustomerDialog(context, activeCategoryId);
               },
-              child: const Icon(Icons.add),
+              child: const Icon(Icons.add, size: 30),
             ),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildTotalChip(
+      String label, double amount, IconData icon, bool isGreen) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon,
+            color: isGreen ? Colors.greenAccent : Colors.redAccent, size: 20),
+        const SizedBox(width: 6),
+        Text(
+          '$label: ${amount.toStringAsFixed(1)}',
+          style: TextStyle(
+            color: isGreen ? Colors.greenAccent : Colors.redAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ],
     );
   }
 
@@ -639,30 +928,58 @@ class _HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 15),
               ListTile(
-                leading: const Icon(Icons.edit, color: Colors.blue),
-                title: const Text('تعديل الحساب'),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.edit, color: AppColors.primary),
+                ),
+                title: const Text('تعديل الحساب',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showEditCustomerDialog(context, customer);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('حذف الحساب'),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.delete, color: AppColors.red),
+                ),
+                title: const Text('حذف الحساب',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: AppColors.red)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _confirmDeleteCustomer(context, provider,
                       int.parse(customer['id'].toString()));
                 },
               ),
+              const SizedBox(height: 10),
             ],
           ),
         );
@@ -683,7 +1000,15 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('تعديل الحساب'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.edit, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('تعديل الحساب'),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -692,6 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: nameCtrl,
                     decoration:
                         const InputDecoration(labelText: 'اسم الحساب/العميل')),
+                const SizedBox(height: 10),
                 TextField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
@@ -715,6 +1041,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       setDialogState(() => selectedCurrency = val);
                   },
                 ),
+                const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
                   value: provider.categories.any(
                           (c) => int.parse(c['id'].toString()) == selectedCat)
@@ -738,8 +1065,12 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء')),
+                child: const Text('إلغاء',
+                    style: TextStyle(color: Colors.grey))),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
               onPressed: () {
                 if (nameCtrl.text.trim().isNotEmpty) {
                   provider.updateCustomer(
@@ -765,14 +1096,22 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('تأكيد الحذف'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: AppColors.red),
+            SizedBox(width: 8),
+            Text('تأكيد الحذف'),
+          ],
+        ),
         content: const Text('هل أنت متأكد من عملية الحذف؟'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () {
               provider.deleteCustomer(id);
               Navigator.pop(ctx);
@@ -797,7 +1136,15 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('إضافة حساب جديد'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.person_add, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('إضافة حساب جديد'),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -806,6 +1153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: nameCtrl,
                     decoration:
                         const InputDecoration(labelText: 'اسم الحساب/العميل')),
+                const SizedBox(height: 10),
                 TextField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
@@ -824,6 +1172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       setDialogState(() => selectedCurrency = val);
                   },
                 ),
+                const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
                   value: selectedCat,
                   decoration: const InputDecoration(labelText: 'التصنيف'),
@@ -842,8 +1191,12 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء')),
+                child: const Text('إلغاء',
+                    style: TextStyle(color: Colors.grey))),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
               onPressed: () {
                 if (nameCtrl.text.trim().isNotEmpty) {
                   provider.addCustomer(
@@ -883,23 +1236,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         .loadTransactions(int.parse(widget.customer['id'].toString())));
   }
 
-  // ✅ دالة تنسيق التاريخ والوقت (بدون أصفار، مع ص/م)
   Map<String, String> _formatDateTime(String rawDateTime) {
     try {
       DateTime dt = DateTime.parse(rawDateTime);
-      
-      // التاريخ بدون أصفار بادئة
       String dateStr = "${dt.year}-${dt.month}-${dt.day}";
-      
-      // الوقت بنظام 12 ساعة
       int hour = dt.hour;
       String period = hour >= 12 ? 'م' : 'ص';
       hour = hour % 12;
       if (hour == 0) hour = 12;
-      
       String timeStr =
           "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
-      
       return {'date': dateStr, 'time': timeStr};
     } catch (e) {
       List<String> parts = rawDateTime.split(' ');
@@ -915,24 +1261,51 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 15),
               ListTile(
-                leading: const Icon(Icons.edit, color: Colors.blue),
-                title: const Text('تعديل العملية'),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.edit, color: AppColors.primary),
+                ),
+                title: const Text('تعديل العملية',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showEditTransactionDialog(context, tx);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('حذف العملية'),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.delete, color: AppColors.red),
+                ),
+                title: const Text('حذف العملية',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: AppColors.red)),
                 onTap: () {
                   Navigator.pop(ctx);
                   provider.deleteTransaction(
@@ -941,6 +1314,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   );
                 },
               ),
+              const SizedBox(height: 10),
             ],
           ),
         );
@@ -960,7 +1334,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('تعديل العملية'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.edit_note, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('تعديل العملية'),
+            ],
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -968,6 +1350,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   controller: amountCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'المبلغ')),
+              const SizedBox(height: 10),
               TextField(
                   controller: detailsCtrl,
                   decoration:
@@ -989,8 +1372,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء')),
+                child: const Text('إلغاء',
+                    style: TextStyle(color: Colors.grey))),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
               onPressed: () {
                 final amount = double.tryParse(amountCtrl.text);
                 if (amount != null) {
@@ -1058,12 +1445,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: const Icon(Icons.picture_as_pdf, color: AppColors.gold),
             onPressed: () => _exportToPdf(
                 processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
-            icon: const Icon(Icons.send),
+            icon: const Icon(Icons.send, color: AppColors.gold),
             onPressed: () => _sendWhatsApp(
                 widget.customer['phone']?.toString(), finalBalance),
           )
@@ -1073,17 +1460,36 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         children: [
           Expanded(
             child: displayTransactions.isEmpty
-                ? const Center(child: Text('لا توجد عمليات مسجلة'))
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.receipt_long,
+                            size: 80, color: Colors.grey.shade300),
+                        const SizedBox(height: 15),
+                        Text('لا توجد عمليات مسجلة',
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 15)),
+                      ],
+                    ),
+                  )
                 : Column(
                     children: [
+                      // ============= رأس الجدول =============
                       Container(
-                        color: Colors.lightBlue.shade600,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppColors.primary, AppColors.primaryLight],
+                            begin: Alignment.topRight,
+                            end: Alignment.bottomLeft,
+                          ),
+                        ),
                         padding: const EdgeInsets.symmetric(
-                            vertical: 10, horizontal: 4),
+                            vertical: 12, horizontal: 4),
                         child: const Row(
                           children: [
                             Expanded(
-                                flex: 2,
+                                flex: 3,
                                 child: Text('التاريخ',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
@@ -1117,11 +1523,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           ],
                         ),
                       ),
+
+                      // ============= قائمة العمليات =============
                       Expanded(
                         child: ListView.separated(
                           itemCount: displayTransactions.length,
-                          separatorBuilder: (ctx, index) =>
-                              const Divider(height: 1, color: Colors.grey),
+                          separatorBuilder: (ctx, index) => const Divider(
+                              height: 1, color: Color(0xFFEEEEEE)),
                           itemBuilder: (ctx, i) {
                             final tx = displayTransactions[i];
                             final bool isGive = tx['type'] == 'give';
@@ -1137,11 +1545,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    vertical: 6, horizontal: 4),
+                                    vertical: 8, horizontal: 4),
                                 child: Row(
                                   children: [
                                     Expanded(
-                                      flex: 2,
+                                      flex: 3,
                                       child: Column(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
@@ -1150,18 +1558,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                             dateTimeFormatted['date']!,
                                             textAlign: TextAlign.center,
                                             style: const TextStyle(
-                                                fontSize: 10,
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.bold,
-                                                color: Colors.black87),
+                                                color: AppColors.primary),
                                           ),
                                           if (dateTimeFormatted['time']!
                                               .isNotEmpty)
                                             Text(
                                               dateTimeFormatted['time']!,
                                               textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                  fontSize: 9,
-                                                  color: Colors.grey),
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  color:
+                                                      Colors.grey.shade600),
                                             ),
                                         ],
                                       ),
@@ -1170,13 +1579,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       flex: 2,
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
-                                            vertical: 4, horizontal: 2),
+                                            vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
                                           color: isGive
-                                              ? Colors.green
-                                              : Colors.red.shade400,
+                                              ? AppColors.green
+                                              : AppColors.red,
                                           borderRadius:
-                                              BorderRadius.circular(4),
+                                              BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           amt.toStringAsFixed(0),
@@ -1202,21 +1611,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       flex: 2,
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
-                                            vertical: 4, horizontal: 2),
+                                            vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
                                           color: runBal >= 0
-                                              ? Colors.green.shade100
-                                              : Colors.red.shade200,
+                                              ? AppColors.green
+                                                  .withOpacity(0.12)
+                                              : AppColors.red
+                                                  .withOpacity(0.12),
                                           borderRadius:
-                                              BorderRadius.circular(4),
+                                              BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           runBal.abs().toStringAsFixed(0),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             color: runBal >= 0
-                                                ? Colors.green.shade900
-                                                : Colors.red.shade900,
+                                                ? AppColors.green
+                                                : AppColors.red,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -1233,53 +1644,78 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
+
+          // ============= شريط الإجماليات السفلي =============
           Container(
-            padding:
-                const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            color: Colors.grey.shade200,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, AppColors.primaryLight],
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
             child: Column(
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    Text('له: ${totalGive.toStringAsFixed(1)}',
-                        style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16)),
-                    Text('عليه: ${totalTake.toStringAsFixed(1)}',
-                        style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16)),
+                    _buildSummaryChip('له', totalGive, Icons.arrow_downward,
+                        Colors.greenAccent),
+                    _buildSummaryChip('عليه', totalTake, Icons.arrow_upward,
+                        Colors.redAccent),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'الرصيد النهائي: ${finalBalance.abs().toStringAsFixed(1)} (${finalBalance >= 0 ? "له" : "عليه"})',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: finalBalance >= 0
-                        ? Colors.green.shade800
-                        : Colors.red.shade800,
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'الرصيد النهائي: ${finalBalance.abs().toStringAsFixed(1)} ${finalBalance >= 0 ? "له" : "عليه"}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+
+          // ============= أزرار الإضافة السفلية =============
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(10),
             child: Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        padding: const EdgeInsets.symmetric(vertical: 12)),
+                      backgroundColor: AppColors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 3,
+                    ),
                     icon: const Icon(Icons.add, color: Colors.white),
                     label: const Text('له (قبض)',
-                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold)),
                     onPressed: () =>
                         _showAddTransactionDialog(context, 'give'),
                   ),
@@ -1288,11 +1724,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
-                        padding: const EdgeInsets.symmetric(vertical: 12)),
+                      backgroundColor: AppColors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 3,
+                    ),
                     icon: const Icon(Icons.remove, color: Colors.white),
                     label: const Text('عليه (دفع)',
-                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold)),
                     onPressed: () =>
                         _showAddTransactionDialog(context, 'take'),
                   ),
@@ -1305,32 +1750,70 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  Widget _buildSummaryChip(
+      String label, double amount, IconData icon, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 6),
+        Text(
+          '$label: ${amount.toStringAsFixed(1)}',
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showAddTransactionDialog(BuildContext context, String type) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
+    final bool isGive = type == 'give';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(type == 'give' ? 'إضافة مبلغ (له)' : 'إضافة مبلغ (عليه)'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              isGive ? Icons.arrow_downward : Icons.arrow_upward,
+              color: isGive ? AppColors.green : AppColors.red,
+            ),
+            const SizedBox(width: 8),
+            Text(isGive ? 'إضافة مبلغ (له)' : 'إضافة مبلغ (عليه)'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
                 controller: amountCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'المبلغ')),
+                decoration: const InputDecoration(
+                    labelText: 'المبلغ', prefixIcon: Icon(Icons.attach_money))),
+            const SizedBox(height: 10),
             TextField(
                 controller: detailsCtrl,
-                decoration:
-                    const InputDecoration(labelText: 'التفاصيل / البيان')),
+                decoration: const InputDecoration(
+                    labelText: 'التفاصيل / البيان',
+                    prefixIcon: Icon(Icons.notes))),
           ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isGive ? AppColors.green : AppColors.red,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
               final amount = double.tryParse(amountCtrl.text);
               if (amount != null) {
@@ -1353,7 +1836,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ دالة تصدير PDF المُعدّلة: الجدول يبدأ من اليمين + تنسيق التاريخ والوقت
+  // ====================================================
+  // تصدير PDF - الجدول من اليمين + تنسيق تاريخ جديد
+  // ====================================================
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     try {
@@ -1371,8 +1856,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
       );
 
-      final greenColor = PdfColor.fromHex("#2F855A");
-      final redColor = PdfColor.fromHex("#C53030");
+      // ✅ ألوان الشعار في PDF
+      final primaryColor = PdfColor.fromHex("#1A237E");
+      final goldColor = PdfColor.fromHex("#FFB300");
+      final greenColor = PdfColor.fromHex("#2E7D32");
+      final redColor = PdfColor.fromHex("#C62828");
 
       pdf.addPage(
         pw.Page(
@@ -1382,11 +1870,37 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
+                // شريط علوي ملون
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('دفتر المحاسب الشامل',
+                          style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 12,
+                              color: PdfColors.white)),
+                      pw.Text('كشف حساب',
+                          style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 14,
+                              color: goldColor)),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 10),
                 pw.Center(
                   child: pw.Text('كشف حساب: ${widget.customer['name']}',
-                      style: pw.TextStyle(font: fontBold, fontSize: 18)),
+                      style: pw.TextStyle(
+                          font: fontBold, fontSize: 18, color: primaryColor)),
                 ),
                 pw.SizedBox(height: 5),
+                pw.Divider(color: goldColor, thickness: 2),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
@@ -1398,6 +1912,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ],
                 ),
                 pw.SizedBox(height: 10),
+
+                // ✅ الجدول يبدأ من اليمين
                 pw.TableHelper.fromTextArray(
                   context: context,
                   border:
@@ -1407,8 +1923,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       fontSize: 10,
                       color: PdfColors.white),
                   cellStyle: pw.TextStyle(font: font, fontSize: 9),
-                  headerDecoration:
-                      const pw.BoxDecoration(color: PdfColors.indigo700),
+                  headerDecoration: pw.BoxDecoration(color: primaryColor),
                   cellAlignments: {
                     0: pw.Alignment.center,
                     1: pw.Alignment.center,
@@ -1435,7 +1950,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     double amt = (tx['amount'] as num).toDouble();
                     double runBal = tx['running_balance'];
 
-                    // ✅ تنسيق التاريخ والوقت
                     String rawDate = tx['date'].toString();
                     String formattedDate = rawDate;
                     String formattedTime = '';
@@ -1443,12 +1957,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     try {
                       DateTime dt = DateTime.parse(rawDate);
                       formattedDate = "${dt.year}-${dt.month}-${dt.day}";
-
                       int hour = dt.hour;
                       String period = hour >= 12 ? 'م' : 'ص';
                       hour = hour % 12;
                       if (hour == 0) hour = 12;
-
                       formattedTime =
                           "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
                     } catch (_) {}
@@ -1480,8 +1992,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         crossAxisAlignment: pw.CrossAxisAlignment.center,
                         children: [
                           pw.Text(formattedDate,
-                              style:
-                                  pw.TextStyle(font: font, fontSize: 9)),
+                              style: pw.TextStyle(
+                                  font: fontBold,
+                                  fontSize: 9,
+                                  color: primaryColor)),
                           if (formattedTime.isNotEmpty)
                             pw.Text(formattedTime,
                                 style: pw.TextStyle(
@@ -1494,11 +2008,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   }).toList(),
                 ),
                 pw.SizedBox(height: 15),
+
+                // شريط الإجماليات السفلي
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(10),
+                  padding: const pw.EdgeInsets.all(12),
                   decoration: pw.BoxDecoration(
-                      border: pw.Border.all(
-                          width: 0.5, color: PdfColors.grey500)),
+                    color: primaryColor,
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                     children: [
@@ -1506,29 +2023,30 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           style: pw.TextStyle(
                               font: fontBold,
                               fontSize: 11,
-                              color: greenColor)),
+                              color: PdfColors.greenAccent)),
                       pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}',
                           style: pw.TextStyle(
                               font: fontBold,
                               fontSize: 11,
-                              color: redColor)),
+                              color: PdfColors.redAccent)),
                       pw.Text(
-                        'الرصيد النهائي: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                        'الرصيد: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
                         style: pw.TextStyle(
                             font: fontBold,
                             fontSize: 11,
-                            color:
-                                finalBal >= 0 ? greenColor : redColor),
+                            color: goldColor),
                       ),
                     ],
                   ),
                 ),
                 pw.Spacer(),
+                pw.Divider(color: goldColor, thickness: 1),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text('بواسطة دفتر المحاسب الشامل',
-                        style: pw.TextStyle(font: font, fontSize: 9)),
+                        style: pw.TextStyle(
+                            font: font, fontSize: 9, color: primaryColor)),
                     pw.Text(DateTime.now().toString().split(' ')[0],
                         style: pw.TextStyle(font: font, fontSize: 9)),
                   ],
@@ -1546,7 +2064,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       debugPrint('PDF Error: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إنتاج ملف الـ PDF: $e')),
+          SnackBar(
+            content: Text('تعذر إنتاج ملف الـ PDF: $e'),
+            backgroundColor: AppColors.red,
+          ),
         );
       }
     }
@@ -1555,7 +2076,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
     if (rawPhone == null || rawPhone.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب')),
+        const SnackBar(
+            content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
+            backgroundColor: AppColors.red),
       );
       return;
     }
@@ -1575,14 +2098,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('عذراً، تعذر فتح تطبيق واتساب')),
+            const SnackBar(
+                content: Text('عذراً، تعذر فتح تطبيق واتساب'),
+                backgroundColor: AppColors.red),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطأ أثناء تشغيل رابط واتساب')),
+          const SnackBar(
+              content: Text('خطأ أثناء تشغيل رابط واتساب'),
+              backgroundColor: AppColors.red),
         );
       }
     }
@@ -1600,25 +2127,80 @@ class CategoriesScreen extends StatelessWidget {
     final provider = Provider.of<AppAccountProvider>(context);
 
     return Scaffold(
-      appBar:
-          AppBar(title: const Text('إدارة التصنيفات'), centerTitle: true),
-      body: ListView.builder(
-        itemCount: provider.categories.length,
-        itemBuilder: (ctx, i) {
-          final cat = provider.categories[i];
-          return ListTile(
-            title: Text(cat['name'].toString()),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () =>
-                  provider.deleteCategory(int.parse(cat['id'].toString())),
-            ),
-          );
-        },
+      appBar: AppBar(
+        title: const Text('إدارة التصنيفات'),
       ),
+      body: provider.categories.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.category, size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 15),
+                  Text('لا توجد تصنيفات',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 15)),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: provider.categories.length,
+              itemBuilder: (ctx, i) {
+                final cat = provider.categories[i];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.folder,
+                          color: AppColors.primary),
+                    ),
+                    title: Text(cat['name'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: AppColors.red),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            title: const Text('تأكيد الحذف'),
+                            content: const Text(
+                                'هل أنت متأكد من حذف هذا التصنيف؟'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('إلغاء',
+                                      style: TextStyle(color: Colors.grey))),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.red),
+                                onPressed: () {
+                                  provider.deleteCategory(
+                                      int.parse(cat['id'].toString()));
+                                  Navigator.pop(ctx);
+                                },
+                                child: const Text('حذف'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, size: 30),
       ),
     );
   }
@@ -1628,15 +2210,28 @@ class CategoriesScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('إضافة تصنيف جديد'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.create_new_folder, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('إضافة تصنيف جديد'),
+          ],
+        ),
         content: TextField(
             controller: controller,
-            decoration: const InputDecoration(labelText: 'اسم التصنيف')),
+            decoration: const InputDecoration(
+                labelText: 'اسم التصنيف',
+                prefixIcon: Icon(Icons.folder_outlined))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.white),
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
                 Provider.of<AppAccountProvider>(context, listen: false)
@@ -1663,20 +2258,52 @@ class CurrenciesScreen extends StatelessWidget {
     final provider = Provider.of<AppAccountProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('إدارة العملات'), centerTitle: true),
-      body: ListView.builder(
-        itemCount: provider.currencies.length,
-        itemBuilder: (ctx, i) {
-          final curr = provider.currencies[i];
-          return ListTile(
-            title: Text(curr['name'].toString()),
-            subtitle: Text('الرمز: ${curr['symbol']}'),
-          );
-        },
+      appBar: AppBar(
+        title: const Text('إدارة العملات'),
       ),
+      body: provider.currencies.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.attach_money,
+                      size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 15),
+                  Text('لا توجد عملات',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 15)),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: provider.currencies.length,
+              itemBuilder: (ctx, i) {
+                final curr = provider.currencies[i];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.gold.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.attach_money,
+                          color: AppColors.goldDark),
+                    ),
+                    title: Text(curr['name'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('الرمز: ${curr['symbol']}',
+                        style: TextStyle(color: Colors.grey.shade600)),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, size: 30),
       ),
     );
   }
@@ -1688,24 +2315,39 @@ class CurrenciesScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('إضافة عملة جديدة'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.monetization_on, color: AppColors.goldDark),
+            SizedBox(width: 8),
+            Text('إضافة عملة جديدة'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
                 controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'اسم العملة')),
+                decoration: const InputDecoration(
+                    labelText: 'اسم العملة',
+                    prefixIcon: Icon(Icons.text_fields))),
+            const SizedBox(height: 10),
             TextField(
                 controller: symbolCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'رمز العملة (مثل: ر.ي)')),
+                    labelText: 'رمز العملة (مثل: ر.ي)',
+                    prefixIcon: Icon(Icons.currency_exchange))),
           ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.white),
             onPressed: () {
               if (nameCtrl.text.trim().isNotEmpty &&
                   symbolCtrl.text.trim().isNotEmpty) {
