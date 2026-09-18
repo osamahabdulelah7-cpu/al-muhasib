@@ -883,19 +883,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         .loadTransactions(int.parse(widget.customer['id'].toString())));
   }
 
+  // ✅ دالة تنسيق التاريخ والوقت (بدون أصفار، مع ص/م)
   Map<String, String> _formatDateTime(String rawDateTime) {
     try {
       DateTime dt = DateTime.parse(rawDateTime);
-      String dateStr =
-          "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
-
+      
+      // التاريخ بدون أصفار بادئة
+      String dateStr = "${dt.year}-${dt.month}-${dt.day}";
+      
+      // الوقت بنظام 12 ساعة
       int hour = dt.hour;
       String period = hour >= 12 ? 'م' : 'ص';
       hour = hour % 12;
       if (hour == 0) hour = 12;
-
+      
       String timeStr =
           "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
+      
       return {'date': dateStr, 'time': timeStr};
     } catch (e) {
       List<String> parts = rawDateTime.split(' ');
@@ -1349,6 +1353,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ✅ دالة تصدير PDF المُعدّلة: الجدول يبدأ من اليمين + تنسيق التاريخ والوقت
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     try {
@@ -1404,38 +1409,86 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   cellStyle: pw.TextStyle(font: font, fontSize: 9),
                   headerDecoration:
                       const pw.BoxDecoration(color: PdfColors.indigo700),
+                  cellAlignments: {
+                    0: pw.Alignment.center,
+                    1: pw.Alignment.center,
+                    2: pw.Alignment.center,
+                    3: pw.Alignment.center,
+                    4: pw.Alignment.center,
+                  },
+                  headerAlignments: {
+                    0: pw.Alignment.center,
+                    1: pw.Alignment.center,
+                    2: pw.Alignment.center,
+                    3: pw.Alignment.center,
+                    4: pw.Alignment.center,
+                  },
                   headers: [
-                    'التاريخ',
-                    'التفاصيل',
-                    'عليه',
+                    'الرصيد التراكمي',
                     'له',
-                    'الرصيد التراكمي'
+                    'عليه',
+                    'التفاصيل',
+                    'التاريخ',
                   ],
                   data: txs.map((tx) {
                     bool isGive = tx['type'] == 'give';
                     double amt = (tx['amount'] as num).toDouble();
                     double runBal = tx['running_balance'];
 
+                    // ✅ تنسيق التاريخ والوقت
+                    String rawDate = tx['date'].toString();
+                    String formattedDate = rawDate;
+                    String formattedTime = '';
+
+                    try {
+                      DateTime dt = DateTime.parse(rawDate);
+                      formattedDate = "${dt.year}-${dt.month}-${dt.day}";
+
+                      int hour = dt.hour;
+                      String period = hour >= 12 ? 'م' : 'ص';
+                      hour = hour % 12;
+                      if (hour == 0) hour = 12;
+
+                      formattedTime =
+                          "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
+                    } catch (_) {}
+
                     return [
-                      tx['date'].toString(),
-                      tx['details'].toString(),
-                      isGive
-                          ? pw.Text('-',
-                              style: pw.TextStyle(font: font))
-                          : pw.Text(amt.toStringAsFixed(1),
-                              style: pw.TextStyle(
-                                  font: fontBold, color: redColor)),
+                      pw.Text(
+                        '${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
+                        style: pw.TextStyle(
+                            font: fontBold,
+                            color: runBal >= 0 ? greenColor : redColor),
+                      ),
                       isGive
                           ? pw.Text(amt.toStringAsFixed(1),
                               style: pw.TextStyle(
                                   font: fontBold, color: greenColor))
                           : pw.Text('-',
                               style: pw.TextStyle(font: font)),
+                      isGive
+                          ? pw.Text('-',
+                              style: pw.TextStyle(font: font))
+                          : pw.Text(amt.toStringAsFixed(1),
+                              style: pw.TextStyle(
+                                  font: fontBold, color: redColor)),
                       pw.Text(
-                        '${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
-                        style: pw.TextStyle(
-                            font: fontBold,
-                            color: runBal >= 0 ? greenColor : redColor),
+                        tx['details'].toString(),
+                        style: pw.TextStyle(font: font),
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Text(formattedDate,
+                              style:
+                                  pw.TextStyle(font: font, fontSize: 9)),
+                          if (formattedTime.isNotEmpty)
+                            pw.Text(formattedTime,
+                                style: pw.TextStyle(
+                                    font: font,
+                                    fontSize: 8,
+                                    color: PdfColors.grey700)),
+                        ],
                       ),
                     ];
                   }).toList(),
