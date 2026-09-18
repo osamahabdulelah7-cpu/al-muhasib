@@ -318,9 +318,15 @@ class AppAccountProvider extends ChangeNotifier {
   }
 
   // ====================================================
-  // استيراد من Excel
+  // استيراد من Excel (مُحسَّن)
   // ====================================================
   Future<Map<String, dynamic>> importFromExcel(File excelFile) async {
+    // التحقق من الصيغة
+    final fileName = excelFile.path.toLowerCase();
+    if (fileName.endsWith('.xls')) {
+      throw Exception('صيغة .xls غير مدعومة. يرجى حفظ الملف بصيغة .xlsx');
+    }
+
     final bytes = excelFile.readAsBytesSync();
     final excel = excel_lib.Excel.decodeBytes(bytes);
 
@@ -335,43 +341,33 @@ class AppAccountProvider extends ChangeNotifier {
     for (var tableName in excel.tables.keys) {
       final sheet = excel.tables[tableName]!;
 
-      // === 1. البحث عن اسم الحساب والتصنيف من العنوان ===
-      // نبحث في الصفوف الأولى عن جملة تحتوي على "كشف حساب"
+      debugPrint('📄 قراءة ورقة: $tableName');
+      debugPrint('📊 إجمالي الصفوف: ${sheet.maxRows}');
+
+      // === 1. البحث عن اسم الحساب ===
       for (int i = 0; i < sheet.maxRows && i < 5; i++) {
         final row = sheet.rows[i];
         for (var cell in row) {
           final cellText = cell?.value?.toString() ?? '';
           if (cellText.contains('كشف حساب')) {
-            // استخراج الاسم بعد كلمة "حساب"
             final parts = cellText.split('حساب');
             if (parts.length > 1) {
               String extracted = parts[1].trim();
-              // إزالة "-" في البداية إذا وجدت
               if (extracted.startsWith('-')) {
                 extracted = extracted.substring(1).trim();
               }
-              // البحث عن كلمة "الضبي" مثلاً - نأخذ الجزء قبل آخر مسافة
               accountName = extracted;
             }
-          }
-          // البحث عن التصنيف
-          if (cellText.contains('عملاء') ||
-              cellText.contains('موردون') ||
-              cellText.contains('عام')) {
-            if (cellText.contains('عملاء')) categoryName = 'عملاء';
-            else if (cellText.contains('موردون')) categoryName = 'موردون';
-            else if (cellText.contains('عام')) categoryName = 'عام';
           }
         }
       }
 
-      // === 2. البحث عن صف العناوين (التاريخ | التفاصيل | عليه | له | الرصيد) ===
+      // === 2. البحث عن صف العناوين ===
       int headerRowIndex = -1;
       int colDate = -1;
       int colDetails = -1;
-      int colTake = -1; // عليه
-      int colGive = -1; // له
-      int colBalance = -1;
+      int colTake = -1;
+      int colGive = -1;
 
       for (int i = 0; i < sheet.maxRows && i < 15; i++) {
         final row = sheet.rows[i];
@@ -390,9 +386,6 @@ class AppAccountProvider extends ChangeNotifier {
           } else if (cellText == 'له') {
             colGive = j;
             foundHeaders++;
-          } else if (cellText == 'الرصيد') {
-            colBalance = j;
-            foundHeaders++;
           }
         }
         if (foundHeaders >= 3) {
@@ -401,7 +394,18 @@ class AppAccountProvider extends ChangeNotifier {
         }
       }
 
-      // === 3. البحث عن التصنيف أو إنشاؤه ===
+      debugPrint('📍 صف العناوين: $headerRowIndex');
+      debugPrint('📅 عمود التاريخ: $colDate');
+      debugPrint('📝 عمود التفاصيل: $colDetails');
+      debugPrint('⬆️ عمود عليه: $colTake');
+      debugPrint('⬇️ عمود له: $colGive');
+
+      if (headerRowIndex == -1) {
+        debugPrint('❌ لم يتم العثور على صف العناوين!');
+        continue;
+      }
+
+      // === 3. التصنيف ===
       int categoryId;
       final existingCat = await db.query('categories',
           where: 'name = ?', whereArgs: [categoryName]);
@@ -411,13 +415,11 @@ class AppAccountProvider extends ChangeNotifier {
         categoryId = int.parse(existingCat.first['id'].toString());
       }
 
-      // === 4. إنشاء العميل إذا لم يوجد ===
-      // إذا لم نعثر على اسم، نستخدم اسم الجدول
+      // === 4. الحساب ===
       if (accountName == null || accountName.isEmpty) {
         accountName = 'حساب ${DateTime.now().millisecondsSinceEpoch}';
       }
 
-      // البحث بالاسم
       int customerId;
       final existingCust = await db.query('customers',
           where: 'name = ?', whereArgs: [accountName]);
@@ -433,16 +435,25 @@ class AppAccountProvider extends ChangeNotifier {
         customerId = int.parse(existingCust.first['id'].toString());
       }
 
-      // === 5. قراءة الصفوف وإضافة المعاملات ===
-      if (headerRowIndex == -1) {
-        // لم نجد صف العناوين، نتخطى
-        continue;
-      }
-
+      // === 5. قراءة جميع الصفوف ===
       for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
         try {
           final row = sheet.rows[i];
           if (row.isEmpty) continue;
+
+          // قراءة التفاصيل
+          String checkDetails = '';
+          if (colDetails != -1 && colDetails < row.length) {
+            checkDetails = row[colDetails]?.value?.toString().trim() ?? '';
+          }
+
+          // تجاهل صفوف الإجماليات
+          if (checkDetails.contains('إجمالي') ||
+              checkDetails.contains('الرصيد الإجمالي') ||
+              checkDetails.contains('إجمالي العمليات')) {
+            debugPrint('⚠️ تخطي صف الإجمالي: $checkDetails');
+            continue;
+          }
 
           // قراءة التاريخ
           String dateStr = '';
@@ -450,7 +461,6 @@ class AppAccountProvider extends ChangeNotifier {
             final dateCell = row[colDate]?.value;
             if (dateCell != null) {
               if (dateCell is excel_lib.DateCellValue) {
-                // خلية تاريخ حقيقية
                 DateTime dt = DateTime(
                   dateCell.year,
                   dateCell.month,
@@ -465,13 +475,7 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // قراءة التفاصيل
-          String details = '';
-          if (colDetails != -1 && colDetails < row.length) {
-            details = row[colDetails]?.value?.toString().trim() ?? '';
-          }
-
-          // قراءة المبلغ "عليه" و "له"
+          // قراءة المبالغ
           double takeAmount = 0;
           double giveAmount = 0;
 
@@ -482,7 +486,8 @@ class AppAccountProvider extends ChangeNotifier {
             } else if (v is excel_lib.DoubleCellValue) {
               takeAmount = v.value;
             } else if (v != null) {
-              takeAmount = double.tryParse(v.toString()) ?? 0;
+              String s = v.toString().replaceAll(',', '').trim();
+              takeAmount = double.tryParse(s) ?? 0;
             }
           }
 
@@ -493,16 +498,17 @@ class AppAccountProvider extends ChangeNotifier {
             } else if (v is excel_lib.DoubleCellValue) {
               giveAmount = v.value;
             } else if (v != null) {
-              giveAmount = double.tryParse(v.toString()) ?? 0;
+              String s = v.toString().replaceAll(',', '').trim();
+              giveAmount = double.tryParse(s) ?? 0;
             }
           }
 
-          // تجاهل الصفوف التي بلا مبلغ
+          // تخطي الصفوف التي بلا مبلغ
           if (takeAmount == 0 && giveAmount == 0) {
             continue;
           }
 
-          // تحديد النوع والمبلغ
+          // تحديد النوع
           double amount;
           String type;
           if (giveAmount > 0) {
@@ -513,13 +519,11 @@ class AppAccountProvider extends ChangeNotifier {
             type = 'take';
           }
 
-          // إذا لم يوجد تاريخ، نستخدم تاريخ اليوم
+          // التاريخ
           if (dateStr.isEmpty) {
             dateStr = DateTime.now().toString().split('.')[0];
           } else {
-            // تحويل التاريخ من شكل 2026-05-06 إلى شكل مقبول
             try {
-              // محاولة تحويل تنسيقات مختلفة
               dateStr = _normalizeDate(dateStr);
             } catch (_) {
               dateStr = DateTime.now().toString().split('.')[0];
@@ -531,18 +535,25 @@ class AppAccountProvider extends ChangeNotifier {
             'customer_id': customerId,
             'amount': amount,
             'type': type,
-            'details': details,
+            'details': checkDetails,
             'date': dateStr,
           });
           transactionsCreated++;
+
+          // طباعة كل 50 معاملة
+          if (transactionsCreated % 50 == 0) {
+            debugPrint('📝 تم استيراد $transactionsCreated معاملة...');
+          }
         } catch (e) {
-          debugPrint('خطأ في الصف $i: $e');
+          debugPrint('❌ خطأ في الصف $i: $e');
           rowsSkipped++;
         }
       }
     }
 
     await loadInitialData();
+
+    debugPrint('✅ تم الاستيراد: $transactionsCreated معاملة');
 
     return {
       'customers': customersCreated,
@@ -671,6 +682,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String searchQuery = '';
+  bool _isImporting = false;
 
   void _showBackupDialog(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
@@ -732,27 +744,35 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'xls'],
+        allowedExtensions: ['xlsx'],
       );
 
       if (result == null || result.files.single.path == null) return;
 
       // إظهار شاشة تحميل
+      setState(() => _isImporting = true);
       if (context.mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (ctx) => const Center(
-            child: Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: AppColors.gold),
-                    SizedBox(height: 15),
-                    Text('جاري الاستيراد...'),
-                  ],
+          builder: (ctx) => WillPopScope(
+            onWillPop: () async => false,
+            child: const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: AppColors.gold),
+                      SizedBox(height: 15),
+                      Text('جاري الاستيراد...'),
+                      SizedBox(height: 5),
+                      Text('قد يستغرق دقيقة للملفات الكبيرة',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -763,9 +783,11 @@ class _HomeScreenState extends State<HomeScreen> {
       File excelFile = File(result.files.single.path!);
       final stats = await provider.importFromExcel(excelFile);
 
-      if (context.mounted) Navigator.pop(context); // إغلاق التحميل
+      setState(() => _isImporting = false);
 
       if (context.mounted) {
+        Navigator.pop(context); // إغلاق شاشة التحميل
+
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -784,12 +806,18 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 if ((stats['accountName'] as String).isNotEmpty) ...[
                   Text('📁 الحساب: ${stats['accountName']}',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
                   const Divider(),
                 ],
-                Text('✅ عملاء جدد: ${stats['customers']}'),
+                Text('✅ عملاء جدد: ${stats['customers']}',
+                    style: const TextStyle(fontSize: 15)),
                 const SizedBox(height: 5),
-                Text('✅ معاملات: ${stats['transactions']}'),
+                Text('✅ معاملات: ${stats['transactions']}',
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.green)),
                 if ((stats['skipped'] as int) > 0) ...[
                   const SizedBox(height: 5),
                   Text('⚠️ تم تجاهل: ${stats['skipped']} صف',
@@ -809,12 +837,17 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e) {
+      setState(() => _isImporting = false);
       if (context.mounted) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
+        // إغلاق شاشة التحميل إن كانت مفتوحة
+        Navigator.of(context, rootNavigator: true).popUntil((route) {
+          return route.settings.name != null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('خطأ: $e'),
             backgroundColor: AppColors.red,
+            duration: const Duration(seconds: 8),
           ),
         );
       }
