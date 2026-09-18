@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart0:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -1147,18 +1147,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive, double totalTake, double finalBal) async {
     try {
-      pw.Font font;
-      pw.Font fontBold;
-
-      try {
-        final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
-        final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
-        font = pw.Font.ttf(fontData);
-        fontBold = pw.Font.ttf(fontBoldData);
-      } catch (_) {
-        font = await PdfGoogleFonts.cairoRegular();
-        fontBold = await PdfGoogleFonts.cairoBold();
-      }
+      final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontBoldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+      final font = pw.Font.ttf(fontData);
+      final fontBold = pw.Font.ttf(fontBoldData);
 
       final pdf = pw.Document(
         theme: pw.ThemeData.withFont(
@@ -1176,7 +1168,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           textDirection: pw.TextDirection.rtl,
           build: (pw.Context context) {
             return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              cross: pw.CrossAxisAlignment.start,
               children: [
                 pw.Center(
                   child: pw.Text('كشف حساب: ${widget.customer['name']}', style: pw.TextStyle(font: fontBold, fontSize: 18)),
@@ -1248,6 +1240,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         onLayout: (PdfPageFormat format) async => pdf.save(),
       );
     } catch (e) {
+      debugPrint("خطأ أثناء تحضير PDF: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر إنتاج ملف الـ PDF: $e')),
