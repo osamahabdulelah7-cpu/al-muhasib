@@ -15,16 +15,20 @@ import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
 
 // ====================================================
-// الألوان الموحدة
+// الألوان المريحة للعين
 // ====================================================
 class AppColors {
-  static const Color primary = Color(0xFF1A237E);
-  static const Color primaryLight = Color(0xFF3949AB);
-  static const Color gold = Color(0xFFFFB300);
-  static const Color goldDark = Color(0xFFF57C00);
+  static const Color primary = Color(0xFF1E3A5F);
+  static const Color primaryLight = Color(0xFF2C5282);
+  static const Color gold = Color(0xFFD4A017);
+  static const Color goldDark = Color(0xFFB8860B);
   static const Color green = Color(0xFF2E7D32);
+  static const Color greenLight = Color(0xFFE8F5E9);
   static const Color red = Color(0xFFC62828);
-  static const Color background = Color(0xFFF5F5F7);
+  static const Color redLight = Color(0xFFFFEBEE);
+  static const Color background = Color(0xFFF8F9FA);
+  static const Color textDark = Color(0xFF1F2937);
+  static const Color textMuted = Color(0xFF6B7280);
 }
 
 void main() async {
@@ -317,11 +321,10 @@ class AppAccountProvider extends ChangeNotifier {
     return false;
   }
 
-  // ====================================================
-  // استيراد من Excel (مُحسَّن)
-  // ====================================================
-  Future<Map<String, dynamic>> importFromExcel(File excelFile) async {
-    // التحقق من الصيغة
+  Future<Map<String, dynamic>> importFromExcel(
+    File excelFile, {
+    int? categoryId,
+  }) async {
     final fileName = excelFile.path.toLowerCase();
     if (fileName.endsWith('.xls')) {
       throw Exception('صيغة .xls غير مدعومة. يرجى حفظ الملف بصيغة .xlsx');
@@ -334,17 +337,30 @@ class AppAccountProvider extends ChangeNotifier {
     int transactionsCreated = 0;
     int rowsSkipped = 0;
     String? accountName;
-    String categoryName = 'عام';
 
     final db = await AppDBHelper.instance.database;
+
+    int finalCategoryId;
+    if (categoryId != null) {
+      final catCheck = await db.query('categories',
+          where: 'id = ?', whereArgs: [categoryId]);
+      if (catCheck.isEmpty) {
+        throw Exception('التصنيف المحدد غير موجود');
+      }
+      finalCategoryId = categoryId;
+    } else {
+      final existingCat = await db.query('categories',
+          where: 'name = ?', whereArgs: ['عام']);
+      if (existingCat.isEmpty) {
+        finalCategoryId = await db.insert('categories', {'name': 'عام'});
+      } else {
+        finalCategoryId = int.parse(existingCat.first['id'].toString());
+      }
+    }
 
     for (var tableName in excel.tables.keys) {
       final sheet = excel.tables[tableName]!;
 
-      debugPrint('📄 قراءة ورقة: $tableName');
-      debugPrint('📊 إجمالي الصفوف: ${sheet.maxRows}');
-
-      // === 1. البحث عن اسم الحساب ===
       for (int i = 0; i < sheet.maxRows && i < 5; i++) {
         final row = sheet.rows[i];
         for (var cell in row) {
@@ -362,7 +378,6 @@ class AppAccountProvider extends ChangeNotifier {
         }
       }
 
-      // === 2. البحث عن صف العناوين ===
       int headerRowIndex = -1;
       int colDate = -1;
       int colDetails = -1;
@@ -394,28 +409,8 @@ class AppAccountProvider extends ChangeNotifier {
         }
       }
 
-      debugPrint('📍 صف العناوين: $headerRowIndex');
-      debugPrint('📅 عمود التاريخ: $colDate');
-      debugPrint('📝 عمود التفاصيل: $colDetails');
-      debugPrint('⬆️ عمود عليه: $colTake');
-      debugPrint('⬇️ عمود له: $colGive');
+      if (headerRowIndex == -1) continue;
 
-      if (headerRowIndex == -1) {
-        debugPrint('❌ لم يتم العثور على صف العناوين!');
-        continue;
-      }
-
-      // === 3. التصنيف ===
-      int categoryId;
-      final existingCat = await db.query('categories',
-          where: 'name = ?', whereArgs: [categoryName]);
-      if (existingCat.isEmpty) {
-        categoryId = await db.insert('categories', {'name': categoryName});
-      } else {
-        categoryId = int.parse(existingCat.first['id'].toString());
-      }
-
-      // === 4. الحساب ===
       if (accountName == null || accountName.isEmpty) {
         accountName = 'حساب ${DateTime.now().millisecondsSinceEpoch}';
       }
@@ -428,34 +423,35 @@ class AppAccountProvider extends ChangeNotifier {
           'name': accountName,
           'phone': '',
           'currency': 'ريال يمني',
-          'category_id': categoryId,
+          'category_id': finalCategoryId,
         });
         customersCreated++;
       } else {
         customerId = int.parse(existingCust.first['id'].toString());
+        await db.update(
+          'customers',
+          {'category_id': finalCategoryId},
+          where: 'id = ?',
+          whereArgs: [customerId],
+        );
       }
 
-      // === 5. قراءة جميع الصفوف ===
       for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
         try {
           final row = sheet.rows[i];
           if (row.isEmpty) continue;
 
-          // قراءة التفاصيل
           String checkDetails = '';
           if (colDetails != -1 && colDetails < row.length) {
             checkDetails = row[colDetails]?.value?.toString().trim() ?? '';
           }
 
-          // تجاهل صفوف الإجماليات
           if (checkDetails.contains('إجمالي') ||
               checkDetails.contains('الرصيد الإجمالي') ||
               checkDetails.contains('إجمالي العمليات')) {
-            debugPrint('⚠️ تخطي صف الإجمالي: $checkDetails');
             continue;
           }
 
-          // قراءة التاريخ
           String dateStr = '';
           if (colDate != -1 && colDate < row.length) {
             final dateCell = row[colDate]?.value;
@@ -475,7 +471,6 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // قراءة المبالغ
           double takeAmount = 0;
           double giveAmount = 0;
 
@@ -503,12 +498,8 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // تخطي الصفوف التي بلا مبلغ
-          if (takeAmount == 0 && giveAmount == 0) {
-            continue;
-          }
+          if (takeAmount == 0 && giveAmount == 0) continue;
 
-          // تحديد النوع
           double amount;
           String type;
           if (giveAmount > 0) {
@@ -519,7 +510,6 @@ class AppAccountProvider extends ChangeNotifier {
             type = 'take';
           }
 
-          // التاريخ
           if (dateStr.isEmpty) {
             dateStr = DateTime.now().toString().split('.')[0];
           } else {
@@ -530,7 +520,6 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // إضافة المعاملة
           await db.insert('transactions', {
             'customer_id': customerId,
             'amount': amount,
@@ -539,11 +528,6 @@ class AppAccountProvider extends ChangeNotifier {
             'date': dateStr,
           });
           transactionsCreated++;
-
-          // طباعة كل 50 معاملة
-          if (transactionsCreated % 50 == 0) {
-            debugPrint('📝 تم استيراد $transactionsCreated معاملة...');
-          }
         } catch (e) {
           debugPrint('❌ خطأ في الصف $i: $e');
           rowsSkipped++;
@@ -553,8 +537,6 @@ class AppAccountProvider extends ChangeNotifier {
 
     await loadInitialData();
 
-    debugPrint('✅ تم الاستيراد: $transactionsCreated معاملة');
-
     return {
       'customers': customersCreated,
       'transactions': transactionsCreated,
@@ -563,17 +545,14 @@ class AppAccountProvider extends ChangeNotifier {
     };
   }
 
-  // تحويل التاريخ إلى صيغة موحدة
   String _normalizeDate(String dateStr) {
     dateStr = dateStr.trim();
 
-    // إذا كان بالفعل ISO
     try {
       DateTime dt = DateTime.parse(dateStr);
       return dt.toString().split('.')[0];
     } catch (_) {}
 
-    // محاولة تنسيق YYYY-MM-DD
     final match1 = RegExp(r'(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(dateStr);
     if (match1 != null) {
       final y = match1.group(1)!;
@@ -582,7 +561,6 @@ class AppAccountProvider extends ChangeNotifier {
       return '$y-$m-${d}T00:00:00';
     }
 
-    // محاولة تنسيق DD/MM/YYYY
     final match2 = RegExp(r'(\d{1,2})/(\d{1,2})/(\d{4})').firstMatch(dateStr);
     if (match2 != null) {
       final d = match2.group(1)!.padLeft(2, '0');
@@ -591,7 +569,6 @@ class AppAccountProvider extends ChangeNotifier {
       return '$y-$m-${d}T00:00:00';
     }
 
-    // إرجاع تاريخ اليوم كافتراضي
     return DateTime.now().toString().split('.')[0];
   }
 }
@@ -605,7 +582,7 @@ class AlMuhasibApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'دفتر المحاسب الشامل',
+      title: 'دفتر المحاسب',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar', ''),
       supportedLocales: const [Locale('ar', ''), Locale('en', '')],
@@ -629,7 +606,7 @@ class AlMuhasibApp extends StatelessWidget {
           centerTitle: true,
           titleTextStyle: TextStyle(
             color: Colors.white,
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -658,7 +635,7 @@ class AlMuhasibApp extends StatelessWidget {
         ),
         cardTheme: CardTheme(
           color: Colors.white,
-          elevation: 3,
+          elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -680,9 +657,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   String searchQuery = '';
-  bool _isImporting = false;
+  TabController? _tabController;
 
   void _showBackupDialog(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
@@ -735,11 +713,83 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ====================================================
-  // استيراد من Excel
-  // ====================================================
   Future<void> _importFromExcel(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
+
+    if (provider.categories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد تصنيفات. أضف تصنيفاً أولاً'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
+    int selectedCategoryId =
+        int.parse(provider.categories.first['id'].toString());
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.folder_open, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('اختر التصنيف'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'في أي تصنيف تريد إضافة الحسابات المستوردة؟',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 15),
+              DropdownButtonFormField<int>(
+                value: selectedCategoryId,
+                decoration: const InputDecoration(
+                  labelText: 'التصنيف',
+                  prefixIcon: Icon(Icons.folder),
+                ),
+                items: provider.categories.map((c) {
+                  final int cId = int.parse(c['id'].toString());
+                  return DropdownMenuItem<int>(
+                    value: cId,
+                    child: Text(c['name'].toString()),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null)
+                    setDialogState(() => selectedCategoryId = val);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('متابعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
 
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -749,8 +799,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (result == null || result.files.single.path == null) return;
 
-      // إظهار شاشة تحميل
-      setState(() => _isImporting = true);
       if (context.mounted) {
         showDialog(
           context: context,
@@ -767,10 +815,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       CircularProgressIndicator(color: AppColors.gold),
                       SizedBox(height: 15),
                       Text('جاري الاستيراد...'),
-                      SizedBox(height: 5),
-                      Text('قد يستغرق دقيقة للملفات الكبيرة',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -781,12 +825,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       File excelFile = File(result.files.single.path!);
-      final stats = await provider.importFromExcel(excelFile);
-
-      setState(() => _isImporting = false);
+      final stats = await provider.importFromExcel(
+        excelFile,
+        categoryId: selectedCategoryId,
+      );
 
       if (context.mounted) {
-        Navigator.pop(context); // إغلاق شاشة التحميل
+        Navigator.pop(context);
 
         showDialog(
           context: context,
@@ -837,9 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e) {
-      setState(() => _isImporting = false);
       if (context.mounted) {
-        // إغلاق شاشة التحميل إن كانت مفتوحة
         Navigator.of(context, rootNavigator: true).popUntil((route) {
           return route.settings.name != null;
         });
@@ -862,183 +905,209 @@ class _HomeScreenState extends State<HomeScreen> {
     if (categories.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('دفتر المحاسب الشامل'),
+          title: const Text('دفتر المحاسب'),
         ),
         body: const Center(child: Text('لا توجد تصنيفات مضافة')),
       );
     }
 
-    return DefaultTabController(
-      length: categories.length,
-      child: Builder(
-        builder: (context) {
-          final TabController tabController = DefaultTabController.of(context);
+    // ✅ إنشاء TabController مرة واحدة فقط
+    if (_tabController == null ||
+        _tabController!.length != categories.length) {
+      _tabController?.dispose();
+      _tabController = TabController(
+        length: categories.length,
+        vsync: this,
+      );
+    }
 
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('دفتر المحاسب الشامل'),
-              bottom: TabBar(
-                isScrollable: true,
-                indicatorColor: AppColors.gold,
-                indicatorWeight: 3,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                labelStyle: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 15),
-                tabs: categories
-                    .map((cat) => Tab(text: cat['name'].toString()))
-                    .toList(),
+    return Scaffold(
+      // ✅ AppBar بدون عنوان - فقط القائمة الجانبية
+      appBar: AppBar(
+        title: const SizedBox.shrink(),
+        toolbarHeight: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          indicatorColor: AppColors.gold,
+          indicatorWeight: 3,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          tabs: categories
+              .map((cat) => Tab(text: cat['name'].toString()))
+              .toList(),
+        ),
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.primary, AppColors.primaryLight],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
               ),
-            ),
-            drawer: Drawer(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryLight],
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                      ),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.gold, width: 3),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            border:
-                                Border.all(color: AppColors.gold, width: 3),
-                          ),
-                          child: const Icon(
-                            Icons.account_balance_wallet,
-                            color: AppColors.primary,
-                            size: 40,
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-                        const Text(
-                          'تطبيق المحاسب',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'المهندس : اسامه الاضرعي',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: const [
-                            Icon(Icons.phone,
-                                color: AppColors.gold, size: 16),
-                            SizedBox(width: 6),
-                            Text(
-                              '770638276',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                      ],
+                    child: const Icon(
+                      Icons.account_balance_wallet,
+                      color: AppColors.primary,
+                      size: 40,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.category,
-                          color: AppColors.primary),
+                  const SizedBox(height: 15),
+                  const Text(
+                    'تطبيق المحاسب',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                     ),
-                    title: const Text('إدارة التصنيفات',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const CategoriesScreen())),
                   ),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.gold.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.attach_money,
-                          color: AppColors.goldDark),
-                    ),
-                    title: const Text('إدارة العملات',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const CurrenciesScreen())),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'المهندس : اسامه الاضرعي',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-                  const Divider(height: 20, indent: 20, endIndent: 20),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: const [
+                      Icon(Icons.phone, color: AppColors.gold, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        '770638276',
+                        style:
+                            TextStyle(color: Colors.white70, fontSize: 14),
                       ),
-                      child: const Icon(Icons.upload_file, color: Colors.teal),
-                    ),
-                    title: const Text('استيراد من Excel',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _importFromExcel(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.green.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.cloud_sync,
-                          color: AppColors.green),
-                    ),
-                    title: const Text('النسخ الاحتياطي والاستعادة',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showBackupDialog(context);
-                    },
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    child: const Text(
-                      'دفتر المحاسب الشامل © 2026',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
-            body: AnimatedBuilder(
-              animation: tabController,
-              builder: (context, _) {
-                final activeIndex = tabController.index < categories.length
-                    ? tabController.index
-                    : 0;
-                final currentCatId =
-                    int.parse(categories[activeIndex]['id'].toString());
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.category, color: AppColors.primary),
+              ),
+              title: const Text('إدارة التصنيفات',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CategoriesScreen())),
+            ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.gold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.attach_money,
+                    color: AppColors.goldDark),
+              ),
+              title: const Text('إدارة العملات',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CurrenciesScreen())),
+            ),
+            const Divider(height: 20, indent: 20, endIndent: 20),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.upload_file, color: Colors.teal),
+              ),
+              title: const Text('استيراد من Excel',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () {
+                Navigator.pop(context);
+                _importFromExcel(context);
+              },
+            ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.green.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cloud_sync, color: AppColors.green),
+              ),
+              title: const Text('النسخ الاحتياطي والاستعادة',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () {
+                Navigator.pop(context);
+                _showBackupDialog(context);
+              },
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.all(15),
+              child: const Text(
+                'دفتر المحاسب © 2026',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          // شريط البحث
+          Container(
+            padding: const EdgeInsets.all(12),
+            color: AppColors.primary,
+            child: TextField(
+              style: const TextStyle(color: Colors.white),
+              cursorColor: AppColors.gold,
+              decoration: InputDecoration(
+                hintText: 'بحث عن حساب...',
+                hintStyle: const TextStyle(color: Colors.white70),
+                prefixIcon:
+                    const Icon(Icons.search, color: AppColors.gold),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.15),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              ),
+              onChanged: (val) => setState(() => searchQuery = val),
+            ),
+          ),
+          // ✅ TabBarView للسماح بالسحب بين التصنيفات
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: categories.map((cat) {
+                final int currentCatId =
+                    int.parse(cat['id'].toString());
 
                 final categoryCustomers = provider.customers.where((c) {
                   final int customerCatId =
@@ -1047,7 +1116,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   final String name = (c['name'] ?? '').toString();
                   final String phone = (c['phone'] ?? '').toString();
                   final matchesSearch =
-                      name.contains(searchQuery) || phone.contains(searchQuery);
+                      name.contains(searchQuery) ||
+                          phone.contains(searchQuery);
                   return matchesCategory && matchesSearch;
                 }).toList();
 
@@ -1066,34 +1136,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      color: AppColors.primary,
-                      child: TextField(
-                        style: const TextStyle(color: Colors.white),
-                        cursorColor: AppColors.gold,
-                        decoration: InputDecoration(
-                          hintText: 'بحث عن حساب...',
-                          hintStyle: const TextStyle(color: Colors.white70),
-                          prefixIcon:
-                              const Icon(Icons.search, color: AppColors.gold),
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.15),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 20),
-                        ),
-                        onChanged: (val) => setState(() => searchQuery = val),
-                      ),
-                    ),
                     Expanded(
                       child: categoryCustomers.isEmpty
                           ? Center(
                               child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.center,
                                 children: [
                                   Icon(Icons.inbox,
                                       size: 80,
@@ -1109,14 +1157,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             )
                           : ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8),
                               itemCount: categoryCustomers.length,
                               itemBuilder: (ctx, i) {
                                 final customer = categoryCustomers[i];
-                                final int cId =
-                                    int.parse(customer['id'].toString());
+                                final int cId = int.parse(
+                                    customer['id'].toString());
                                 final String custName =
-                                    (customer['name'] ?? 'حساب').toString();
+                                    (customer['name'] ?? 'حساب')
+                                        .toString();
                                 final String firstLetter =
                                     custName.isNotEmpty ? custName[0] : '?';
                                 final double bal =
@@ -1126,14 +1176,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return Card(
                                   margin: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 5),
+                                  elevation: 1,
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(12),
                                     onTap: () {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => CustomerDetailsScreen(
-                                              customer: customer),
+                                          builder: (_) =>
+                                              CustomerDetailsScreen(
+                                                  customer: customer),
                                         ),
                                       );
                                     },
@@ -1142,89 +1194,52 @@ class _HomeScreenState extends State<HomeScreen> {
                                           context, provider, customer);
                                     },
                                     child: Padding(
-                                      padding: const EdgeInsets.all(12),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 16),
                                       child: Row(
                                         children: [
                                           Container(
-                                            width: 50,
-                                            height: 50,
+                                            width: 45,
+                                            height: 45,
                                             decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: isGive
-                                                    ? [
-                                                        AppColors.green,
-                                                        AppColors.green
-                                                            .withOpacity(0.7)
-                                                      ]
-                                                    : [
-                                                        AppColors.red,
-                                                        AppColors.red
-                                                            .withOpacity(0.7)
-                                                      ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                              ),
+                                              color: isGive
+                                                  ? AppColors.greenLight
+                                                  : AppColors.redLight,
                                               shape: BoxShape.circle,
                                             ),
                                             alignment: Alignment.center,
                                             child: Text(
                                               firstLetter,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 22,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  custName,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  customer['currency']
-                                                      .toString(),
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: isGive
-                                                  ? AppColors.green
-                                                      .withOpacity(0.12)
-                                                  : AppColors.red
-                                                      .withOpacity(0.12),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: Text(
-                                              bal.abs().toStringAsFixed(1),
                                               style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
                                                 color: isGive
                                                     ? AppColors.green
                                                     : AppColors.red,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 20,
                                               ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Text(
+                                              custName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: AppColors.textDark,
+                                              ),
+                                              overflow:
+                                                  TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Text(
+                                            bal.abs().toStringAsFixed(1),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                              color: isGive
+                                                  ? AppColors.green
+                                                  : AppColors.red,
                                             ),
                                           ),
                                         ],
@@ -1235,49 +1250,57 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                             ),
                     ),
+                    // شريط الإجمالي
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 16),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppColors.primary, AppColors.primaryLight],
-                          begin: Alignment.topRight,
-                          end: Alignment.bottomLeft,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, -2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                          vertical: 10, horizontal: 16),
+                      color: AppColors.primary,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
-                              _buildTotalChip(
-                                  'له', totalGive, Icons.arrow_downward, true),
-                              _buildTotalChip('عليه', totalTake,
-                                  Icons.arrow_upward, false),
+                              const Icon(Icons.arrow_upward,
+                                  color: Colors.redAccent, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'عليه: ${totalTake.toStringAsFixed(1)}',
+                                style: const TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.arrow_downward,
+                                  color: Colors.greenAccent, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'له: ${totalGive.toStringAsFixed(1)}',
+                                style: const TextStyle(
+                                  color: Colors.greenAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 8),
+                                horizontal: 12, vertical: 5),
                             decoration: BoxDecoration(
                               color: AppColors.gold,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(15),
                             ),
                             child: Text(
-                              'الرصيد: ${netBalance.abs().toStringAsFixed(1)} ${netBalance >= 0 ? "له" : "عليه"}',
+                              '${netBalance.abs().toStringAsFixed(1)} ${netBalance >= 0 ? "له" : "عليه"}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                                fontSize: 13,
                               ),
                             ),
                           ),
@@ -1286,43 +1309,28 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 );
-              },
+              }).toList(),
             ),
-            floatingActionButton: FloatingActionButton(
-              onPressed: () {
-                final activeIndex = tabController.index < categories.length
-                    ? tabController.index
-                    : 0;
-                final activeCategoryId =
-                    int.parse(categories[activeIndex]['id'].toString());
-                _showAddCustomerDialog(context, activeCategoryId);
-              },
-              child: const Icon(Icons.add, size: 30),
-            ),
-          );
-        },
+          ),
+        ],
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          final activeIndex = _tabController!.index;
+          final activeCategoryId =
+              int.parse(categories[activeIndex]['id'].toString());
+          _showAddCustomerDialog(context, activeCategoryId);
+        },
+        child: const Icon(Icons.add, size: 30),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 
-  Widget _buildTotalChip(
-      String label, double amount, IconData icon, bool isGreen) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon,
-            color: isGreen ? Colors.greenAccent : Colors.redAccent, size: 20),
-        const SizedBox(width: 6),
-        Text(
-          '$label: ${amount.toStringAsFixed(1)}',
-          style: TextStyle(
-            color: isGreen ? Colors.greenAccent : Colors.redAccent,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-        ),
-      ],
-    );
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
   }
 
   void _showCustomerOptionsModal(BuildContext context,
@@ -1878,13 +1886,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 : Column(
                     children: [
                       Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [AppColors.primary, AppColors.primaryLight],
-                            begin: Alignment.topRight,
-                            end: Alignment.bottomLeft,
-                          ),
-                        ),
+                        color: AppColors.primary,
                         padding: const EdgeInsets.symmetric(
                             vertical: 12, horizontal: 4),
                         child: const Row(
@@ -1944,7 +1946,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    vertical: 8, horizontal: 4),
+                                    vertical: 10, horizontal: 4),
+                                color: i.isEven
+                                    ? Colors.white
+                                    : const Color(0xFFF9FAFB),
                                 child: Row(
                                   children: [
                                     Expanded(
@@ -1958,18 +1963,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                             textAlign: TextAlign.center,
                                             style: const TextStyle(
                                                 fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppColors.primary),
+                                                fontWeight: FontWeight.w600,
+                                                color: AppColors.textDark),
                                           ),
                                           if (dateTimeFormatted['time']!
                                               .isNotEmpty)
                                             Text(
                                               dateTimeFormatted['time']!,
                                               textAlign: TextAlign.center,
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                   fontSize: 10,
-                                                  color:
-                                                      Colors.grey.shade600),
+                                                  color: AppColors.textMuted),
                                             ),
                                         ],
                                       ),
@@ -1977,20 +1981,24 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     Expanded(
                                       flex: 2,
                                       child: Container(
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 2),
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
                                           color: isGive
-                                              ? AppColors.green
-                                              : AppColors.red,
+                                              ? AppColors.greenLight
+                                              : AppColors.redLight,
                                           borderRadius:
                                               BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           amt.toStringAsFixed(0),
                                           textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                              color: Colors.white,
+                                          style: TextStyle(
+                                              color: isGive
+                                                  ? AppColors.green
+                                                  : AppColors.red,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 12),
                                         ),
@@ -1998,25 +2006,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     ),
                                     Expanded(
                                       flex: 4,
-                                      child: Text(
-                                        (tx['details'] ?? '').toString(),
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4),
+                                        child: Text(
+                                          (tx['details'] ?? '').toString(),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textDark),
+                                        ),
                                       ),
                                     ),
                                     Expanded(
                                       flex: 2,
                                       child: Container(
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 2),
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
                                           color: runBal >= 0
-                                              ? AppColors.green
-                                                  .withOpacity(0.12)
-                                              : AppColors.red
-                                                  .withOpacity(0.12),
+                                              ? const Color(0xFFF1F8E9)
+                                              : const Color(0xFFFFF3E0),
                                           borderRadius:
                                               BorderRadius.circular(6),
                                         ),
@@ -2044,53 +2056,59 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryLight],
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Column(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            color: AppColors.primary,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildSummaryChip('له', totalGive, Icons.arrow_downward,
-                        Colors.greenAccent),
-                    _buildSummaryChip('عليه', totalTake, Icons.arrow_upward,
-                        Colors.redAccent),
+                    const Icon(Icons.arrow_upward,
+                        color: Colors.redAccent, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      'عليه: ${totalTake.toStringAsFixed(1)}',
+                      style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.arrow_downward,
+                        color: Colors.greenAccent, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      'له: ${totalGive.toStringAsFixed(1)}',
+                      style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14),
+                    ),
+                  ],
+                ),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(15),
                   ),
                   child: Text(
-                    'الرصيد النهائي: ${finalBalance.abs().toStringAsFixed(1)} ${finalBalance >= 0 ? "له" : "عليه"}',
+                    '${finalBalance.abs().toStringAsFixed(1)} ${finalBalance >= 0 ? "له" : "عليه"}',
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13),
                   ),
                 ),
               ],
             ),
           ),
-          Padding(
+          Container(
+            color: Colors.white,
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
@@ -2103,7 +2121,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      elevation: 3,
+                      elevation: 0,
                     ),
                     icon: const Icon(Icons.add, color: Colors.white),
                     label: const Text('له (قبض)',
@@ -2125,7 +2143,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      elevation: 3,
+                      elevation: 0,
                     ),
                     icon: const Icon(Icons.remove, color: Colors.white),
                     label: const Text('عليه (دفع)',
@@ -2142,25 +2160,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           )
         ],
       ),
-    );
-  }
-
-  Widget _buildSummaryChip(
-      String label, double amount, IconData icon, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 6),
-        Text(
-          '$label: ${amount.toStringAsFixed(1)}',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-        ),
-      ],
     );
   }
 
@@ -2231,6 +2230,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ✅ PDF - التصميم القديم بنفس الترتيب، لكن ألوان أوضح وأرقام بدون صناديق ملونة
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     try {
@@ -2245,191 +2245,203 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         theme: pw.ThemeData.withFont(base: font, bold: fontBold),
       );
 
-      final primaryColor = PdfColor.fromHex("#1A237E");
-      final goldColor = PdfColor.fromHex("#FFB300");
-      final greenColor = PdfColor.fromHex("#2E7D32");
-      final redColor = PdfColor.fromHex("#C62828");
+      // ✅ ألوان أوضح فقط - بدون صناديق ملونة
+      final primaryColor = PdfColor.fromHex("#1E3A5F");
+      final greenText = PdfColor.fromHex("#1B5E20"); // أخضر داكن واضح
+      final redText = PdfColor.fromHex("#B71C1C"); // أحمر داكن واضح
+      final textDark = PdfColor.fromHex("#000000"); // نص أسود للوضوح
 
       pdf.addPage(
-        pw.Page(
+        pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           textDirection: pw.TextDirection.rtl,
-          build: (pw.Context context) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: primaryColor,
-                    borderRadius: pw.BorderRadius.circular(8),
-                  ),
-                  child: pw.Row(
+          margin: const pw.EdgeInsets.all(20),
+          header: (pw.Context context) {
+            return pw.Container(
+              padding: const pw.EdgeInsets.only(bottom: 5),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text('دفتر المحاسب الشامل',
-                          style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 12,
-                              color: PdfColors.white)),
                       pw.Text('كشف حساب',
                           style: pw.TextStyle(
                               font: fontBold,
                               fontSize: 14,
-                              color: goldColor)),
+                              color: primaryColor)),
+                      pw.Text(
+                          'التاريخ: ${DateTime.now().toString().split(' ')[0]}',
+                          style: pw.TextStyle(
+                              font: font, fontSize: 10, color: textDark)),
                     ],
                   ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Center(
-                  child: pw.Text('كشف حساب: ${widget.customer['name']}',
+                  pw.Divider(color: primaryColor, thickness: 1.5),
+                ],
+              ),
+            );
+          },
+          build: (pw.Context context) {
+            return [
+              pw.SizedBox(height: 5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('الحساب: ${widget.customer['name']}',
                       style: pw.TextStyle(
-                          font: fontBold, fontSize: 18, color: primaryColor)),
+                          font: fontBold,
+                          fontSize: 13,
+                          color: primaryColor)),
+                  if (widget.customer['phone'] != null &&
+                      widget.customer['phone'].toString().trim().isNotEmpty)
+                    pw.Text('الهاتف: ${widget.customer['phone']}',
+                        style: pw.TextStyle(
+                            font: font, fontSize: 11, color: textDark)),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+
+              // ✅ الجدول - نفس الترتيب، أرقام بدون صناديق، ألوان واضحة
+              pw.TableHelper.fromTextArray(
+                context: context,
+                border:
+                    pw.TableBorder.all(width: 0.5, color: PdfColors.grey500),
+                headerStyle: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 10,
+                    color: PdfColors.white),
+                cellStyle: pw.TextStyle(
+                    font: font, fontSize: 9, color: textDark),
+                headerDecoration: pw.BoxDecoration(color: primaryColor),
+                cellAlignments: {
+                  0: pw.Alignment.center,
+                  1: pw.Alignment.center,
+                  2: pw.Alignment.center,
+                  3: pw.Alignment.center,
+                  4: pw.Alignment.center,
+                },
+                headerAlignments: {
+                  0: pw.Alignment.center,
+                  1: pw.Alignment.center,
+                  2: pw.Alignment.center,
+                  3: pw.Alignment.center,
+                  4: pw.Alignment.center,
+                },
+                headers: [
+                  'الرصيد',
+                  'له',
+                  'عليه',
+                  'التفاصيل',
+                  'التاريخ',
+                ],
+                data: txs.map((tx) {
+                  bool isGive = tx['type'] == 'give';
+                  double amt = (tx['amount'] as num).toDouble();
+                  double runBal = tx['running_balance'];
+
+                  String rawDate = tx['date'].toString();
+                  String formattedDate = rawDate;
+                  String formattedTime = '';
+
+                  try {
+                    DateTime dt = DateTime.parse(rawDate);
+                    formattedDate = "${dt.year}-${dt.month}-${dt.day}";
+                    int hour = dt.hour;
+                    String period = hour >= 12 ? 'م' : 'ص';
+                    hour = hour % 12;
+                    if (hour == 0) hour = 12;
+                    formattedTime =
+                        "$hour:${dt.minute.toString().padLeft(2, '0')} $period";
+                  } catch (_) {}
+
+                  return [
+                    // الرصيد - نص ملون فقط بدون خلفية
+                    pw.Text(
+                      '${runBal.abs().toStringAsFixed(1)} ${runBal >= 0 ? "له" : "عليه"}',
+                      style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 9,
+                          color: runBal >= 0 ? greenText : redText),
+                    ),
+                    // له
+                    isGive
+                        ? pw.Text(amt.toStringAsFixed(1),
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 9,
+                                color: greenText))
+                        : pw.Text('-',
+                            style: pw.TextStyle(
+                                font: font, fontSize: 9, color: textDark)),
+                    // عليه
+                    isGive
+                        ? pw.Text('-',
+                            style: pw.TextStyle(
+                                font: font, fontSize: 9, color: textDark))
+                        : pw.Text(amt.toStringAsFixed(1),
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 9,
+                                color: redText)),
+                    // التفاصيل
+                    pw.Text(
+                      tx['details'].toString(),
+                      style: pw.TextStyle(
+                          font: font, fontSize: 9, color: textDark),
+                    ),
+                    // التاريخ
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        pw.Text(formattedDate,
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 8,
+                                color: primaryColor)),
+                        if (formattedTime.isNotEmpty)
+                          pw.Text(formattedTime,
+                              style: pw.TextStyle(
+                                  font: font,
+                                  fontSize: 7,
+                                  color: PdfColors.grey700)),
+                      ],
+                    ),
+                  ];
+                }).toList(),
+              ),
+
+              pw.SizedBox(height: 10),
+
+              // شريط الإجماليات السفلي
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: primaryColor, width: 1),
                 ),
-                pw.SizedBox(height: 5),
-                pw.Divider(color: goldColor, thickness: 2),
-                pw.Row(
+                child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text(
-                        'الهاتف: ${widget.customer['phone'] ?? "غير مسجل"}',
-                        style: pw.TextStyle(font: font, fontSize: 12)),
-                    pw.Text('العملة: ${widget.customer['currency']}',
-                        style: pw.TextStyle(font: font, fontSize: 12)),
-                  ],
-                ),
-                pw.SizedBox(height: 10),
-                pw.TableHelper.fromTextArray(
-                  context: context,
-                  border:
-                      pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-                  headerStyle: pw.TextStyle(
-                      font: fontBold,
-                      fontSize: 10,
-                      color: PdfColors.white),
-                  cellStyle: pw.TextStyle(font: font, fontSize: 9),
-                  headerDecoration: pw.BoxDecoration(color: primaryColor),
-                  cellAlignments: {
-                    0: pw.Alignment.center,
-                    1: pw.Alignment.center,
-                    2: pw.Alignment.center,
-                    3: pw.Alignment.center,
-                    4: pw.Alignment.center,
-                  },
-                  headerAlignments: {
-                    0: pw.Alignment.center,
-                    1: pw.Alignment.center,
-                    2: pw.Alignment.center,
-                    3: pw.Alignment.center,
-                    4: pw.Alignment.center,
-                  },
-                  headers: [
-                    'الرصيد التراكمي',
-                    'له',
-                    'عليه',
-                    'التفاصيل',
-                    'التاريخ',
-                  ],
-                  data: txs.map((tx) {
-                    bool isGive = tx['type'] == 'give';
-                    double amt = (tx['amount'] as num).toDouble();
-                    double runBal = tx['running_balance'];
-
-                    String rawDate = tx['date'].toString();
-                    String formattedDate = rawDate;
-                    String formattedTime = '';
-
-                    try {
-                      DateTime dt = DateTime.parse(rawDate);
-                      formattedDate = "${dt.year}-${dt.month}-${dt.day}";
-                      int hour = dt.hour;
-                      String period = hour >= 12 ? 'م' : 'ص';
-                      hour = hour % 12;
-                      if (hour == 0) hour = 12;
-                      formattedTime =
-                          "$hour:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')} $period";
-                    } catch (_) {}
-
-                    return [
-                      pw.Text(
-                        '${runBal.abs().toStringAsFixed(1)} (${runBal >= 0 ? "له" : "عليه"})',
+                    pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}',
                         style: pw.TextStyle(
                             font: fontBold,
-                            color: runBal >= 0 ? greenColor : redColor),
-                      ),
-                      isGive
-                          ? pw.Text(amt.toStringAsFixed(1),
-                              style: pw.TextStyle(
-                                  font: fontBold, color: greenColor))
-                          : pw.Text('-', style: pw.TextStyle(font: font)),
-                      isGive
-                          ? pw.Text('-', style: pw.TextStyle(font: font))
-                          : pw.Text(amt.toStringAsFixed(1),
-                              style: pw.TextStyle(
-                                  font: fontBold, color: redColor)),
-                      pw.Text(tx['details'].toString(),
-                          style: pw.TextStyle(font: font)),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.center,
-                        children: [
-                          pw.Text(formattedDate,
-                              style: pw.TextStyle(
-                                  font: fontBold,
-                                  fontSize: 9,
-                                  color: primaryColor)),
-                          if (formattedTime.isNotEmpty)
-                            pw.Text(formattedTime,
-                                style: pw.TextStyle(
-                                    font: font,
-                                    fontSize: 8,
-                                    color: PdfColors.grey700)),
-                        ],
-                      ),
-                    ];
-                  }).toList(),
-                ),
-                pw.SizedBox(height: 15),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: primaryColor,
-                    borderRadius: pw.BorderRadius.circular(8),
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-                    children: [
-                      pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}',
-                          style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 11,
-                              color: PdfColors.greenAccent)),
-                      pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}',
-                          style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 11,
-                              color: PdfColors.redAccent)),
-                      pw.Text(
-                        'الرصيد: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                            fontSize: 11,
+                            color: greenText)),
+                    pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}',
                         style: pw.TextStyle(
-                            font: fontBold, fontSize: 11, color: goldColor),
-                      ),
-                    ],
-                  ),
-                ),
-                pw.Spacer(),
-                pw.Divider(color: goldColor, thickness: 1),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text('بواسطة دفتر المحاسب الشامل',
-                        style: pw.TextStyle(
-                            font: font, fontSize: 9, color: primaryColor)),
-                    pw.Text(DateTime.now().toString().split(' ')[0],
-                        style: pw.TextStyle(font: font, fontSize: 9)),
+                            font: fontBold,
+                            fontSize: 11,
+                            color: redText)),
+                    pw.Text(
+                      'الرصيد: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                      style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 11,
+                          color: primaryColor),
+                    ),
                   ],
-                )
-              ],
-            );
+                ),
+              ),
+            ];
           },
         ),
       );
@@ -2462,7 +2474,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     String phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
-    String message = "كشف حساب من تطبيق المحاسب:\n"
+    String message = "كشف حساب:\n"
         "العميل: ${widget.customer['name']}\n"
         "المبلغ الحالي: ${balance.abs().toStringAsFixed(1)} ${widget.customer['currency']} ($status)";
 
