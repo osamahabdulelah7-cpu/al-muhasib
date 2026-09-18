@@ -8,4 +8,3 @@
 -dontwarn com.tekartik.sqflite.**
 
 -keep class net.nfet.printing.** { *; }
-
