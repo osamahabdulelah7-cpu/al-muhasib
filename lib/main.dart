@@ -16,11 +16,6 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   final provider = AppAccountProvider();
-  try {
-    await provider.loadInitialData();
-  } catch (e) {
-    debugPrint("خطأ في تحميل البيانات الأولية: $e");
-  }
 
   runApp(
     ChangeNotifierProvider<AppAccountProvider>.value(
@@ -121,9 +116,13 @@ class AppAccountProvider extends ChangeNotifier {
   Map<int, double> customerBalances = {};
 
   Future<void> loadInitialData() async {
-    await loadCategories();
-    await loadCurrencies();
-    await loadCustomers();
+    try {
+      await loadCategories();
+      await loadCurrencies();
+      await loadCustomers();
+    } catch (e) {
+      debugPrint("خطأ أثناء تحميل البيانات: $e");
+    }
   }
 
   Future<void> loadCategories() async {
@@ -323,6 +322,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String searchQuery = '';
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<AppAccountProvider>(context, listen: false).loadInitialData();
+    });
+  }
+
   void _showBackupDialog(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
@@ -370,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (categories.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('دفتر المحاسب الشامل'), centerTitle: true),
-        body: const Center(child: Text('لا توجد تصنيفات مضافة')),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -1149,7 +1156,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         font = pw.Font.ttf(fontData);
         fontBold = pw.Font.ttf(fontBoldData);
       } catch (_) {
-        // حماية في حال عدم تحميل الخط من الأصول
         font = await PdfGoogleFonts.cairoRegular();
         fontBold = await PdfGoogleFonts.cairoBold();
       }
