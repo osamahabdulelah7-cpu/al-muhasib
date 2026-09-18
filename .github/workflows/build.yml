@@ -25,31 +25,32 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Download Cairo Fonts Automatically
+      - name: Download Fonts and Icon
         run: |
           mkdir -p assets/fonts
-          echo "📥 تحميل Cairo fonts..."
           
+          echo "📥 تحميل الخطوط..."
           curl -fL "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hOA-W1ToLQ-HmkA.ttf" \
             -o assets/fonts/Cairo-Regular.ttf
-          
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           
-          echo "=== التحقق من الخطوط ==="
-          ls -lh assets/fonts/
-          file assets/fonts/*.ttf
+          echo "📥 تحميل الشعار..."
+          curl -fL "https://api.iconify.design/mdi/alpha-m-circle.svg?color=%23FFB300&width=512&height=512" \
+            -o assets/icon.svg
           
-          REG_SIZE=$(stat -c%s assets/fonts/Cairo-Regular.ttf 2>/dev/null || echo 0)
-          if [ "$REG_SIZE" -lt 50000 ]; then
-            echo "❌ فشل تحميل الخطوط"
-            cat assets/fonts/Cairo-Regular.ttf | head -c 500
-            exit 1
-          fi
+          echo "📥 تحويل SVG إلى PNG..."
+          sudo apt-get install -y librsvg2-bin
+          rsvg-convert -w 1024 -h 1024 assets/icon.svg -o assets/icon.png
           
-          echo "✅ الخطوط جاهزة"
+          echo "=== التحقق ==="
+          ls -lh assets/
+          file assets/icon.png
 
       - name: Install Dependencies
         run: flutter pub get
+
+      - name: Generate App Icons
+        run: dart run flutter_launcher_icons
 
       - name: Build Release APK
         run: flutter build apk --release --no-tree-shake-icons
