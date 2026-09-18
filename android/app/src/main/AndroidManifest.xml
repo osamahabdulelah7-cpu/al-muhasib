@@ -6,7 +6,7 @@
 
     <application
         android:label="المحاسب"
-        android:icon="@android:drawable/sym_def_app_icon">
+        android:icon="@mipmap/ic_launcher">
 
         <activity
             android:name=".MainActivity"
