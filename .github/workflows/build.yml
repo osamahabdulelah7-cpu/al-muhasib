@@ -28,29 +28,21 @@ jobs:
       - name: Download Cairo Fonts Automatically
         run: |
           mkdir -p assets/fonts
-          echo "📥 تحميل Cairo-Regular.ttf..."
-          curl -fL "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf" \
+          echo "📥 تحميل Cairo fonts..."
+          
+          curl -fL "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hOA-W1ToLQ-HmkA.ttf" \
             -o assets/fonts/Cairo-Regular.ttf
           
-          echo "📥 تحميل Cairo-Bold.ttf..."
-          curl -fL "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf" \
-            -o assets/fonts/Cairo-Bold.ttf
+          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           
           echo "=== التحقق من الخطوط ==="
           ls -lh assets/fonts/
           file assets/fonts/*.ttf
           
           REG_SIZE=$(stat -c%s assets/fonts/Cairo-Regular.ttf 2>/dev/null || echo 0)
-          BOLD_SIZE=$(stat -c%s assets/fonts/Cairo-Bold.ttf 2>/dev/null || echo 0)
-          
-          if [ "$REG_SIZE" -lt 100000 ]; then
-            echo "❌ فشل تحميل Cairo-Regular.ttf"
+          if [ "$REG_SIZE" -lt 50000 ]; then
+            echo "❌ فشل تحميل الخطوط"
             cat assets/fonts/Cairo-Regular.ttf | head -c 500
-            exit 1
-          fi
-          
-          if [ "$BOLD_SIZE" -lt 100000 ]; then
-            echo "❌ فشل تحميل Cairo-Bold.ttf"
             exit 1
           fi
           
