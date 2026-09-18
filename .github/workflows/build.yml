@@ -28,8 +28,33 @@ jobs:
       - name: Download Cairo Fonts Automatically
         run: |
           mkdir -p assets/fonts
-          curl -sL "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o assets/fonts/Cairo-Regular.ttf
-          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
+          echo "📥 تحميل Cairo-Regular.ttf..."
+          curl -fL "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf" \
+            -o assets/fonts/Cairo-Regular.ttf
+          
+          echo "📥 تحميل Cairo-Bold.ttf..."
+          curl -fL "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf" \
+            -o assets/fonts/Cairo-Bold.ttf
+          
+          echo "=== التحقق من الخطوط ==="
+          ls -lh assets/fonts/
+          file assets/fonts/*.ttf
+          
+          REG_SIZE=$(stat -c%s assets/fonts/Cairo-Regular.ttf 2>/dev/null || echo 0)
+          BOLD_SIZE=$(stat -c%s assets/fonts/Cairo-Bold.ttf 2>/dev/null || echo 0)
+          
+          if [ "$REG_SIZE" -lt 100000 ]; then
+            echo "❌ فشل تحميل Cairo-Regular.ttf"
+            cat assets/fonts/Cairo-Regular.ttf | head -c 500
+            exit 1
+          fi
+          
+          if [ "$BOLD_SIZE" -lt 100000 ]; then
+            echo "❌ فشل تحميل Cairo-Bold.ttf"
+            exit 1
+          fi
+          
+          echo "✅ الخطوط جاهزة"
 
       - name: Install Dependencies
         run: flutter pub get
@@ -41,7 +66,7 @@ jobs:
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
-          $BUILD_TOOLS_PATH/zipalign -f -v 4 build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-release-aligned.apk
+          $BUILD_TOOLS_PATH/zipalign -v 4 build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-release-aligned.apk
           $BUILD_TOOLS_PATH/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out build/app/outputs/flutter-apk/app-release-signed.apk build/app/outputs/flutter-apk/app-release-aligned.apk
 
       - name: Upload APK Artifact
