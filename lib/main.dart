@@ -321,6 +321,11 @@ class AppAccountProvider extends ChangeNotifier {
     return false;
   }
 
+  // ====================================================
+  // استيراد من Excel - يدعم نوعين من الملفات
+  // 1. كشف حساب شخص واحد (يبدأ بخلية "كشف حساب")
+  // 2. تفاصيل جميع المبالغ (عمود "اسم الحساب" لكل صف)
+  // ====================================================
   Future<Map<String, dynamic>> importFromExcel(
     File excelFile, {
     int? categoryId,
@@ -336,10 +341,10 @@ class AppAccountProvider extends ChangeNotifier {
     int customersCreated = 0;
     int transactionsCreated = 0;
     int rowsSkipped = 0;
-    String? accountName;
 
     final db = await AppDBHelper.instance.database;
 
+    // === تحديد التصنيف ===
     int finalCategoryId;
     if (categoryId != null) {
       final catCheck = await db.query('categories',
@@ -358,9 +363,17 @@ class AppAccountProvider extends ChangeNotifier {
       }
     }
 
+    // خريطة لتخزين معرّف كل حساب (لتجنب التكرار والبحث المتكرر)
+    Map<String, int> customerNameToId = {};
+
     for (var tableName in excel.tables.keys) {
       final sheet = excel.tables[tableName]!;
 
+      debugPrint('📄 قراءة ورقة: $tableName');
+      debugPrint('📊 إجمالي الصفوف: ${sheet.maxRows}');
+
+      // === 1. البحث عن اسم الحساب في العنوان (نوع ملف: كشف حساب) ===
+      String? headerAccountName;
       for (int i = 0; i < sheet.maxRows && i < 5; i++) {
         final row = sheet.rows[i];
         for (var cell in row) {
@@ -372,17 +385,19 @@ class AppAccountProvider extends ChangeNotifier {
               if (extracted.startsWith('-')) {
                 extracted = extracted.substring(1).trim();
               }
-              accountName = extracted;
+              headerAccountName = extracted;
             }
           }
         }
       }
 
+      // === 2. البحث عن صف العناوين ===
       int headerRowIndex = -1;
       int colDate = -1;
       int colDetails = -1;
       int colTake = -1;
       int colGive = -1;
+      int colCustomerName = -1;
 
       for (int i = 0; i < sheet.maxRows && i < 15; i++) {
         final row = sheet.rows[i];
@@ -401,6 +416,9 @@ class AppAccountProvider extends ChangeNotifier {
           } else if (cellText == 'له') {
             colGive = j;
             foundHeaders++;
+          } else if (cellText == 'اسم الحساب') {
+            colCustomerName = j;
+            foundHeaders++;
           }
         }
         if (foundHeaders >= 3) {
@@ -409,49 +427,62 @@ class AppAccountProvider extends ChangeNotifier {
         }
       }
 
-      if (headerRowIndex == -1) continue;
+      debugPrint('📍 صف العناوين: $headerRowIndex');
+      debugPrint('📅 عمود التاريخ: $colDate');
+      debugPrint('👤 عمود اسم الحساب: $colCustomerName');
+      debugPrint('📝 عمود التفاصيل: $colDetails');
+      debugPrint('⬆️ عمود عليه: $colTake');
+      debugPrint('⬇️ عمود له: $colGive');
+      debugPrint('🏷️ اسم الحساب من العنوان: $headerAccountName');
 
-      if (accountName == null || accountName.isEmpty) {
-        accountName = 'حساب ${DateTime.now().millisecondsSinceEpoch}';
+      if (headerRowIndex == -1) {
+        debugPrint('❌ لم يتم العثور على صف العناوين!');
+        continue;
       }
 
-      int customerId;
-      final existingCust = await db.query('customers',
-          where: 'name = ?', whereArgs: [accountName]);
-      if (existingCust.isEmpty) {
-        customerId = await db.insert('customers', {
-          'name': accountName,
-          'phone': '',
-          'currency': 'ريال يمني',
-          'category_id': finalCategoryId,
-        });
-        customersCreated++;
-      } else {
-        customerId = int.parse(existingCust.first['id'].toString());
-        await db.update(
-          'customers',
-          {'category_id': finalCategoryId},
-          where: 'id = ?',
-          whereArgs: [customerId],
-        );
-      }
-
+      // === 3. قراءة جميع الصفوف ===
       for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
         try {
           final row = sheet.rows[i];
           if (row.isEmpty) continue;
 
-          String checkDetails = '';
-          if (colDetails != -1 && colDetails < row.length) {
-            checkDetails = row[colDetails]?.value?.toString().trim() ?? '';
+          // === قراءة اسم الحساب ===
+          String customerName = '';
+
+          // الطريقة 1: من عمود "اسم الحساب" في الصف
+          if (colCustomerName != -1 && colCustomerName < row.length) {
+            customerName =
+                row[colCustomerName]?.value?.toString().trim() ?? '';
           }
 
-          if (checkDetails.contains('إجمالي') ||
-              checkDetails.contains('الرصيد الإجمالي') ||
-              checkDetails.contains('إجمالي العمليات')) {
+          // الطريقة 2: من العنوان (إذا لم يوجد عمود اسم الحساب)
+          if (customerName.isEmpty && headerAccountName != null) {
+            customerName = headerAccountName;
+          }
+
+          // === قراءة التفاصيل ===
+          String details = '';
+          if (colDetails != -1 && colDetails < row.length) {
+            details = row[colDetails]?.value?.toString().trim() ?? '';
+          }
+
+          // تجاهل صفوف الإجماليات
+          if (details.contains('إجمالي') ||
+              details.contains('الرصيد الإجمالي') ||
+              details.contains('إجمالي العمليات') ||
+              customerName.contains('إجمالي') ||
+              customerName.contains('الرصيد الإجمالي') ||
+              details.contains('الرصيد الإجمالي')) {
+            debugPrint('⚠️ تخطي صف الإجمالي');
             continue;
           }
 
+          if (customerName.isEmpty) {
+            rowsSkipped++;
+            continue;
+          }
+
+          // === قراءة التاريخ ===
           String dateStr = '';
           if (colDate != -1 && colDate < row.length) {
             final dateCell = row[colDate]?.value;
@@ -464,13 +495,15 @@ class AppAccountProvider extends ChangeNotifier {
                 );
                 dateStr = dt.toString().split('.')[0];
               } else if (dateCell is excel_lib.DateTimeCellValue) {
-                dateStr = dateCell.asDateTimeLocal().toString().split('.')[0];
+                dateStr =
+                    dateCell.asDateTimeLocal().toString().split('.')[0];
               } else {
                 dateStr = dateCell.toString().trim();
               }
             }
           }
 
+          // === قراءة المبالغ ===
           double takeAmount = 0;
           double giveAmount = 0;
 
@@ -498,8 +531,12 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          if (takeAmount == 0 && giveAmount == 0) continue;
+          // تجاهل الصفوف التي بلا مبلغ
+          if (takeAmount == 0 && giveAmount == 0) {
+            continue;
+          }
 
+          // === تحديد النوع والمبلغ ===
           double amount;
           String type;
           if (giveAmount > 0) {
@@ -510,6 +547,7 @@ class AppAccountProvider extends ChangeNotifier {
             type = 'take';
           }
 
+          // === التاريخ الافتراضي ===
           if (dateStr.isEmpty) {
             dateStr = DateTime.now().toString().split('.')[0];
           } else {
@@ -520,14 +558,46 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
+          // === البحث عن الحساب أو إنشاؤه ===
+          int customerId;
+          if (customerNameToId.containsKey(customerName)) {
+            customerId = customerNameToId[customerName]!;
+          } else {
+            final existingCust = await db.query('customers',
+                where: 'name = ?', whereArgs: [customerName]);
+            if (existingCust.isEmpty) {
+              customerId = await db.insert('customers', {
+                'name': customerName,
+                'phone': '',
+                'currency': 'ريال يمني',
+                'category_id': finalCategoryId,
+              });
+              customersCreated++;
+            } else {
+              customerId = int.parse(existingCust.first['id'].toString());
+              await db.update(
+                'customers',
+                {'category_id': finalCategoryId},
+                where: 'id = ?',
+                whereArgs: [customerId],
+              );
+            }
+            customerNameToId[customerName] = customerId;
+          }
+
+          // === إضافة المعاملة ===
           await db.insert('transactions', {
             'customer_id': customerId,
             'amount': amount,
             'type': type,
-            'details': checkDetails,
+            'details': details,
             'date': dateStr,
           });
           transactionsCreated++;
+
+          if (transactionsCreated % 100 == 0) {
+            debugPrint('📝 تم استيراد $transactionsCreated معاملة...');
+          }
         } catch (e) {
           debugPrint('❌ خطأ في الصف $i: $e');
           rowsSkipped++;
@@ -537,11 +607,15 @@ class AppAccountProvider extends ChangeNotifier {
 
     await loadInitialData();
 
+    debugPrint(
+        '✅ تم الاستيراد: $customersCreated حساب و $transactionsCreated معاملة');
+
     return {
       'customers': customersCreated,
       'transactions': transactionsCreated,
       'skipped': rowsSkipped,
-      'accountName': accountName ?? '',
+      'accountName': headerAccountName ??
+          'كل الحسابات ($customersCreated حساب)',
     };
   }
 
@@ -815,6 +889,10 @@ class _HomeScreenState extends State<HomeScreen>
                       CircularProgressIndicator(color: AppColors.gold),
                       SizedBox(height: 15),
                       Text('جاري الاستيراد...'),
+                      SizedBox(height: 5),
+                      Text('قد يستغرق دقيقة للملفات الكبيرة',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -850,12 +928,12 @@ class _HomeScreenState extends State<HomeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if ((stats['accountName'] as String).isNotEmpty) ...[
-                  Text('📁 الحساب: ${stats['accountName']}',
+                  Text('📁 ${stats['accountName']}',
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 15)),
                   const Divider(),
                 ],
-                Text('✅ عملاء جدد: ${stats['customers']}',
+                Text('✅ حسابات جديدة: ${stats['customers']}',
                     style: const TextStyle(fontSize: 15)),
                 const SizedBox(height: 5),
                 Text('✅ معاملات: ${stats['transactions']}',
@@ -922,7 +1000,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     return Scaffold(
       appBar: AppBar(
-        // ✅ العنوان + ☰ يظهران (RTL: leading = يمين)
         title: const Text('دفتر المحاسب الشامل'),
         toolbarHeight: 56,
         bottom: TabBar(
@@ -939,7 +1016,6 @@ class _HomeScreenState extends State<HomeScreen>
               .toList(),
         ),
       ),
-      // ✅ إلغاء السحب من الحافة
       drawerEnableOpenDragGesture: false,
       drawer: Drawer(
         child: Column(
@@ -1249,7 +1325,6 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط الإجماليات مع زر + منفصل
                     Container(
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 12),
@@ -1264,7 +1339,6 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       child: Row(
                         children: [
-                          // ✅ الإجماليات
                           Expanded(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1304,7 +1378,6 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 12),
-                          // ✅ زر + منفصل في اليمين
                           Material(
                             color: AppColors.gold,
                             shape: const CircleBorder(),
@@ -2071,14 +2144,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          // ✅ شريط الإجماليات: عليه يمين، له يسار، الرصيد وسط
           Container(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             color: AppColors.primary,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // ✅ عليه في اليمين
                 Row(
                   children: [
                     const Icon(Icons.arrow_upward,
@@ -2093,7 +2164,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ),
                   ],
                 ),
-                // ✅ الرصيد في الوسط
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -2109,7 +2179,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         fontSize: 13),
                   ),
                 ),
-                // ✅ له في اليسار
                 Row(
                   children: [
                     Text(
@@ -2127,13 +2196,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ],
             ),
           ),
-          // ✅ الأزرار: عليه يمين، له يسار (بدون قبض/دفع)
           Container(
             color: Colors.white,
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
-                // ✅ عليه (أحمر) في اليمين - أول عنصر
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -2156,7 +2223,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // ✅ له (أخضر) في اليسار - آخر عنصر
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
