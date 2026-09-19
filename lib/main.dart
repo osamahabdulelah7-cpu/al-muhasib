@@ -343,7 +343,6 @@ class AppAccountProvider extends ChangeNotifier {
 
     final db = await AppDBHelper.instance.database;
 
-    // === تحديد التصنيف ===
     int finalCategoryId;
     if (categoryId != null) {
       final catCheck = await db.query('categories',
@@ -362,7 +361,6 @@ class AppAccountProvider extends ChangeNotifier {
       }
     }
 
-    // خريطة لتخزين معرّف كل حساب
     Map<String, int> customerNameToId = {};
 
     for (var tableName in excel.tables.keys) {
@@ -371,7 +369,6 @@ class AppAccountProvider extends ChangeNotifier {
       debugPrint('📄 قراءة ورقة: $tableName');
       debugPrint('📊 إجمالي الصفوف: ${sheet.maxRows}');
 
-      // === 1. البحث عن اسم الحساب في العنوان (نوع ملف: كشف حساب) ===
       String? headerAccountName;
       for (int i = 0; i < sheet.maxRows && i < 5; i++) {
         final row = sheet.rows[i];
@@ -394,7 +391,6 @@ class AppAccountProvider extends ChangeNotifier {
         detectedAccountName = headerAccountName;
       }
 
-      // === 2. البحث عن صف العناوين ===
       int headerRowIndex = -1;
       int colDate = -1;
       int colDetails = -1;
@@ -436,42 +432,35 @@ class AppAccountProvider extends ChangeNotifier {
       debugPrint('📝 عمود التفاصيل: $colDetails');
       debugPrint('⬆️ عمود عليه: $colTake');
       debugPrint('⬇️ عمود له: $colGive');
-      debugPrint('🏷️ اسم الحساب من العنوان: $headerAccountName');
 
       if (headerRowIndex == -1) {
         debugPrint('❌ لم يتم العثور على صف العناوين!');
         continue;
       }
 
-      // === 3. قراءة جميع الصفوف ===
       for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
         try {
           final row = sheet.rows[i];
           if (row.isEmpty) continue;
 
-          // === قراءة اسم الحساب ===
           String customerName = '';
 
-          // الطريقة 1: من عمود "اسم الحساب" في الصف
           if (colCustomerName != -1 && colCustomerName < row.length) {
             customerName =
                 row[colCustomerName]?.value?.toString().trim() ?? '';
           }
 
-          // الطريقة 2: من العنوان
           if (customerName.isEmpty &&
               headerAccountName != null &&
               headerAccountName.isNotEmpty) {
             customerName = headerAccountName;
           }
 
-          // === قراءة التفاصيل ===
           String details = '';
           if (colDetails != -1 && colDetails < row.length) {
             details = row[colDetails]?.value?.toString().trim() ?? '';
           }
 
-          // تجاهل صفوف الإجماليات
           if (details.contains('إجمالي') ||
               details.contains('الرصيد الإجمالي') ||
               details.contains('إجمالي العمليات') ||
@@ -486,7 +475,6 @@ class AppAccountProvider extends ChangeNotifier {
             continue;
           }
 
-          // === قراءة التاريخ ===
           String dateStr = '';
           if (colDate != -1 && colDate < row.length) {
             final dateCell = row[colDate]?.value;
@@ -507,7 +495,6 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // === قراءة المبالغ ===
           double takeAmount = 0;
           double giveAmount = 0;
 
@@ -535,12 +522,10 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // تجاهل الصفوف التي بلا مبلغ
           if (takeAmount == 0 && giveAmount == 0) {
             continue;
           }
 
-          // === تحديد النوع والمبلغ ===
           double amount;
           String type;
           if (giveAmount > 0) {
@@ -551,7 +536,6 @@ class AppAccountProvider extends ChangeNotifier {
             type = 'take';
           }
 
-          // === التاريخ الافتراضي ===
           if (dateStr.isEmpty) {
             dateStr = DateTime.now().toString().split('.')[0];
           } else {
@@ -562,7 +546,6 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          // === البحث عن الحساب أو إنشاؤه ===
           int customerId;
           if (customerNameToId.containsKey(customerName)) {
             customerId = customerNameToId[customerName]!;
@@ -589,7 +572,6 @@ class AppAccountProvider extends ChangeNotifier {
             customerNameToId[customerName] = customerId;
           }
 
-          // === إضافة المعاملة ===
           await db.insert('transactions', {
             'customer_id': customerId,
             'amount': amount,
@@ -614,7 +596,6 @@ class AppAccountProvider extends ChangeNotifier {
     debugPrint(
         '✅ تم الاستيراد: $customersCreated حساب و $transactionsCreated معاملة');
 
-    // ✅ الحل: استخدام المتغيرات العامة بدل headerAccountName
     String displayName;
     if (customersCreated > 1) {
       displayName = 'كل الحسابات ($customersCreated حساب)';
@@ -1014,9 +995,17 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return Scaffold(
+      // ✅ بدون عنوان — التابات في الأعلى مباشرة
       appBar: AppBar(
-        title: const Text('دفتر المحاسب الشامل'),
-        toolbarHeight: 56,
+        title: const SizedBox.shrink(),
+        toolbarHeight: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        leadingWidth: 56,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -1340,6 +1329,7 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
+                    // ✅ شريط الإجماليات - زر + في اليمين أولاً
                     Container(
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 12),
@@ -1354,6 +1344,34 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       child: Row(
                         children: [
+                          // ✅ زر + في اليمين - أول عنصر
+                          Material(
+                            color: AppColors.gold,
+                            shape: const CircleBorder(),
+                            elevation: 4,
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                final activeIndex = _tabController!.index;
+                                final activeCategoryId = int.parse(
+                                    categories[activeIndex]['id'].toString());
+                                _showAddCustomerDialog(
+                                    context, activeCategoryId);
+                              },
+                              child: Container(
+                                width: 60,
+                                height: 60,
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // ✅ الإجماليات بعد الزر
                           Expanded(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1390,32 +1408,6 @@ class _HomeScreenState extends State<HomeScreen>
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Material(
-                            color: AppColors.gold,
-                            shape: const CircleBorder(),
-                            elevation: 4,
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () {
-                                final activeIndex = _tabController!.index;
-                                final activeCategoryId = int.parse(
-                                    categories[activeIndex]['id'].toString());
-                                _showAddCustomerDialog(
-                                    context, activeCategoryId);
-                              },
-                              child: Container(
-                                width: 60,
-                                height: 60,
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.add,
-                                  color: Colors.white,
-                                  size: 32,
-                                ),
-                              ),
                             ),
                           ),
                         ],
@@ -2315,4 +2307,529 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             onPressed: () {
               final amount = double.tryParse(amountCtrl.text);
               if (amount != null) {
-                final date
+                final dateStr = DateTime.now().toString().split('.')[0];
+                Provider.of<AppAccountProvider>(context, listen: false)
+                    .addTransaction(
+                  int.parse(widget.customer['id'].toString()),
+                  amount,
+                  type,
+                  detailsCtrl.text,
+                  dateStr,
+                );
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
+      double totalTake, double finalBal) async {
+    try {
+      final fontData =
+          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontBoldData =
+          await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+      final font = pw.Font.ttf(fontData);
+      final fontBold = pw.Font.ttf(fontBoldData);
+
+      final pdf = pw.Document(
+        theme: pw.ThemeData.withFont(base: font, bold: fontBold),
+      );
+
+      final primaryColor = PdfColor.fromHex("#1E3A5F");
+      final greenText = PdfColor.fromHex("#1B5E20");
+      final redText = PdfColor.fromHex("#B71C1C");
+      final textDark = PdfColor.fromHex("#000000");
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          textDirection: pw.TextDirection.rtl,
+          margin: const pw.EdgeInsets.all(20),
+          header: (pw.Context context) {
+            return pw.Container(
+              padding: const pw.EdgeInsets.only(bottom: 5),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('كشف حساب',
+                          style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 14,
+                              color: primaryColor)),
+                      pw.Text(
+                          'التاريخ: ${DateTime.now().toString().split(' ')[0]}',
+                          style: pw.TextStyle(
+                              font: font, fontSize: 10, color: textDark)),
+                    ],
+                  ),
+                  pw.Divider(color: primaryColor, thickness: 1.5),
+                ],
+              ),
+            );
+          },
+          build: (pw.Context context) {
+            return [
+              pw.SizedBox(height: 5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('الحساب: ${widget.customer['name']}',
+                      style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 13,
+                          color: primaryColor)),
+                  if (widget.customer['phone'] != null &&
+                      widget.customer['phone'].toString().trim().isNotEmpty)
+                    pw.Text('الهاتف: ${widget.customer['phone']}',
+                        style: pw.TextStyle(
+                            font: font, fontSize: 11, color: textDark)),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+              pw.TableHelper.fromTextArray(
+                context: context,
+                border:
+                    pw.TableBorder.all(width: 0.5, color: PdfColors.grey500),
+                headerStyle: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 10,
+                    color: PdfColors.white),
+                cellStyle: pw.TextStyle(
+                    font: font, fontSize: 9, color: textDark),
+                headerDecoration: pw.BoxDecoration(color: primaryColor),
+                cellAlignments: {
+                  0: pw.Alignment.center,
+                  1: pw.Alignment.center,
+                  2: pw.Alignment.center,
+                  3: pw.Alignment.center,
+                  4: pw.Alignment.center,
+                },
+                headerAlignments: {
+                  0: pw.Alignment.center,
+                  1: pw.Alignment.center,
+                  2: pw.Alignment.center,
+                  3: pw.Alignment.center,
+                  4: pw.Alignment.center,
+                },
+                headers: [
+                  'الرصيد',
+                  'له',
+                  'عليه',
+                  'التفاصيل',
+                  'التاريخ',
+                ],
+                data: txs.map((tx) {
+                  bool isGive = tx['type'] == 'give';
+                  double amt = (tx['amount'] as num).toDouble();
+                  double runBal = tx['running_balance'];
+
+                  String rawDate = tx['date'].toString();
+                  String formattedDate = rawDate;
+                  String formattedTime = '';
+
+                  try {
+                    DateTime dt = DateTime.parse(rawDate);
+                    formattedDate = "${dt.year}-${dt.month}-${dt.day}";
+                    int hour = dt.hour;
+                    String period = hour >= 12 ? 'م' : 'ص';
+                    hour = hour % 12;
+                    if (hour == 0) hour = 12;
+                    formattedTime =
+                        "$hour:${dt.minute.toString().padLeft(2, '0')} $period";
+                  } catch (_) {}
+
+                  return [
+                    pw.Text(
+                      '${runBal.abs().toStringAsFixed(1)} ${runBal >= 0 ? "له" : "عليه"}',
+                      style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 9,
+                          color: runBal >= 0 ? greenText : redText),
+                    ),
+                    isGive
+                        ? pw.Text(amt.toStringAsFixed(1),
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 9,
+                                color: greenText))
+                        : pw.Text('-',
+                            style: pw.TextStyle(
+                                font: font, fontSize: 9, color: textDark)),
+                    isGive
+                        ? pw.Text('-',
+                            style: pw.TextStyle(
+                                font: font, fontSize: 9, color: textDark))
+                        : pw.Text(amt.toStringAsFixed(1),
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 9,
+                                color: redText)),
+                    pw.Text(
+                      tx['details'].toString(),
+                      style: pw.TextStyle(
+                          font: font, fontSize: 9, color: textDark),
+                    ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        pw.Text(formattedDate,
+                            style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 8,
+                                color: primaryColor)),
+                        if (formattedTime.isNotEmpty)
+                          pw.Text(formattedTime,
+                              style: pw.TextStyle(
+                                  font: font,
+                                  fontSize: 7,
+                                  color: PdfColors.grey700)),
+                      ],
+                    ),
+                  ];
+                }).toList(),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: primaryColor, width: 1),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}',
+                        style: pw.TextStyle(
+                            font: fontBold,
+                            fontSize: 11,
+                            color: greenText)),
+                    pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}',
+                        style: pw.TextStyle(
+                            font: fontBold,
+                            fontSize: 11,
+                            color: redText)),
+                    pw.Text(
+                      'الرصيد: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                      style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 11,
+                          color: primaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+      );
+    } catch (e, st) {
+      debugPrint('PDF Error: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر إنتاج ملف الـ PDF: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
+    if (rawPhone == null || rawPhone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
+            backgroundColor: AppColors.red),
+      );
+      return;
+    }
+
+    String phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
+    String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
+    String message = "كشف حساب:\n"
+        "العميل: ${widget.customer['name']}\n"
+        "المبلغ الحالي: ${balance.abs().toStringAsFixed(1)} ${widget.customer['currency']} ($status)";
+
+    final Uri url =
+        Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('عذراً، تعذر فتح تطبيق واتساب'),
+                backgroundColor: AppColors.red),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('خطأ أثناء تشغيل رابط واتساب'),
+              backgroundColor: AppColors.red),
+        );
+      }
+    }
+  }
+}
+
+// ----------------------------------------------------
+// 6. شاشة إدارة التصنيفات
+// ----------------------------------------------------
+class CategoriesScreen extends StatelessWidget {
+  const CategoriesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<AppAccountProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('إدارة التصنيفات')),
+      body: provider.categories.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.category, size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 15),
+                  Text('لا توجد تصنيفات',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 15)),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: provider.categories.length,
+              itemBuilder: (ctx, i) {
+                final cat = provider.categories[i];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.folder,
+                          color: AppColors.primary),
+                    ),
+                    title: Text(cat['name'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: AppColors.red),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            title: const Text('تأكيد الحذف'),
+                            content:
+                                const Text('هل أنت متأكد من حذف هذا التصنيف؟'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('إلغاء',
+                                      style: TextStyle(color: Colors.grey))),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.red),
+                                onPressed: () {
+                                  provider.deleteCategory(
+                                      int.parse(cat['id'].toString()));
+                                  Navigator.pop(ctx);
+                                },
+                                child: const Text('حذف'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context),
+        child: const Icon(Icons.add, size: 30),
+      ),
+    );
+  }
+
+  void _showAddDialog(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.create_new_folder, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('إضافة تصنيف جديد'),
+          ],
+        ),
+        content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+                labelText: 'اسم التصنيف',
+                prefixIcon: Icon(Icons.folder_outlined))),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.white),
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Provider.of<AppAccountProvider>(context, listen: false)
+                    .addCategory(controller.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// 7. شاشة إدارة العملات
+// ----------------------------------------------------
+class CurrenciesScreen extends StatelessWidget {
+  const CurrenciesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<AppAccountProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('إدارة العملات')),
+      body: provider.currencies.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.attach_money,
+                      size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 15),
+                  Text('لا توجد عملات',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 15)),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: provider.currencies.length,
+              itemBuilder: (ctx, i) {
+                final curr = provider.currencies[i];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.gold.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.attach_money,
+                          color: AppColors.goldDark),
+                    ),
+                    title: Text(curr['name'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('الرمز: ${curr['symbol']}',
+                        style: TextStyle(color: Colors.grey.shade600)),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context),
+        child: const Icon(Icons.add, size: 30),
+      ),
+    );
+  }
+
+  void _showAddDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final symbolCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.monetization_on, color: AppColors.goldDark),
+            SizedBox(width: 8),
+            Text('إضافة عملة جديدة'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'اسم العملة',
+                    prefixIcon: Icon(Icons.text_fields))),
+            const SizedBox(height: 10),
+            TextField(
+                controller: symbolCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'رمز العملة (مثل: ر.ي)',
+                    prefixIcon: Icon(Icons.currency_exchange))),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.white),
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty &&
+                  symbolCtrl.text.trim().isNotEmpty) {
+                Provider.of<AppAccountProvider>(context, listen: false)
+                    .addCurrency(
+                        nameCtrl.text.trim(), symbolCtrl.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          )
+        ],
+      ),
+    );
+  }
+}
