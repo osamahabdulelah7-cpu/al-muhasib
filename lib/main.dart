@@ -26,6 +26,7 @@ class AppColors {
   static const Color greenLight = Color(0xFFE8F5E9);
   static const Color red = Color(0xFFC62828);
   static const Color redLight = Color(0xFFFFEBEE);
+  static const Color whatsapp = Color(0xFF25D366);
   static const Color background = Color(0xFFF8F9FA);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
@@ -321,9 +322,6 @@ class AppAccountProvider extends ChangeNotifier {
     return false;
   }
 
-  // ====================================================
-  // استيراد من Excel - يدعم نوعين من الملفات
-  // ====================================================
   Future<Map<String, dynamic>> importFromExcel(
     File excelFile, {
     int? categoryId,
@@ -784,7 +782,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ دالة البحث
   void _showSearchDialog() {
     final searchCtrl = TextEditingController(text: searchQuery);
 
@@ -1046,7 +1043,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     return Scaffold(
       key: _scaffoldKey,
-      // ✅ الشريط العلوي: 🔍 يسار + ☰ يمين، ثم التابات تحت
       appBar: AppBar(
         toolbarHeight: 0,
         elevation: 0,
@@ -1058,22 +1054,11 @@ class _HomeScreenState extends State<HomeScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ✅ الصف الأول: 🔍 (يسار) + ☰ (يمين)
                 SizedBox(
                   height: 56,
                   child: Row(
                     children: [
-                      // ✅ زر البحث في اليسار
-                      IconButton(
-                        icon: const Icon(
-                          Icons.search,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                        onPressed: _showSearchDialog,
-                      ),
-                      const Spacer(),
-                      // ✅ ☰ في اليمين
+                      // ✅ ☰ في اليمين (أول عنصر في RTL)
                       IconButton(
                         icon: const Icon(
                           Icons.menu,
@@ -1083,11 +1068,20 @@ class _HomeScreenState extends State<HomeScreen>
                         onPressed: () =>
                             _scaffoldKey.currentState?.openDrawer(),
                       ),
+                      const Spacer(),
+                      // ✅ 🔍 في اليسار (آخر عنصر في RTL)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.search,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        onPressed: _showSearchDialog,
+                      ),
                       const SizedBox(width: 4),
                     ],
                   ),
                 ),
-                // ✅ الصف الثاني: التابات
                 SizedBox(
                   height: 48,
                   child: TabBar(
@@ -1396,7 +1390,6 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط الإجماليات - زر + في اليمين
                     Container(
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 12),
@@ -1411,7 +1404,6 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       child: Row(
                         children: [
-                          // ✅ زر + في اليمين - أول عنصر (RTL)
                           Material(
                             color: AppColors.gold,
                             shape: const CircleBorder(),
@@ -1438,7 +1430,6 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 12),
-                          // ✅ الإجماليات
                           Expanded(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -2023,10 +2014,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
-            icon: const Icon(Icons.send, color: AppColors.gold),
+            icon: const Icon(
+              Icons.chat,
+              color: AppColors.whatsapp,
+              size: 26,
+            ),
+            tooltip: 'إرسال عبر واتساب',
             onPressed: () => _sendWhatsApp(
                 widget.customer['phone']?.toString(), finalBalance),
-          )
+          ),
         ],
       ),
       body: Column(
@@ -2597,8 +2593,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
+      final bytes = await pdf.save();
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'كشف_${widget.customer['name']}.pdf',
       );
     } catch (e, st) {
       debugPrint('PDF Error: $e\n$st');
