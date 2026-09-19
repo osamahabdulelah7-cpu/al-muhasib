@@ -582,7 +582,7 @@ class AlMuhasibApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'دفتر المحاسب',
+      title: 'دفتر المحاسب الشامل',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar', ''),
       supportedLocales: const [Locale('ar', ''), Locale('en', '')],
@@ -905,13 +905,12 @@ class _HomeScreenState extends State<HomeScreen>
     if (categories.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('دفتر المحاسب'),
+          title: const Text('دفتر المحاسب الشامل'),
         ),
         body: const Center(child: Text('لا توجد تصنيفات مضافة')),
       );
     }
 
-    // ✅ إنشاء TabController مرة واحدة فقط
     if (_tabController == null ||
         _tabController!.length != categories.length) {
       _tabController?.dispose();
@@ -922,10 +921,10 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return Scaffold(
-      // ✅ AppBar بدون عنوان - فقط القائمة الجانبية
       appBar: AppBar(
-        title: const SizedBox.shrink(),
-        toolbarHeight: 0,
+        // ✅ العنوان + ☰ يظهران (RTL: leading = يمين)
+        title: const Text('دفتر المحاسب الشامل'),
+        toolbarHeight: 56,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -940,6 +939,8 @@ class _HomeScreenState extends State<HomeScreen>
               .toList(),
         ),
       ),
+      // ✅ إلغاء السحب من الحافة
+      drawerEnableOpenDragGesture: false,
       drawer: Drawer(
         child: Column(
           children: [
@@ -1078,7 +1079,6 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       body: Column(
         children: [
-          // شريط البحث
           Container(
             padding: const EdgeInsets.all(12),
             color: AppColors.primary,
@@ -1101,7 +1101,6 @@ class _HomeScreenState extends State<HomeScreen>
               onChanged: (val) => setState(() => searchQuery = val),
             ),
           ),
-          // ✅ TabBarView للسماح بالسحب بين التصنيفات
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -1250,57 +1249,84 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // شريط الإجمالي
+                    // ✅ شريط الإجماليات مع زر + منفصل
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 16),
-                      color: AppColors.primary,
+                          vertical: 12, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8E8E8),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.grey.shade400,
+                            width: 1,
+                          ),
+                        ),
+                      ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.arrow_upward,
-                                  color: Colors.redAccent, size: 18),
-                              const SizedBox(width: 4),
-                              Text(
-                                'عليه: ${totalTake.toStringAsFixed(1)}',
-                                style: const TextStyle(
-                                  color: Colors.redAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                          // ✅ الإجماليات
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'عليه: ${totalTake.toStringAsFixed(1)}',
+                                      style: const TextStyle(
+                                        color: AppColors.red,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    Text(
+                                      'له: ${totalGive.toStringAsFixed(1)}',
+                                      style: const TextStyle(
+                                        color: AppColors.green,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              const Icon(Icons.arrow_downward,
-                                  color: Colors.greenAccent, size: 18),
-                              const SizedBox(width: 4),
-                              Text(
-                                'له: ${totalGive.toStringAsFixed(1)}',
-                                style: const TextStyle(
-                                  color: Colors.greenAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                                const SizedBox(height: 8),
+                                Text(
+                                  'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${netBalance.abs().toStringAsFixed(1)}',
+                                  style: const TextStyle(
+                                    color: AppColors.textDark,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: AppColors.gold,
-                              borderRadius: BorderRadius.circular(15),
+                              ],
                             ),
-                            child: Text(
-                              '${netBalance.abs().toStringAsFixed(1)} ${netBalance >= 0 ? "له" : "عليه"}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                          ),
+                          const SizedBox(width: 12),
+                          // ✅ زر + منفصل في اليمين
+                          Material(
+                            color: AppColors.gold,
+                            shape: const CircleBorder(),
+                            elevation: 4,
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                final activeIndex = _tabController!.index;
+                                final activeCategoryId = int.parse(
+                                    categories[activeIndex]['id'].toString());
+                                _showAddCustomerDialog(
+                                    context, activeCategoryId);
+                              },
+                              child: Container(
+                                width: 60,
+                                height: 60,
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
                               ),
                             ),
                           ),
@@ -1314,16 +1340,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          final activeIndex = _tabController!.index;
-          final activeCategoryId =
-              int.parse(categories[activeIndex]['id'].toString());
-          _showAddCustomerDialog(context, activeCategoryId);
-        },
-        child: const Icon(Icons.add, size: 30),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 
@@ -2055,12 +2071,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
+          // ✅ شريط الإجماليات: عليه يمين، له يسار، الرصيد وسط
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             color: AppColors.primary,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                // ✅ عليه في اليمين
                 Row(
                   children: [
                     const Icon(Icons.arrow_upward,
@@ -2075,20 +2093,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ),
                   ],
                 ),
-                Row(
-                  children: [
-                    const Icon(Icons.arrow_downward,
-                        color: Colors.greenAccent, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      'له: ${totalGive.toStringAsFixed(1)}',
-                      style: const TextStyle(
-                          color: Colors.greenAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14),
-                    ),
-                  ],
-                ),
+                // ✅ الرصيد في الوسط
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -2104,36 +2109,31 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         fontSize: 13),
                   ),
                 ),
+                // ✅ له في اليسار
+                Row(
+                  children: [
+                    Text(
+                      'له: ${totalGive.toStringAsFixed(1)}',
+                      style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_downward,
+                        color: Colors.greenAccent, size: 18),
+                  ],
+                ),
               ],
             ),
           ),
+          // ✅ الأزرار: عليه يمين، له يسار (بدون قبض/دفع)
           Container(
             color: Colors.white,
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.add, color: Colors.white),
-                    label: const Text('له (قبض)',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold)),
-                    onPressed: () =>
-                        _showAddTransactionDialog(context, 'give'),
-                  ),
-                ),
-                const SizedBox(width: 10),
+                // ✅ عليه (أحمر) في اليمين - أول عنصر
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -2146,13 +2146,36 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       elevation: 0,
                     ),
                     icon: const Icon(Icons.remove, color: Colors.white),
-                    label: const Text('عليه (دفع)',
+                    label: const Text('عليه',
                         style: TextStyle(
                             color: Colors.white,
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold)),
                     onPressed: () =>
                         _showAddTransactionDialog(context, 'take'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // ✅ له (أخضر) في اليسار - آخر عنصر
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text('له',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    onPressed: () =>
+                        _showAddTransactionDialog(context, 'give'),
                   ),
                 ),
               ],
@@ -2230,7 +2253,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ PDF - التصميم القديم بنفس الترتيب، لكن ألوان أوضح وأرقام بدون صناديق ملونة
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     try {
@@ -2245,11 +2267,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         theme: pw.ThemeData.withFont(base: font, bold: fontBold),
       );
 
-      // ✅ ألوان أوضح فقط - بدون صناديق ملونة
       final primaryColor = PdfColor.fromHex("#1E3A5F");
-      final greenText = PdfColor.fromHex("#1B5E20"); // أخضر داكن واضح
-      final redText = PdfColor.fromHex("#B71C1C"); // أحمر داكن واضح
-      final textDark = PdfColor.fromHex("#000000"); // نص أسود للوضوح
+      final greenText = PdfColor.fromHex("#1B5E20");
+      final redText = PdfColor.fromHex("#B71C1C");
+      final textDark = PdfColor.fromHex("#000000");
 
       pdf.addPage(
         pw.MultiPage(
@@ -2300,8 +2321,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ],
               ),
               pw.SizedBox(height: 10),
-
-              // ✅ الجدول - نفس الترتيب، أرقام بدون صناديق، ألوان واضحة
               pw.TableHelper.fromTextArray(
                 context: context,
                 border:
@@ -2355,7 +2374,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   } catch (_) {}
 
                   return [
-                    // الرصيد - نص ملون فقط بدون خلفية
                     pw.Text(
                       '${runBal.abs().toStringAsFixed(1)} ${runBal >= 0 ? "له" : "عليه"}',
                       style: pw.TextStyle(
@@ -2363,7 +2381,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           fontSize: 9,
                           color: runBal >= 0 ? greenText : redText),
                     ),
-                    // له
                     isGive
                         ? pw.Text(amt.toStringAsFixed(1),
                             style: pw.TextStyle(
@@ -2373,7 +2390,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         : pw.Text('-',
                             style: pw.TextStyle(
                                 font: font, fontSize: 9, color: textDark)),
-                    // عليه
                     isGive
                         ? pw.Text('-',
                             style: pw.TextStyle(
@@ -2383,13 +2399,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 font: fontBold,
                                 fontSize: 9,
                                 color: redText)),
-                    // التفاصيل
                     pw.Text(
                       tx['details'].toString(),
                       style: pw.TextStyle(
                           font: font, fontSize: 9, color: textDark),
                     ),
-                    // التاريخ
                     pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
@@ -2409,10 +2423,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ];
                 }).toList(),
               ),
-
               pw.SizedBox(height: 10),
-
-              // شريط الإجماليات السفلي
               pw.Container(
                 padding: const pw.EdgeInsets.all(10),
                 decoration: pw.BoxDecoration(
