@@ -731,6 +731,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   String searchQuery = '';
   TabController? _tabController;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   void _showBackupDialog(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
@@ -777,6 +778,55 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.pop(ctx);
               provider.exportBackup();
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ دالة البحث
+  void _showSearchDialog() {
+    final searchCtrl = TextEditingController(text: searchQuery);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.search, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('البحث عن حساب'),
+          ],
+        ),
+        content: TextField(
+          controller: searchCtrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'اسم الحساب',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onChanged: (val) {
+            setState(() => searchQuery = val);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() => searchQuery = '');
+              Navigator.pop(ctx);
+            },
+            child: const Text('إلغاء',
+                style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('تم'),
           ),
         ],
       ),
@@ -995,29 +1045,68 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return Scaffold(
-      // ✅ بدون عنوان — التابات في الأعلى مباشرة
+      key: _scaffoldKey,
+      // ✅ الشريط العلوي: 🔍 يسار + ☰ يمين، ثم التابات تحت
       appBar: AppBar(
-        title: const SizedBox.shrink(),
         toolbarHeight: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white),
-            onPressed: () => Scaffold.of(context).openDrawer(),
+        elevation: 0,
+        backgroundColor: AppColors.primary,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(104),
+          child: Container(
+            color: AppColors.primary,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ✅ الصف الأول: 🔍 (يسار) + ☰ (يمين)
+                SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      // ✅ زر البحث في اليسار
+                      IconButton(
+                        icon: const Icon(
+                          Icons.search,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        onPressed: _showSearchDialog,
+                      ),
+                      const Spacer(),
+                      // ✅ ☰ في اليمين
+                      IconButton(
+                        icon: const Icon(
+                          Icons.menu,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        onPressed: () =>
+                            _scaffoldKey.currentState?.openDrawer(),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ),
+                // ✅ الصف الثاني: التابات
+                SizedBox(
+                  height: 48,
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    indicatorColor: AppColors.gold,
+                    indicatorWeight: 3,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white70,
+                    labelStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                    tabs: categories
+                        .map((cat) => Tab(text: cat['name'].toString()))
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        leadingWidth: 56,
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          indicatorColor: AppColors.gold,
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          labelStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          tabs: categories
-              .map((cat) => Tab(text: cat['name'].toString()))
-              .toList(),
         ),
       ),
       drawerEnableOpenDragGesture: false,
@@ -1159,28 +1248,6 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: AppColors.primary,
-            child: TextField(
-              style: const TextStyle(color: Colors.white),
-              cursorColor: AppColors.gold,
-              decoration: InputDecoration(
-                hintText: 'بحث عن حساب...',
-                hintStyle: const TextStyle(color: Colors.white70),
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.gold),
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-              ),
-              onChanged: (val) => setState(() => searchQuery = val),
-            ),
-          ),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -1329,7 +1396,7 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط الإجماليات - زر + في اليمين أولاً
+                    // ✅ شريط الإجماليات - زر + في اليمين
                     Container(
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 12),
@@ -1344,7 +1411,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       child: Row(
                         children: [
-                          // ✅ زر + في اليمين - أول عنصر
+                          // ✅ زر + في اليمين - أول عنصر (RTL)
                           Material(
                             color: AppColors.gold,
                             shape: const CircleBorder(),
@@ -1371,7 +1438,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 12),
-                          // ✅ الإجماليات بعد الزر
+                          // ✅ الإجماليات
                           Expanded(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
