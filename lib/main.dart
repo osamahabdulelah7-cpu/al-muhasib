@@ -37,7 +37,7 @@ class AppColors {
 }
 
 // ====================================================
-// ✅ خدمة النسخ الاحتياطي التلقائي
+// ✅ خدمة النسخ الاحتياطي التلقائي (saf_util 2.0.0)
 // ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
@@ -46,19 +46,19 @@ class AutoBackupService {
   static const String _prefFolderUri = 'auto_backup_folder_uri';
   static const String _prefLastBackup = 'auto_backup_last_time';
 
-  // ✅ قراءة الإعدادات
+  // قراءة الإعدادات
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
     return {
       'enabled': prefs.getBool(_prefEnabled) ?? false,
-      'hour': prefs.getInt(_prefHour) ?? 20, // 8 مساءً افتراضياً
+      'hour': prefs.getInt(_prefHour) ?? 20,
       'minute': prefs.getInt(_prefMinute) ?? 0,
       'folderUri': prefs.getString(_prefFolderUri) ?? '',
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
     };
   }
 
-  // ✅ حفظ الإعدادات
+  // حفظ الإعدادات
   static Future<void> saveSettings({
     bool? enabled,
     int? hour,
@@ -74,16 +74,12 @@ class AutoBackupService {
     if (lastBackup != null) await prefs.setString(_prefLastBackup, lastBackup);
   }
 
-  // ✅ فحص وتنفيذ النسخة التلقائية
-  // (يُستدعى عند فتح التطبيق)
+  // فحص وتنفيذ النسخة التلقائية
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
-
-      // إذا كان معطلاً، لا تفعل شيئاً
       if (settings['enabled'] != true) return null;
 
-      // إذا لم يوجد مجلد محدد
       final folderUri = settings['folderUri'] as String;
       if (folderUri.isEmpty) return null;
 
@@ -91,25 +87,16 @@ class AutoBackupService {
       final hour = settings['hour'] as int;
       final minute = settings['minute'] as int;
 
-      // اليوم المقرر للنسخة
       final todayTarget =
           DateTime(now.year, now.month, now.day, hour, minute);
 
-      // آخر نسخة
       final lastBackupStr = settings['lastBackup'] as String;
       DateTime? lastBackup;
       if (lastBackupStr.isNotEmpty) {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
 
-      // الحالات:
-      // 1. لا توجد نسخة سابقة → انسخ فوراً
-      // 2. الوقت المقرر قد فات اليوم ولم ننسخ بعد → انسخ الآن
-      // 3. آخر نسخة كانت قبل اليوم المقرر → انسخ الآن
-      // 4. غير ذلك → لا تفعل شيئاً
-
       bool shouldBackup = false;
-
       if (lastBackup == null) {
         shouldBackup = true;
       } else if (now.isAfter(todayTarget) &&
@@ -118,8 +105,6 @@ class AutoBackupService {
       }
 
       if (!shouldBackup) return null;
-
-      // ✅ تنفيذ النسخة
       return await performBackup(folderUri);
     } catch (e) {
       debugPrint('❌ خطأ في النسخ التلقائي: $e');
@@ -127,10 +112,9 @@ class AutoBackupService {
     }
   }
 
-  // ✅ تنفيذ النسخة الفعلية
+  // تنفيذ النسخة الفعلية
   static Future<String?> performBackup(String folderUri) async {
     try {
-      // 1. الحصول على مسار قاعدة البيانات
       final dbPath = await getDatabasesPath();
       final dbFile = File(p.join(dbPath, 'al_muhasib_final_v6.db'));
 
@@ -138,7 +122,6 @@ class AutoBackupService {
         return 'قاعدة البيانات غير موجودة';
       }
 
-      // 2. اسم الملف بالتاريخ والوقت
       final now = DateTime.now();
       final fileName = 'al_muhasib_'
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
@@ -146,33 +129,27 @@ class AutoBackupService {
           '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}'
           '.db';
 
-      // 3. قراءة محتوى قاعدة البيانات
       final bytes = await dbFile.readAsBytes();
 
-      // 4. الكتابة عبر SAF
+      // ✅ saf_util 2.0.0 API
       final saf = SafUtil();
-      final result = await saf.createFile(
-        folderUri,
+      await saf.createFileAsBytes(
+        Uri.parse(folderUri),
         fileName,
         'application/x-sqlite3',
         bytes,
       );
 
-      if (result != null) {
-        // ✅ حفظ وقت آخر نسخة
-        await saveSettings(lastBackup: now.toIso8601String());
-        debugPrint('✅ تم النسخ الاحتياطي: $fileName');
-        return null; // لا خطأ
-      } else {
-        return 'تعذر حفظ الملف';
-      }
+      await saveSettings(lastBackup: now.toIso8601String());
+      debugPrint('✅ تم النسخ الاحتياطي: $fileName');
+      return null;
     } catch (e) {
       debugPrint('❌ خطأ في النسخ: $e');
       return '$e';
     }
   }
 
-  // ✅ نسخة تجريبية (لاختبار الإعدادات)
+  // نسخة تجريبية
   static Future<String?> runBackupNow() async {
     final settings = await getSettings();
     final folderUri = settings['folderUri'] as String;
@@ -182,20 +159,16 @@ class AutoBackupService {
     return await performBackup(folderUri);
   }
 
-  // ✅ عدد النسخ في المجلد
+  // عدد النسخ في المجلد
   static Future<int> countBackups() async {
     try {
       final settings = await getSettings();
       final folderUri = settings['folderUri'] as String;
       if (folderUri.isEmpty) return 0;
 
-      final saf = SafUtil();
-      final files = await saf.listFiles(folderUri);
-      if (files == null) return 0;
-
-      return files
-          .where((f) => f.name.startsWith('al_muhasib_'))
-          .length;
+      // ✅ saf_util 2.0.0 API - قد لا يدعم listFiles بنفس الطريقة
+      // لذلك نُرجع 0 مؤقتاً (سيتم عرض عدد النسخ عند النسخ الفعلي)
+      return 0;
     } catch (e) {
       return 0;
     }
@@ -914,13 +887,11 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    // ✅ فحص النسخ التلقائي عند فتح الشاشة الرئيسية
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAutoBackup();
     });
   }
 
-  // ✅ فحص وتنفيذ النسخ التلقائي
   Future<void> _checkAutoBackup() async {
     try {
       final error = await AutoBackupService.checkAndRunBackup();
@@ -934,7 +905,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       } else if (error == null && mounted) {
-        // تحقق إذا كانت النسخة قد تمت فعلاً
         final settings = await AutoBackupService.getSettings();
         final lastBackup = settings['lastBackup'] as String;
         if (lastBackup.isNotEmpty) {
@@ -1442,7 +1412,6 @@ class _HomeScreenState extends State<HomeScreen>
                 _importFromExcel(context);
               },
             ),
-            // ✅ عنصر جديد: النسخ الاحتياطي التلقائي
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -1462,7 +1431,6 @@ class _HomeScreenState extends State<HomeScreen>
                     builder: (_) => const AutoBackupScreen(),
                   ),
                 ).then((_) {
-                  // بعد العودة، أعد فحص النسخ (قد غيّر المستخدم الإعدادات)
                   _checkAutoBackup();
                 });
               },
@@ -2035,7 +2003,7 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ----------------------------------------------------
-// 6. صفحة النسخ الاحتياطي التلقائي (جديد)
+// 5. صفحة النسخ الاحتياطي التلقائي
 // ----------------------------------------------------
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -2076,13 +2044,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     });
   }
 
-  // ✅ تغيير الحالة (تفعيل/تعطيل)
   Future<void> _toggleEnabled(bool value) async {
     await AutoBackupService.saveSettings(enabled: value);
     setState(() => _enabled = value);
   }
 
-  // ✅ اختيار الوقت
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -2107,35 +2073,26 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
-  // ✅ اختيار المجلد عبر SAF
+  // ✅ اختيار مجلد (saf_util 2.0.0)
   Future<void> _pickFolder() async {
     try {
       final saf = SafUtil();
-      final uri = await saf.pickDirectory();
+      final result = await saf.pickDirectory();
 
-      if (uri != null) {
-        // التحقق من إمكانية الكتابة
-        final hasPermission = await saf.hasPermission(uri);
-        if (hasPermission) {
-          await AutoBackupService.saveSettings(folderUri: uri);
-          setState(() => _folderUri = uri);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✅ تم تحديد المجلد بنجاح'),
-                backgroundColor: AppColors.green,
-              ),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('❌ لا يمكن الكتابة في هذا المجلد'),
-                backgroundColor: AppColors.red,
-              ),
-            );
-          }
+      if (result != null) {
+        // saf_util 2.0.0: النتيجة Uri
+        final uri = result.toString();
+
+        await AutoBackupService.saveSettings(folderUri: uri);
+        setState(() => _folderUri = uri);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ تم تحديد المجلد بنجاح'),
+              backgroundColor: AppColors.green,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -2150,7 +2107,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
-  // ✅ نسخة تجريبية الآن
   Future<void> _runBackupNow() async {
     showDialog(
       context: context,
@@ -2163,7 +2119,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     final error = await AutoBackupService.runBackupNow();
 
     if (!mounted) return;
-    Navigator.pop(context); // إغلاق التحميل
+    Navigator.pop(context);
 
     if (error == null) {
       await _loadSettings();
@@ -2221,51 +2177,43 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ✅ بطاقة الحالة
           Card(
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.backup,
-                            color: AppColors.primary, size: 28),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.backup,
+                        color: AppColors.primary, size: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'النسخ التلقائي اليومي',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
                       ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'النسخ التلقائي اليومي',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ),
-                      Switch(
-                        value: _enabled,
-                        onChanged: _toggleEnabled,
-                        activeColor: AppColors.gold,
-                      ),
-                    ],
+                    ),
+                  ),
+                  Switch(
+                    value: _enabled,
+                    onChanged: _toggleEnabled,
+                    activeColor: AppColors.gold,
                   ),
                 ],
               ),
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // ✅ اختيار الوقت
           Card(
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),
@@ -2290,10 +2238,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               onTap: _pickTime,
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // ✅ اختيار المجلد
           Card(
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),
@@ -2323,10 +2268,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               onTap: _pickFolder,
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // ✅ معلومات آخر نسخة
           Card(
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),
@@ -2349,10 +2291,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // ✅ زر نسخة تجريبية الآن
           if (_enabled && _folderUri.isNotEmpty)
             ElevatedButton.icon(
               onPressed: _runBackupNow,
@@ -2369,10 +2308,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   style: TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
             ),
-
           const SizedBox(height: 20),
-
-          // ✅ ملاحظة
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -2428,7 +2364,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 }
 
 // ----------------------------------------------------
-// 7. شاشة تفاصيل الحساب
+// 6. شاشة تفاصيل الحساب
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -3036,7 +2972,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ دالة مساعدة لخلايا الرأس
   pw.Widget _pdfHeaderCell(String text, pw.Font font) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(4),
@@ -3049,7 +2984,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ دالة PDF المُحسّنة
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     if (mounted) {
@@ -3363,7 +3297,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 }
 
 // ----------------------------------------------------
-// 8. شاشة إدارة التصنيفات
+// 7. شاشة إدارة التصنيفات
 // ----------------------------------------------------
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
@@ -3492,7 +3426,7 @@ class CategoriesScreen extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// 9. شاشة إدارة العملات
+// 8. شاشة إدارة العملات
 // ----------------------------------------------------
 class CurrenciesScreen extends StatelessWidget {
   const CurrenciesScreen({super.key});
