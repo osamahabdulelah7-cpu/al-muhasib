@@ -8,8 +8,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:saf_util/saf_util.dart';
-import 'package:saf_util/saf_util_platform_interface.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -37,13 +35,12 @@ class AppColors {
 }
 
 // ====================================================
-// ✅ خدمة النسخ الاحتياطي التلقائي (saf_util 2.0.0)
+// ✅ خدمة النسخ الاحتياطي التلقائي (بدون saf_util)
 // ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
   static const String _prefHour = 'auto_backup_hour';
   static const String _prefMinute = 'auto_backup_minute';
-  static const String _prefFolderUri = 'auto_backup_folder_uri';
   static const String _prefLastBackup = 'auto_backup_last_time';
 
   // قراءة الإعدادات
@@ -53,7 +50,6 @@ class AutoBackupService {
       'enabled': prefs.getBool(_prefEnabled) ?? false,
       'hour': prefs.getInt(_prefHour) ?? 20,
       'minute': prefs.getInt(_prefMinute) ?? 0,
-      'folderUri': prefs.getString(_prefFolderUri) ?? '',
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
     };
   }
@@ -63,14 +59,12 @@ class AutoBackupService {
     bool? enabled,
     int? hour,
     int? minute,
-    String? folderUri,
     String? lastBackup,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (enabled != null) await prefs.setBool(_prefEnabled, enabled);
     if (hour != null) await prefs.setInt(_prefHour, hour);
     if (minute != null) await prefs.setInt(_prefMinute, minute);
-    if (folderUri != null) await prefs.setString(_prefFolderUri, folderUri);
     if (lastBackup != null) await prefs.setString(_prefLastBackup, lastBackup);
   }
 
@@ -79,9 +73,6 @@ class AutoBackupService {
     try {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
-
-      final folderUri = settings['folderUri'] as String;
-      if (folderUri.isEmpty) return null;
 
       final now = DateTime.now();
       final hour = settings['hour'] as int;
@@ -105,16 +96,47 @@ class AutoBackupService {
       }
 
       if (!shouldBackup) return null;
-      return await performBackup(folderUri);
+      return await performBackup();
     } catch (e) {
       debugPrint('❌ خطأ في النسخ التلقائي: $e');
       return null;
     }
   }
 
+  // ✅ الحصول على مجلد الحفظ (ثابت)
+  static Future<Directory> _getBackupDirectory() async {
+    Directory backupDir;
+
+    // محاولة استخدام الذاكرة الخارجية أولاً (Android 10 وأقل)
+    if (Platform.isAndroid) {
+      final externalDir = Directory('/storage/emulated/0/Al-Muhasib/Backups');
+      try {
+        if (!await externalDir.exists()) {
+          await externalDir.create(recursive: true);
+        }
+        // اختبار الكتابة
+        final testFile = File(p.join(externalDir.path, '.test'));
+        await testFile.writeAsString('test');
+        await testFile.delete();
+        return externalDir;
+      } catch (e) {
+        debugPrint('⚠️ تعذر الوصول للذاكرة الخارجية: $e');
+      }
+    }
+
+    // بديل: مجلد التطبيق الخاص
+    backupDir = await getApplicationDocumentsDirectory();
+    final fallbackDir = Directory(p.join(backupDir.path, 'Backups'));
+    if (!await fallbackDir.exists()) {
+      await fallbackDir.create(recursive: true);
+    }
+    return fallbackDir;
+  }
+
   // تنفيذ النسخة الفعلية
-  static Future<String?> performBackup(String folderUri) async {
+  static Future<String?> performBackup() async {
     try {
+      // 1. قاعدة البيانات
       final dbPath = await getDatabasesPath();
       final dbFile = File(p.join(dbPath, 'al_muhasib_final_v6.db'));
 
@@ -122,6 +144,10 @@ class AutoBackupService {
         return 'قاعدة البيانات غير موجودة';
       }
 
+      // 2. مجلد الحفظ
+      final backupDir = await _getBackupDirectory();
+
+      // 3. اسم الملف
       final now = DateTime.now();
       final fileName = 'al_muhasib_'
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
@@ -129,19 +155,12 @@ class AutoBackupService {
           '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}'
           '.db';
 
-      final bytes = await dbFile.readAsBytes();
-
-      // ✅ saf_util 2.0.0 API
-      final saf = SafUtil();
-      await saf.createFileAsBytes(
-        Uri.parse(folderUri),
-        fileName,
-        'application/x-sqlite3',
-        bytes,
-      );
+      // 4. نسخ الملف
+      final targetFile = File(p.join(backupDir.path, fileName));
+      await dbFile.copy(targetFile.path);
 
       await saveSettings(lastBackup: now.toIso8601String());
-      debugPrint('✅ تم النسخ الاحتياطي: $fileName');
+      debugPrint('✅ تم النسخ الاحتياطي: ${targetFile.path}');
       return null;
     } catch (e) {
       debugPrint('❌ خطأ في النسخ: $e');
@@ -151,26 +170,32 @@ class AutoBackupService {
 
   // نسخة تجريبية
   static Future<String?> runBackupNow() async {
-    final settings = await getSettings();
-    final folderUri = settings['folderUri'] as String;
-    if (folderUri.isEmpty) {
-      return 'الرجاء اختيار مجلد أولاً';
-    }
-    return await performBackup(folderUri);
+    return await performBackup();
   }
 
   // عدد النسخ في المجلد
   static Future<int> countBackups() async {
     try {
-      final settings = await getSettings();
-      final folderUri = settings['folderUri'] as String;
-      if (folderUri.isEmpty) return 0;
+      final backupDir = await _getBackupDirectory();
+      if (!await backupDir.exists()) return 0;
 
-      // ✅ saf_util 2.0.0 API - قد لا يدعم listFiles بنفس الطريقة
-      // لذلك نُرجع 0 مؤقتاً (سيتم عرض عدد النسخ عند النسخ الفعلي)
-      return 0;
+      final files = backupDir.listSync();
+      return files
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
+          .length;
     } catch (e) {
       return 0;
+    }
+  }
+
+  // الحصول على مسار المجلد (للعرض)
+  static Future<String> getBackupPath() async {
+    try {
+      final backupDir = await _getBackupDirectory();
+      return backupDir.path;
+    } catch (e) {
+      return '';
     }
   }
 }
@@ -198,7 +223,7 @@ void main() async {
       ),
     );
 
-    // ✅ فحص النسخ التلقائي بعد فتح التطبيق بقليل
+    // فحص النسخ التلقائي بعد فتح التطبيق
     Future.delayed(const Duration(seconds: 2), () async {
       final error = await AutoBackupService.checkAndRunBackup();
       if (error != null) {
@@ -894,9 +919,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _checkAutoBackup() async {
     try {
+      final settings = await AutoBackupService.getSettings();
+      final wasEnabled = settings['enabled'] as bool;
+      final lastBackupBefore = settings['lastBackup'] as String;
+
       final error = await AutoBackupService.checkAndRunBackup();
+
       if (error != null && mounted) {
-        debugPrint('⚠️ فشل النسخ التلقائي: $error');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('⚠️ فشل النسخ التلقائي: $error'),
@@ -904,13 +933,14 @@ class _HomeScreenState extends State<HomeScreen>
             duration: const Duration(seconds: 5),
           ),
         );
-      } else if (error == null && mounted) {
-        final settings = await AutoBackupService.getSettings();
-        final lastBackup = settings['lastBackup'] as String;
-        if (lastBackup.isNotEmpty) {
-          final lastBackupDate = DateTime.tryParse(lastBackup);
-          if (lastBackupDate != null &&
-              DateTime.now().difference(lastBackupDate).inMinutes < 1) {
+      } else if (error == null && wasEnabled && mounted) {
+        // تحقق إذا تمت النسخة فعلاً
+        final newSettings = await AutoBackupService.getSettings();
+        final newLastBackup = newSettings['lastBackup'] as String;
+
+        if (newLastBackup.isNotEmpty &&
+            newLastBackup != lastBackupBefore) {
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Row(
@@ -2015,9 +2045,9 @@ class AutoBackupScreen extends StatefulWidget {
 class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _enabled = false;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 20, minute: 0);
-  String _folderUri = '';
   String _lastBackup = '';
   int _backupCount = 0;
+  String _backupPath = '';
   bool _loading = true;
 
   @override
@@ -2029,6 +2059,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   Future<void> _loadSettings() async {
     final settings = await AutoBackupService.getSettings();
     final count = await AutoBackupService.countBackups();
+    final path = await AutoBackupService.getBackupPath();
 
     if (!mounted) return;
     setState(() {
@@ -2037,9 +2068,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         hour: settings['hour'] as int,
         minute: settings['minute'] as int,
       );
-      _folderUri = settings['folderUri'] as String;
       _lastBackup = settings['lastBackup'] as String;
       _backupCount = count;
+      _backupPath = path;
       _loading = false;
     });
   }
@@ -2070,40 +2101,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         minute: picked.minute,
       );
       setState(() => _selectedTime = picked);
-    }
-  }
-
-  // ✅ اختيار مجلد (saf_util 2.0.0)
-  Future<void> _pickFolder() async {
-    try {
-      final saf = SafUtil();
-      final result = await saf.pickDirectory();
-
-      if (result != null) {
-        // saf_util 2.0.0: النتيجة Uri
-        final uri = result.toString();
-
-        await AutoBackupService.saveSettings(folderUri: uri);
-        setState(() => _folderUri = uri);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ تم تحديد المجلد بنجاح'),
-              backgroundColor: AppColors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ: $e'),
-            backgroundColor: AppColors.red,
-          ),
-        );
-      }
     }
   }
 
@@ -2147,6 +2144,58 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         );
       }
     }
+  }
+
+  void _showFolderInfo() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.folder, color: AppColors.green),
+            SizedBox(width: 8),
+            Text('مجلد الحفظ'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('يتم حفظ النسخ الاحتياطية في:',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: SelectableText(
+                _backupPath.isEmpty ? 'غير معروف' : _backupPath,
+                style: const TextStyle(
+                    fontSize: 12, fontFamily: 'monospace'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '💡 يمكنك الوصول لهذا المجلد من مدير الملفات',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('حسناً'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _formatLastBackup() {
@@ -2253,19 +2302,16 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               ),
               title: const Text('مجلد الحفظ',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(
-                _folderUri.isEmpty
-                    ? 'لم يتم تحديد مجلد'
-                    : 'تم تحديد مجلد ✅',
+              subtitle: const Text(
+                'المسار: /Al-Muhasib/Backups',
                 style: TextStyle(
                   fontSize: 13,
-                  color: _folderUri.isEmpty
-                      ? AppColors.red
-                      : AppColors.green,
+                  color: AppColors.green,
                 ),
               ),
-              trailing: const Icon(Icons.edit, color: AppColors.primary),
-              onTap: _pickFolder,
+              trailing: const Icon(Icons.info_outline,
+                  color: AppColors.primary),
+              onTap: _showFolderInfo,
             ),
           ),
           const SizedBox(height: 12),
@@ -2292,7 +2338,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          if (_enabled && _folderUri.isNotEmpty)
+          if (_enabled)
             ElevatedButton.icon(
               onPressed: _runBackupNow,
               style: ElevatedButton.styleFrom(
