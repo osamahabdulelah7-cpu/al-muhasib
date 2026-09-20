@@ -29,7 +29,6 @@ dependencies:
   # ✅ مكتبات النسخ التلقائي
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
-  saf_util: ^2.0.0
 
 dev_dependencies:
   flutter_test:
