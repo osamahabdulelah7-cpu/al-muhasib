@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -35,13 +36,15 @@ class AppColors {
 }
 
 // ====================================================
-// ✅ خدمة النسخ الاحتياطي التلقائي (بدون saf_util)
+// ✅ خدمة النسخ الاحتياطي التلقائي
 // ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
   static const String _prefHour = 'auto_backup_hour';
   static const String _prefMinute = 'auto_backup_minute';
+  static const String _prefFolderPath = 'auto_backup_folder_path';
   static const String _prefLastBackup = 'auto_backup_last_time';
+  static const String _prefLastDbModified = 'auto_backup_last_db_modified';
 
   // قراءة الإعدادات
   static Future<Map<String, dynamic>> getSettings() async {
@@ -50,7 +53,9 @@ class AutoBackupService {
       'enabled': prefs.getBool(_prefEnabled) ?? false,
       'hour': prefs.getInt(_prefHour) ?? 20,
       'minute': prefs.getInt(_prefMinute) ?? 0,
+      'folderPath': prefs.getString(_prefFolderPath) ?? '',
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
+      'lastDbModified': prefs.getString(_prefLastDbModified) ?? '',
     };
   }
 
@@ -59,25 +64,93 @@ class AutoBackupService {
     bool? enabled,
     int? hour,
     int? minute,
+    String? folderPath,
     String? lastBackup,
+    String? lastDbModified,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (enabled != null) await prefs.setBool(_prefEnabled, enabled);
     if (hour != null) await prefs.setInt(_prefHour, hour);
     if (minute != null) await prefs.setInt(_prefMinute, minute);
+    if (folderPath != null) await prefs.setString(_prefFolderPath, folderPath);
     if (lastBackup != null) await prefs.setString(_prefLastBackup, lastBackup);
+    if (lastDbModified != null) {
+      await prefs.setString(_prefLastDbModified, lastDbModified);
+    }
   }
 
-  // فحص وتنفيذ النسخة التلقائية
+  // ✅ طلب صلاحية الوصول للذاكرة
+  static Future<bool> requestStoragePermission() async {
+    try {
+      if (!Platform.isAndroid) return true;
+
+      // على Android 11+ نحتاج MANAGE_EXTERNAL_STORAGE
+      if (await Permission.manageExternalStorage.isGranted) {
+        return true;
+      }
+
+      // جرب الطلب
+      final status = await Permission.manageExternalStorage.request();
+      if (status.isGranted) return true;
+
+      // بديل: storage العادي
+      final oldStatus = await Permission.storage.request();
+      if (oldStatus.isGranted) return true;
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ خطأ في طلب الصلاحية: $e');
+      return false;
+    }
+  }
+
+  // ✅ التحقق من الصلاحية
+  static Future<bool> hasStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    if (await Permission.storage.isGranted) return true;
+    return false;
+  }
+
+  // ✅ الحصول على مسار قاعدة البيانات
+  static Future<File> _getDatabaseFile() async {
+    final dbPath = await getDatabasesPath();
+    return File(p.join(dbPath, 'al_muhasib_final_v6.db'));
+  }
+
+  // ✅ التحقق هل تغيرت البيانات
+  static Future<bool> _hasDataChanged() async {
+    try {
+      final dbFile = await _getDatabaseFile();
+      if (!await dbFile.exists()) return false;
+
+      final lastModified = (await dbFile.stat()).modified.toIso8601String();
+      final settings = await getSettings();
+      final lastDbModified = settings['lastDbModified'] as String;
+
+      return lastModified != lastDbModified;
+    } catch (e) {
+      debugPrint('❌ خطأ في فحص تغير البيانات: $e');
+      return true; // في حالة الخطأ، ننسخ احتياطياً
+    }
+  }
+
+  // ✅ فحص وتنفيذ النسخة التلقائية
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
+
+      // التحقق من التفعيل
       if (settings['enabled'] != true) return null;
 
+      // التحقق من وجود مجلد
+      final folderPath = settings['folderPath'] as String;
+      if (folderPath.isEmpty) return null;
+
+      // التحقق من الوقت
       final now = DateTime.now();
       final hour = settings['hour'] as int;
       final minute = settings['minute'] as int;
-
       final todayTarget =
           DateTime(now.year, now.month, now.day, hour, minute);
 
@@ -87,6 +160,7 @@ class AutoBackupService {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
 
+      // هل يجب النسخ؟
       bool shouldBackup = false;
       if (lastBackup == null) {
         shouldBackup = true;
@@ -96,58 +170,37 @@ class AutoBackupService {
       }
 
       if (!shouldBackup) return null;
-      return await performBackup();
+
+      // التحقق من تغير البيانات
+      final dataChanged = await _hasDataChanged();
+      if (!dataChanged) {
+        debugPrint('ℹ️ لم تتغير البيانات — لا حاجة للنسخ');
+        return null;
+      }
+
+      return await performBackup(folderPath);
     } catch (e) {
       debugPrint('❌ خطأ في النسخ التلقائي: $e');
       return null;
     }
   }
 
-  // ✅ الحصول على مجلد الحفظ (ثابت)
-  static Future<Directory> _getBackupDirectory() async {
-    Directory backupDir;
-
-    // محاولة استخدام الذاكرة الخارجية أولاً (Android 10 وأقل)
-    if (Platform.isAndroid) {
-      final externalDir = Directory('/storage/emulated/0/Al-Muhasib/Backups');
-      try {
-        if (!await externalDir.exists()) {
-          await externalDir.create(recursive: true);
-        }
-        // اختبار الكتابة
-        final testFile = File(p.join(externalDir.path, '.test'));
-        await testFile.writeAsString('test');
-        await testFile.delete();
-        return externalDir;
-      } catch (e) {
-        debugPrint('⚠️ تعذر الوصول للذاكرة الخارجية: $e');
-      }
-    }
-
-    // بديل: مجلد التطبيق الخاص
-    backupDir = await getApplicationDocumentsDirectory();
-    final fallbackDir = Directory(p.join(backupDir.path, 'Backups'));
-    if (!await fallbackDir.exists()) {
-      await fallbackDir.create(recursive: true);
-    }
-    return fallbackDir;
-  }
-
-  // تنفيذ النسخة الفعلية
-  static Future<String?> performBackup() async {
+  // ✅ تنفيذ النسخة الفعلية
+  static Future<String?> performBackup(String folderPath) async {
     try {
-      // 1. قاعدة البيانات
-      final dbPath = await getDatabasesPath();
-      final dbFile = File(p.join(dbPath, 'al_muhasib_final_v6.db'));
-
+      // قاعدة البيانات
+      final dbFile = await _getDatabaseFile();
       if (!await dbFile.exists()) {
         return 'قاعدة البيانات غير موجودة';
       }
 
-      // 2. مجلد الحفظ
-      final backupDir = await _getBackupDirectory();
+      // التأكد من وجود المجلد
+      final backupDir = Directory(folderPath);
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+      }
 
-      // 3. اسم الملف
+      // اسم الملف
       final now = DateTime.now();
       final fileName = 'al_muhasib_'
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
@@ -155,11 +208,17 @@ class AutoBackupService {
           '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}'
           '.db';
 
-      // 4. نسخ الملف
-      final targetFile = File(p.join(backupDir.path, fileName));
+      // نسخ الملف
+      final targetFile = File(p.join(folderPath, fileName));
       await dbFile.copy(targetFile.path);
 
-      await saveSettings(lastBackup: now.toIso8601String());
+      // حفظ أوقات
+      final lastModified = (await dbFile.stat()).modified.toIso8601String();
+      await saveSettings(
+        lastBackup: now.toIso8601String(),
+        lastDbModified: lastModified,
+      );
+
       debugPrint('✅ تم النسخ الاحتياطي: ${targetFile.path}');
       return null;
     } catch (e) {
@@ -168,19 +227,28 @@ class AutoBackupService {
     }
   }
 
-  // نسخة تجريبية
+  // ✅ نسخة تجريبية (تجاوز شرط الوقت)
   static Future<String?> runBackupNow() async {
-    return await performBackup();
+    final settings = await getSettings();
+    final folderPath = settings['folderPath'] as String;
+    if (folderPath.isEmpty) {
+      return 'الرجاء اختيار مجلد أولاً';
+    }
+    return await performBackup(folderPath);
   }
 
-  // عدد النسخ في المجلد
+  // ✅ عدد النسخ
   static Future<int> countBackups() async {
     try {
-      final backupDir = await _getBackupDirectory();
-      if (!await backupDir.exists()) return 0;
+      final settings = await getSettings();
+      final folderPath = settings['folderPath'] as String;
+      if (folderPath.isEmpty) return 0;
 
-      final files = backupDir.listSync();
-      return files
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) return 0;
+
+      return dir
+          .listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
           .length;
@@ -189,13 +257,34 @@ class AutoBackupService {
     }
   }
 
-  // الحصول على مسار المجلد (للعرض)
-  static Future<String> getBackupPath() async {
+  // ✅ مشاركة آخر نسخة
+  static Future<String?> shareLatestBackup() async {
     try {
-      final backupDir = await _getBackupDirectory();
-      return backupDir.path;
+      final settings = await getSettings();
+      final folderPath = settings['folderPath'] as String;
+      if (folderPath.isEmpty) return 'لا يوجد مجلد محدد';
+
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) return 'المجلد غير موجود';
+
+      final files = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
+          .toList();
+
+      if (files.isEmpty) return 'لا توجد نسخ احتياطية';
+
+      files.sort((a, b) => b.path.compareTo(a.path));
+      final latest = files.first;
+
+      await Share.shareXFiles(
+        [XFile(latest.path)],
+        text: 'نسخة احتياطية - تطبيق المحاسب',
+      );
+      return null;
     } catch (e) {
-      return '';
+      return '$e';
     }
   }
 }
@@ -223,13 +312,10 @@ void main() async {
       ),
     );
 
-    // فحص النسخ التلقائي بعد فتح التطبيق
     Future.delayed(const Duration(seconds: 2), () async {
       final error = await AutoBackupService.checkAndRunBackup();
       if (error != null) {
         debugPrint('⚠️ فشل النسخ التلقائي: $error');
-      } else {
-        debugPrint('✅ تم فحص النسخ التلقائي');
       }
     });
   }, (error, stack) {
@@ -602,17 +688,7 @@ class AppAccountProvider extends ChangeNotifier {
         }
       }
 
-      debugPrint('📍 صف العناوين: $headerRowIndex');
-      debugPrint('📅 عمود التاريخ: $colDate');
-      debugPrint('👤 عمود اسم الحساب: $colCustomerName');
-      debugPrint('📝 عمود التفاصيل: $colDetails');
-      debugPrint('⬆️ عمود عليه: $colTake');
-      debugPrint('⬇️ عمود له: $colGive');
-
-      if (headerRowIndex == -1) {
-        debugPrint('❌ لم يتم العثور على صف العناوين!');
-        continue;
-      }
+      if (headerRowIndex == -1) continue;
 
       for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
         try {
@@ -642,7 +718,6 @@ class AppAccountProvider extends ChangeNotifier {
               details.contains('إجمالي العمليات') ||
               customerName.contains('إجمالي') ||
               customerName.contains('الرصيد الإجمالي')) {
-            debugPrint('⚠️ تخطي صف الإجمالي');
             continue;
           }
 
@@ -698,9 +773,7 @@ class AppAccountProvider extends ChangeNotifier {
             }
           }
 
-          if (takeAmount == 0 && giveAmount == 0) {
-            continue;
-          }
+          if (takeAmount == 0 && giveAmount == 0) continue;
 
           double amount;
           String type;
@@ -756,21 +829,13 @@ class AppAccountProvider extends ChangeNotifier {
             'date': dateStr,
           });
           transactionsCreated++;
-
-          if (transactionsCreated % 100 == 0) {
-            debugPrint('📝 تم استيراد $transactionsCreated معاملة...');
-          }
         } catch (e) {
-          debugPrint('❌ خطأ في الصف $i: $e');
           rowsSkipped++;
         }
       }
     }
 
     await loadInitialData();
-
-    debugPrint(
-        '✅ تم الاستيراد: $customersCreated حساب و $transactionsCreated معاملة');
 
     String displayName;
     if (customersCreated > 1) {
@@ -934,12 +999,10 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       } else if (error == null && wasEnabled && mounted) {
-        // تحقق إذا تمت النسخة فعلاً
         final newSettings = await AutoBackupService.getSettings();
         final newLastBackup = newSettings['lastBackup'] as String;
 
-        if (newLastBackup.isNotEmpty &&
-            newLastBackup != lastBackupBefore) {
+        if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1451,7 +1514,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 child: const Icon(Icons.schedule, color: AppColors.goldDark),
               ),
-              title: const Text('النسخ الاحتياطي التلقائي',
+              title: const Text('خيارات حفظ البيانات',
                   style: TextStyle(fontWeight: FontWeight.bold)),
               onTap: () {
                 Navigator.pop(context);
@@ -2033,7 +2096,7 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ----------------------------------------------------
-// 5. صفحة النسخ الاحتياطي التلقائي
+// 5. صفحة خيارات حفظ البيانات (جديد - يشبه الصورة 2)
 // ----------------------------------------------------
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -2044,10 +2107,10 @@ class AutoBackupScreen extends StatefulWidget {
 
 class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _enabled = false;
-  TimeOfDay _selectedTime = const TimeOfDay(hour: 20, minute: 0);
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
+  String _folderPath = '';
   String _lastBackup = '';
   int _backupCount = 0;
-  String _backupPath = '';
   bool _loading = true;
 
   @override
@@ -2059,7 +2122,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   Future<void> _loadSettings() async {
     final settings = await AutoBackupService.getSettings();
     final count = await AutoBackupService.countBackups();
-    final path = await AutoBackupService.getBackupPath();
 
     if (!mounted) return;
     setState(() {
@@ -2068,23 +2130,131 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         hour: settings['hour'] as int,
         minute: settings['minute'] as int,
       );
+      _folderPath = settings['folderPath'] as String;
       _lastBackup = settings['lastBackup'] as String;
       _backupCount = count;
-      _backupPath = path;
       _loading = false;
     });
   }
 
+  // ✅ طلب الصلاحية + تفعيل
   Future<void> _toggleEnabled(bool value) async {
+    if (value) {
+      // طلب الصلاحية
+      final hasPermission = await AutoBackupService.hasStoragePermission();
+
+      if (!hasPermission) {
+        if (!mounted) return;
+
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.security, color: AppColors.gold),
+                SizedBox(width: 8),
+                Text('صلاحية الوصول'),
+              ],
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'لكي يعمل الحفظ التلقائي، نحتاج صلاحية الوصول للملفات.',
+                  style: TextStyle(fontSize: 14, height: 1.5),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  '⚠️ سيظهر لك النظام نافذة "السماح بالوصول لجميع الملفات"',
+                  style: TextStyle(fontSize: 12, color: Colors.orange),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('إلغاء',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.gold),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('منح الصلاحية'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+
+        final granted = await AutoBackupService.requestStoragePermission();
+
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ لم يتم منح الصلاحية'),
+                backgroundColor: AppColors.red,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // ✅ إذا لم يوجد مجلد محدد، اطلب اختياره
+      if (_folderPath.isEmpty) {
+        final folderPicked = await _pickFolder();
+        if (!folderPicked) return;
+      }
+    }
+
     await AutoBackupService.saveSettings(enabled: value);
     setState(() => _enabled = value);
+  }
+
+  // ✅ اختيار المجلد عبر FilePicker
+  Future<bool> _pickFolder() async {
+    try {
+      String? selectedDirectory =
+          await FilePicker.platform.getDirectoryPath();
+
+      if (selectedDirectory == null) return false;
+
+      await AutoBackupService.saveSettings(folderPath: selectedDirectory);
+      setState(() => _folderPath = selectedDirectory);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم تحديد المجلد'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+      return false;
+    }
   }
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
-      helpText: 'اختر وقت النسخ الاحتياطي',
+      helpText: 'اختر وقت حفظ البيانات',
       cancelText: 'إلغاء',
       confirmText: 'تأكيد',
       builder: (context, child) {
@@ -2105,6 +2275,16 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 
   Future<void> _runBackupNow() async {
+    if (_folderPath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء اختيار مجلد أولاً'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -2127,7 +2307,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 8),
-                Text('✅ تم النسخ بنجاح'),
+                Text('✅ تم الحفظ بنجاح'),
               ],
             ),
             backgroundColor: AppColors.green,
@@ -2146,60 +2326,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
-  void _showFolderInfo() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.folder, color: AppColors.green),
-            SizedBox(width: 8),
-            Text('مجلد الحفظ'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('يتم حفظ النسخ الاحتياطية في:',
-                style: TextStyle(fontSize: 14, color: Colors.grey)),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: SelectableText(
-                _backupPath.isEmpty ? 'غير معروف' : _backupPath,
-                style: const TextStyle(
-                    fontSize: 12, fontFamily: 'monospace'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              '💡 يمكنك الوصول لهذا المجلد من مدير الملفات',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.gold),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('حسناً'),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _formatLastBackup() {
-    if (_lastBackup.isEmpty) return 'لم تُنشأ بعد';
+    if (_lastBackup.isEmpty) return 'لا يوجد';
     try {
       final dt = DateTime.parse(_lastBackup);
       return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
@@ -2221,190 +2349,289 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('النسخ الاحتياطي التلقائي'),
+        title: const Text('خيارات حفظ البيانات'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
+          // ✅ 1. حفظ البيانات يومياً (Switch)
+          Container(
+            color: Colors.white,
+            child: SwitchListTile(
+              value: _enabled,
+              onChanged: _toggleEnabled,
+              activeColor: Colors.pink,
+              secondary: Container(
+                width: 45,
+                height: 45,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFEBEE),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.alarm, color: Colors.red, size: 26),
+              ),
+              title: const Text(
+                'حفظ البيانات يومياً',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textDark,
+                ),
+              ),
+              subtitle: const Text(
+                'حفظ البيانات تلقائياً مرة واحدة باليوم (بشرط تغيرت البيانات)',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // ✅ 2. مجلد حفظ البيانات
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF8E1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.folder, color: Color(0xFFFFA000), size: 26),
+            ),
+            title: const Text(
+              'مجلد حفظ البيانات',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              _folderPath.isEmpty
+                  ? 'لم يتم تحديد مجلد'
+                  : '$_folderPath/',
+              style: TextStyle(
+                fontSize: 13,
+                color: _folderPath.isEmpty
+                    ? AppColors.red
+                    : AppColors.textMuted,
+              ),
+            ),
+            onTap: () async {
+              if (_folderPath.isEmpty) {
+                await _pickFolder();
+              } else {
+                // عرض خيارات
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: const Text('مجلد حفظ البيانات'),
+                    content: SelectableText(
+                      _folderPath,
+                      style: const TextStyle(fontSize: 13),
                     ),
-                    child: const Icon(Icons.backup,
-                        color: AppColors.primary, size: 28),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _pickFolder();
+                        },
+                        child: const Text('تغيير المجلد'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.gold),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('حسناً'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
+                );
+              }
+            },
+          ),
+
+          const Divider(height: 1),
+
+          // ✅ 3. وقت حفظ البيانات
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE3F2FD),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.access_time,
+                  color: Color(0xFF1976D2), size: 26),
+            ),
+            title: const Text(
+              'وقت حفظ البيانات',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              '${_selectedTime.hour.toString().padLeft(2, '0')}:'
+              '${_selectedTime.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+            onTap: _pickTime,
+          ),
+
+          const Divider(height: 1),
+
+          // ✅ 4. آخر نسخة
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3E5F5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.history,
+                  color: Color(0xFF7B1FA2), size: 26),
+            ),
+            title: const Text(
+              'آخر نسخة',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              _formatLastBackup(),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // ✅ 5. عدد النسخ
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE8F5E9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.folder_copy,
+                  color: Color(0xFF2E7D32), size: 26),
+            ),
+            title: const Text(
+              'عدد النسخ',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              '$_backupCount ملف',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ✅ زر نسخ الآن
+          if (_enabled && _folderPath.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _runBackupNow,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.gold,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    icon: const Icon(Icons.backup),
+                    label: const Text('نسخ الآن (تجريبي)',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final error =
+                          await AutoBackupService.shareLatestBackup();
+                      if (error != null && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                            backgroundColor: AppColors.red,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    icon: const Icon(Icons.share),
+                    label: const Text('مشاركة آخر نسخة',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 20),
+
+          // ✅ ملاحظة
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.gold.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      color: AppColors.goldDark, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
                     child: Text(
-                      'النسخ التلقائي اليومي',
+                      'يتم الحفظ عند فتح التطبيق إذا فات الموعد المحدد وكانت البيانات قد تغيرت',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
                         color: AppColors.textDark,
+                        height: 1.5,
                       ),
                     ),
                   ),
-                  Switch(
-                    value: _enabled,
-                    onChanged: _toggleEnabled,
-                    activeColor: AppColors.gold,
-                  ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.access_time,
-                    color: AppColors.goldDark),
-              ),
-              title: const Text('وقت النسخ اليومي',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(
-                'الساعة ${_selectedTime.hour.toString().padLeft(2, '0')}:'
-                '${_selectedTime.minute.toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 14, color: AppColors.primary),
-              ),
-              trailing: const Icon(Icons.edit, color: AppColors.primary),
-              onTap: _pickTime,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.green.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.folder, color: AppColors.green),
-              ),
-              title: const Text('مجلد الحفظ',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text(
-                'المسار: /Al-Muhasib/Backups',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.green,
-                ),
-              ),
-              trailing: const Icon(Icons.info_outline,
-                  color: AppColors.primary),
-              onTap: _showFolderInfo,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _infoRow(
-                    icon: Icons.history,
-                    label: 'آخر نسخة',
-                    value: _formatLastBackup(),
-                  ),
-                  const Divider(height: 20),
-                  _infoRow(
-                    icon: Icons.folder_copy,
-                    label: 'عدد النسخ',
-                    value: '$_backupCount ملف',
-                  ),
-                ],
-              ),
-            ),
-          ),
+
           const SizedBox(height: 20),
-          if (_enabled)
-            ElevatedButton.icon(
-              onPressed: _runBackupNow,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.gold,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: const Icon(Icons.backup),
-              label: const Text('نسخ الآن (تجريبي)',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.gold.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.gold.withOpacity(0.3)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline, color: AppColors.goldDark, size: 22),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'يتم النسخ عند فتح التطبيق إذا فات الموعد المحدد',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textDark,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _infoRow({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, color: AppColors.primary, size: 20),
-        const SizedBox(width: 10),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textMuted,
-                fontWeight: FontWeight.w600)),
-        const Spacer(),
-        Text(value,
-            style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textDark,
-                fontWeight: FontWeight.bold)),
-      ],
     );
   }
 }
