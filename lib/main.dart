@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -46,12 +47,11 @@ class AutoBackupService {
   static const String _prefLastBackup = 'auto_backup_last_time';
   static const String _prefLastDbModified = 'auto_backup_last_db_modified';
 
-  // قراءة الإعدادات
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
     return {
       'enabled': prefs.getBool(_prefEnabled) ?? false,
-      'hour': prefs.getInt(_prefHour) ?? 20,
+      'hour': prefs.getInt(_prefHour) ?? 3,
       'minute': prefs.getInt(_prefMinute) ?? 0,
       'folderPath': prefs.getString(_prefFolderPath) ?? '',
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
@@ -59,7 +59,6 @@ class AutoBackupService {
     };
   }
 
-  // حفظ الإعدادات
   static Future<void> saveSettings({
     bool? enabled,
     int? hour,
@@ -79,24 +78,14 @@ class AutoBackupService {
     }
   }
 
-  // ✅ طلب صلاحية الوصول للذاكرة
   static Future<bool> requestStoragePermission() async {
     try {
       if (!Platform.isAndroid) return true;
-
-      // على Android 11+ نحتاج MANAGE_EXTERNAL_STORAGE
-      if (await Permission.manageExternalStorage.isGranted) {
-        return true;
-      }
-
-      // جرب الطلب
+      if (await Permission.manageExternalStorage.isGranted) return true;
       final status = await Permission.manageExternalStorage.request();
       if (status.isGranted) return true;
-
-      // بديل: storage العادي
       final oldStatus = await Permission.storage.request();
       if (oldStatus.isGranted) return true;
-
       return false;
     } catch (e) {
       debugPrint('❌ خطأ في طلب الصلاحية: $e');
@@ -104,7 +93,6 @@ class AutoBackupService {
     }
   }
 
-  // ✅ التحقق من الصلاحية
   static Future<bool> hasStoragePermission() async {
     if (!Platform.isAndroid) return true;
     if (await Permission.manageExternalStorage.isGranted) return true;
@@ -112,42 +100,32 @@ class AutoBackupService {
     return false;
   }
 
-  // ✅ الحصول على مسار قاعدة البيانات
   static Future<File> _getDatabaseFile() async {
     final dbPath = await getDatabasesPath();
     return File(p.join(dbPath, 'al_muhasib_final_v6.db'));
   }
 
-  // ✅ التحقق هل تغيرت البيانات
   static Future<bool> _hasDataChanged() async {
     try {
       final dbFile = await _getDatabaseFile();
       if (!await dbFile.exists()) return false;
-
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       final settings = await getSettings();
       final lastDbModified = settings['lastDbModified'] as String;
-
       return lastModified != lastDbModified;
     } catch (e) {
       debugPrint('❌ خطأ في فحص تغير البيانات: $e');
-      return true; // في حالة الخطأ، ننسخ احتياطياً
+      return true;
     }
   }
 
-  // ✅ فحص وتنفيذ النسخة التلقائية
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
-
-      // التحقق من التفعيل
       if (settings['enabled'] != true) return null;
-
-      // التحقق من وجود مجلد
       final folderPath = settings['folderPath'] as String;
       if (folderPath.isEmpty) return null;
 
-      // التحقق من الوقت
       final now = DateTime.now();
       final hour = settings['hour'] as int;
       final minute = settings['minute'] as int;
@@ -160,7 +138,6 @@ class AutoBackupService {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
 
-      // هل يجب النسخ؟
       bool shouldBackup = false;
       if (lastBackup == null) {
         shouldBackup = true;
@@ -171,7 +148,6 @@ class AutoBackupService {
 
       if (!shouldBackup) return null;
 
-      // التحقق من تغير البيانات
       final dataChanged = await _hasDataChanged();
       if (!dataChanged) {
         debugPrint('ℹ️ لم تتغير البيانات — لا حاجة للنسخ');
@@ -185,22 +161,18 @@ class AutoBackupService {
     }
   }
 
-  // ✅ تنفيذ النسخة الفعلية
   static Future<String?> performBackup(String folderPath) async {
     try {
-      // قاعدة البيانات
       final dbFile = await _getDatabaseFile();
       if (!await dbFile.exists()) {
         return 'قاعدة البيانات غير موجودة';
       }
 
-      // التأكد من وجود المجلد
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) {
         await backupDir.create(recursive: true);
       }
 
-      // اسم الملف
       final now = DateTime.now();
       final fileName = 'al_muhasib_'
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
@@ -208,11 +180,9 @@ class AutoBackupService {
           '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}'
           '.db';
 
-      // نسخ الملف
       final targetFile = File(p.join(folderPath, fileName));
       await dbFile.copy(targetFile.path);
 
-      // حفظ أوقات
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
         lastBackup: now.toIso8601String(),
@@ -227,7 +197,6 @@ class AutoBackupService {
     }
   }
 
-  // ✅ نسخة تجريبية (تجاوز شرط الوقت)
   static Future<String?> runBackupNow() async {
     final settings = await getSettings();
     final folderPath = settings['folderPath'] as String;
@@ -237,7 +206,6 @@ class AutoBackupService {
     return await performBackup(folderPath);
   }
 
-  // ✅ عدد النسخ
   static Future<int> countBackups() async {
     try {
       final settings = await getSettings();
@@ -257,7 +225,6 @@ class AutoBackupService {
     }
   }
 
-  // ✅ مشاركة آخر نسخة
   static Future<String?> shareLatestBackup() async {
     try {
       final settings = await getSettings();
@@ -627,10 +594,6 @@ class AppAccountProvider extends ChangeNotifier {
 
     for (var tableName in excel.tables.keys) {
       final sheet = excel.tables[tableName]!;
-
-      debugPrint('📄 قراءة ورقة: $tableName');
-      debugPrint('📊 إجمالي الصفوف: ${sheet.maxRows}');
-
       String? headerAccountName;
       for (int i = 0; i < sheet.maxRows && i < 5; i++) {
         final row = sheet.rows[i];
@@ -696,12 +659,10 @@ class AppAccountProvider extends ChangeNotifier {
           if (row.isEmpty) continue;
 
           String customerName = '';
-
           if (colCustomerName != -1 && colCustomerName < row.length) {
             customerName =
                 row[colCustomerName]?.value?.toString().trim() ?? '';
           }
-
           if (customerName.isEmpty &&
               headerAccountName != null &&
               headerAccountName.isNotEmpty) {
@@ -1226,10 +1187,6 @@ class _HomeScreenState extends State<HomeScreen>
                       CircularProgressIndicator(color: AppColors.gold),
                       SizedBox(height: 15),
                       Text('جاري الاستيراد...'),
-                      SizedBox(height: 5),
-                      Text('قد يستغرق دقيقة للملفات الكبيرة',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -2096,7 +2053,7 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ----------------------------------------------------
-// 5. صفحة خيارات حفظ البيانات (جديد - يشبه الصورة 2)
+// 5. صفحة خيارات حفظ البيانات
 // ----------------------------------------------------
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -2137,10 +2094,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     });
   }
 
-  // ✅ طلب الصلاحية + تفعيل
   Future<void> _toggleEnabled(bool value) async {
     if (value) {
-      // طلب الصلاحية
       final hasPermission = await AutoBackupService.hasStoragePermission();
 
       if (!hasPermission) {
@@ -2206,7 +2161,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         }
       }
 
-      // ✅ إذا لم يوجد مجلد محدد، اطلب اختياره
       if (_folderPath.isEmpty) {
         final folderPicked = await _pickFolder();
         if (!folderPicked) return;
@@ -2217,7 +2171,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     setState(() => _enabled = value);
   }
 
-  // ✅ اختيار المجلد عبر FilePicker
   Future<bool> _pickFolder() async {
     try {
       String? selectedDirectory =
@@ -2353,7 +2306,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       ),
       body: ListView(
         children: [
-          // ✅ 1. حفظ البيانات يومياً (Switch)
           Container(
             color: Colors.white,
             child: SwitchListTile(
@@ -2383,10 +2335,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               ),
             ),
           ),
-
           const Divider(height: 1),
-
-          // ✅ 2. مجلد حفظ البيانات
           ListTile(
             leading: Container(
               width: 45,
@@ -2395,7 +2344,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                 color: Color(0xFFFFF8E1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.folder, color: Color(0xFFFFA000), size: 26),
+              child: const Icon(Icons.folder,
+                  color: Color(0xFFFFA000), size: 26),
             ),
             title: const Text(
               'مجلد حفظ البيانات',
@@ -2420,7 +2370,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               if (_folderPath.isEmpty) {
                 await _pickFolder();
               } else {
-                // عرض خيارات
                 showDialog(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -2451,10 +2400,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               }
             },
           ),
-
           const Divider(height: 1),
-
-          // ✅ 3. وقت حفظ البيانات
           ListTile(
             leading: Container(
               width: 45,
@@ -2482,10 +2428,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             ),
             onTap: _pickTime,
           ),
-
           const Divider(height: 1),
-
-          // ✅ 4. آخر نسخة
           ListTile(
             leading: Container(
               width: 45,
@@ -2511,10 +2454,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   fontSize: 13, color: AppColors.textMuted),
             ),
           ),
-
           const Divider(height: 1),
-
-          // ✅ 5. عدد النسخ
           ListTile(
             leading: Container(
               width: 45,
@@ -2540,10 +2480,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   fontSize: 13, color: AppColors.textMuted),
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // ✅ زر نسخ الآن
           if (_enabled && _folderPath.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2596,10 +2533,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                 ],
               ),
             ),
-
           const SizedBox(height: 20),
-
-          // ✅ ملاحظة
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
@@ -2628,7 +2562,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 20),
         ],
       ),
@@ -3500,16 +3433,39 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
       );
 
+      // ✅ حفظ الملف مؤقتاً + فتحه مباشرة
       final bytes = await pdf.save();
 
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
       }
 
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'كشف_${widget.customer['name']}.pdf',
-      );
+      final tempDir = await getTemporaryDirectory();
+      final sanitizedName =
+          widget.customer['name'].toString().replaceAll('/', '_');
+      final fileName = 'كشف_${sanitizedName}_'
+          '${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      final result = await OpenFile.open(file.path);
+
+      if (result.type != ResultType.done) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('لا يوجد تطبيق لعرض PDF: ${result.message}'),
+              backgroundColor: AppColors.red,
+            ),
+          );
+        }
+      }
+
+      Future.delayed(const Duration(minutes: 5), () {
+        try {
+          if (file.existsSync()) file.deleteSync();
+        } catch (_) {}
+      });
     } catch (e, st) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
