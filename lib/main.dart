@@ -308,7 +308,12 @@ class AppDBHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, filePath);
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -333,7 +338,8 @@ class AppDBHelper {
         name TEXT NOT NULL,
         phone TEXT,
         currency TEXT NOT NULL,
-        category_id INTEGER
+        category_id INTEGER,
+        last_activity TEXT
       )
     ''');
 
@@ -357,6 +363,36 @@ class AppDBHelper {
     await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
   }
 
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      debugPrint('🔄 ترقية قاعدة البيانات من v1 إلى v2');
+      // إضافة عمود last_activity
+      await db.execute('ALTER TABLE customers ADD COLUMN last_activity TEXT');
+
+      // تحديث last_activity للحسابات الموجودة
+      final customers = await db.query('customers');
+      for (var cust in customers) {
+        final cId = cust['id'];
+        final lastTx = await db.query(
+          'transactions',
+          where: 'customer_id = ?',
+          whereArgs: [cId],
+          orderBy: 'id DESC',
+          limit: 1,
+        );
+        if (lastTx.isNotEmpty) {
+          await db.update(
+            'customers',
+            {'last_activity': lastTx.first['date']},
+            where: 'id = ?',
+            whereArgs: [cId],
+          );
+        }
+      }
+      debugPrint('✅ تمت الترقية بنجاح');
+    }
+  }
+
   Future<void> restoreDatabase(File newDbFile) async {
     if (_db != null) {
       await _db!.close();
@@ -366,7 +402,8 @@ class AppDBHelper {
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
 
     await newDbFile.copy(path);
-    _db = await openDatabase(path);
+    _db = await openDatabase(path, version: 2, onCreate: _createDB,
+        onUpgrade: _upgradeDB);
   }
 }
 
@@ -416,9 +453,21 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCurrencies();
   }
 
+  // ✅ تحميل العملاء مع الترتيب حسب آخر نشاط
   Future<void> loadCustomers() async {
     final db = await AppDBHelper.instance.database;
-    customers = await db.query('customers');
+
+    customers = await db.rawQuery('''
+      SELECT * FROM customers
+      ORDER BY 
+        CASE 
+          WHEN last_activity IS NULL OR last_activity = '' THEN 1 
+          ELSE 0 
+        END,
+        last_activity DESC,
+        id DESC
+    ''');
+
     await calculateAllCustomerBalances();
     notifyListeners();
   }
@@ -451,6 +500,7 @@ class AppAccountProvider extends ChangeNotifier {
       'phone': phone,
       'currency': currency,
       'category_id': categoryId,
+      'last_activity': null,
     });
     await loadCustomers();
   }
@@ -496,6 +546,15 @@ class AppAccountProvider extends ChangeNotifier {
       'details': details,
       'date': date,
     });
+
+    // ✅ تحديث last_activity
+    await db.update(
+      'customers',
+      {'last_activity': date},
+      where: 'id = ?',
+      whereArgs: [customerId],
+    );
+
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -513,6 +572,16 @@ class AppAccountProvider extends ChangeNotifier {
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    // ✅ تحديث last_activity
+    final now = DateTime.now().toString().split('.')[0];
+    await db.update(
+      'customers',
+      {'last_activity': now},
+      where: 'id = ?',
+      whereArgs: [customerId],
+    );
+
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -768,6 +837,7 @@ class AppAccountProvider extends ChangeNotifier {
                 'phone': '',
                 'currency': 'ريال يمني',
                 'category_id': finalCategoryId,
+                'last_activity': dateStr,
               });
               customersCreated++;
             } else {
@@ -790,6 +860,14 @@ class AppAccountProvider extends ChangeNotifier {
             'date': dateStr,
           });
           transactionsCreated++;
+
+          // ✅ تحديث last_activity
+          await db.update(
+            'customers',
+            {'last_activity': dateStr},
+            where: 'id = ?',
+            whereArgs: [customerId],
+          );
         } catch (e) {
           rowsSkipped++;
         }
@@ -1599,7 +1677,10 @@ class _HomeScreenState extends State<HomeScreen>
                                               CustomerDetailsScreen(
                                                   customer: customer),
                                         ),
-                                      );
+                                      ).then((_) {
+                                        // ✅ إعادة تحميل القائمة بعد الرجوع
+                                        provider.loadCustomers();
+                                      });
                                     },
                                     onLongPress: () {
                                       _showCustomerOptionsModal(
@@ -3433,7 +3514,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
       );
 
-      // ✅ حفظ الملف مؤقتاً + فتحه مباشرة
       final bytes = await pdf.save();
 
       if (mounted) {
