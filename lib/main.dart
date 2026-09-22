@@ -310,7 +310,7 @@ class AppDBHelper {
     final path = p.join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -320,7 +320,8 @@ class AppDBHelper {
     await db.execute('''
       CREATE TABLE categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0
       )
     ''');
 
@@ -354,9 +355,9 @@ class AppDBHelper {
       )
     ''');
 
-    await db.insert('categories', {'name': 'عام'});
-    await db.insert('categories', {'name': 'عملاء'});
-    await db.insert('categories', {'name': 'موردون'});
+    await db.insert('categories', {'name': 'عام', 'sort_order': 1});
+    await db.insert('categories', {'name': 'عملاء', 'sort_order': 2});
+    await db.insert('categories', {'name': 'موردون', 'sort_order': 3});
 
     await db.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
     await db.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
@@ -364,12 +365,11 @@ class AppDBHelper {
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    // v1 → v2
     if (oldVersion < 2) {
       debugPrint('🔄 ترقية قاعدة البيانات من v1 إلى v2');
-      // إضافة عمود last_activity
       await db.execute('ALTER TABLE customers ADD COLUMN last_activity TEXT');
 
-      // تحديث last_activity للحسابات الموجودة
       final customers = await db.query('customers');
       for (var cust in customers) {
         final cId = cust['id'];
@@ -389,7 +389,25 @@ class AppDBHelper {
           );
         }
       }
-      debugPrint('✅ تمت الترقية بنجاح');
+      debugPrint('✅ تمت الترقية إلى v2');
+    }
+
+    // v2 → v3
+    if (oldVersion < 3) {
+      debugPrint('🔄 ترقية قاعدة البيانات من v2 إلى v3');
+      await db.execute(
+          'ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0');
+
+      final cats = await db.query('categories', orderBy: 'id ASC');
+      for (int i = 0; i < cats.length; i++) {
+        await db.update(
+          'categories',
+          {'sort_order': i + 1},
+          where: 'id = ?',
+          whereArgs: [cats[i]['id']],
+        );
+      }
+      debugPrint('✅ تمت الترقية إلى v3');
     }
   }
 
@@ -402,7 +420,7 @@ class AppDBHelper {
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
 
     await newDbFile.copy(path);
-    _db = await openDatabase(path, version: 2, onCreate: _createDB,
+    _db = await openDatabase(path, version: 3, onCreate: _createDB,
         onUpgrade: _upgradeDB);
   }
 }
@@ -425,20 +443,92 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<void> loadCategories() async {
     final db = await AppDBHelper.instance.database;
-    categories = await db.query('categories');
+    categories = await db.rawQuery('''
+      SELECT * FROM categories
+      ORDER BY 
+        CASE 
+          WHEN sort_order IS NULL OR sort_order = 0 THEN 1 
+          ELSE 0 
+        END,
+        sort_order ASC,
+        id ASC
+    ''');
     notifyListeners();
   }
 
   Future<void> addCategory(String name) async {
     final db = await AppDBHelper.instance.database;
-    await db.insert('categories', {'name': name});
+
+    final maxResult = await db.rawQuery(
+        'SELECT MAX(sort_order) as max_order FROM categories');
+    int maxOrder = 0;
+    if (maxResult.isNotEmpty && maxResult.first['max_order'] != null) {
+      maxOrder = int.parse(maxResult.first['max_order'].toString());
+    }
+
+    await db.insert('categories', {
+      'name': name,
+      'sort_order': maxOrder + 1,
+    });
     await loadCategories();
+  }
+
+  Future<void> updateCategory(int id, String newName) async {
+    final db = await AppDBHelper.instance.database;
+    await db.update(
+      'categories',
+      {'name': newName},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    await loadCategories();
+  }
+
+  Future<void> reorderCategories(List<int> orderedIds) async {
+    final db = await AppDBHelper.instance.database;
+    for (int i = 0; i < orderedIds.length; i++) {
+      await db.update(
+        'categories',
+        {'sort_order': i + 1},
+        where: 'id = ?',
+        whereArgs: [orderedIds[i]],
+      );
+    }
+    await loadCategories();
+  }
+
+  Future<int> countCustomersInCategory(int categoryId) async {
+    final db = await AppDBHelper.instance.database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM customers WHERE category_id = ?',
+      [categoryId],
+    );
+    if (result.isNotEmpty) {
+      return int.parse(result.first['count'].toString());
+    }
+    return 0;
   }
 
   Future<void> deleteCategory(int id) async {
     final db = await AppDBHelper.instance.database;
+
+    final customersInCat = await db.query(
+      'customers',
+      where: 'category_id = ?',
+      whereArgs: [id],
+    );
+
+    for (var cust in customersInCat) {
+      final custId = cust['id'];
+      await db.delete('transactions',
+          where: 'customer_id = ?', whereArgs: [custId]);
+    }
+
+    await db.delete('customers', where: 'category_id = ?', whereArgs: [id]);
     await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+
     await loadCategories();
+    await loadCustomers();
   }
 
   Future<void> loadCurrencies() async {
@@ -453,7 +543,6 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCurrencies();
   }
 
-  // ✅ تحميل العملاء مع الترتيب حسب آخر نشاط
   Future<void> loadCustomers() async {
     final db = await AppDBHelper.instance.database;
 
@@ -547,7 +636,6 @@ class AppAccountProvider extends ChangeNotifier {
       'date': date,
     });
 
-    // ✅ تحديث last_activity
     await db.update(
       'customers',
       {'last_activity': date},
@@ -573,7 +661,6 @@ class AppAccountProvider extends ChangeNotifier {
       whereArgs: [id],
     );
 
-    // ✅ تحديث last_activity
     final now = DateTime.now().toString().split('.')[0];
     await db.update(
       'customers',
@@ -861,7 +948,6 @@ class AppAccountProvider extends ChangeNotifier {
           });
           transactionsCreated++;
 
-          // ✅ تحديث last_activity
           await db.update(
             'customers',
             {'last_activity': dateStr},
@@ -1678,7 +1764,6 @@ class _HomeScreenState extends State<HomeScreen>
                                                   customer: customer),
                                         ),
                                       ).then((_) {
-                                        // ✅ إعادة تحميل القائمة بعد الرجوع
                                         provider.loadCustomers();
                                       });
                                     },
@@ -3606,7 +3691,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 }
 
 // ----------------------------------------------------
-// 7. شاشة إدارة التصنيفات
+// 7. شاشة إدارة التصنيفات (مع تعديل وحذف وترتيب)
 // ----------------------------------------------------
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
@@ -3638,48 +3723,23 @@ class CategoriesScreen extends StatelessWidget {
                 return Card(
                   margin:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onLongPress: () =>
+                        _showOptionsSheet(context, provider, cat),
+                    child: ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.folder,
+                            color: AppColors.primary),
                       ),
-                      child: const Icon(Icons.folder,
-                          color: AppColors.primary),
-                    ),
-                    title: Text(cat['name'].toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: AppColors.red),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                            title: const Text('تأكيد الحذف'),
-                            content:
-                                const Text('هل أنت متأكد من حذف هذا التصنيف؟'),
-                            actions: [
-                              TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('إلغاء',
-                                      style: TextStyle(color: Colors.grey))),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.red),
-                                onPressed: () {
-                                  provider.deleteCategory(
-                                      int.parse(cat['id'].toString()));
-                                  Navigator.pop(ctx);
-                                },
-                                child: const Text('حذف'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                      title: Text(cat['name'].toString(),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold)),
                     ),
                   ),
                 );
@@ -3692,12 +3752,355 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
+  // نافذة الخيارات السفلية
+  void _showOptionsSheet(BuildContext context, AppAccountProvider provider,
+      Map<String, dynamic> cat) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 15),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  cat['name'].toString(),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const Divider(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.edit, color: AppColors.primary),
+                ),
+                title: const Text('تعديل الاسم',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showEditDialog(context, provider, cat);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.swap_vert,
+                      color: AppColors.goldDark),
+                ),
+                title: const Text('إعادة الترتيب',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showReorderDialog(context, provider);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.delete, color: AppColors.red),
+                ),
+                title: const Text('حذف',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: AppColors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDelete(context, provider, cat);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // نافذة التعديل
+  void _showEditDialog(BuildContext context, AppAccountProvider provider,
+      Map<String, dynamic> cat) {
+    final controller = TextEditingController(text: cat['name'].toString());
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('تعديل التصنيف'),
+          ],
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'اسم التصنيف',
+            prefixIcon: Icon(Icons.folder_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.white),
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                provider.updateCategory(
+                  int.parse(cat['id'].toString()),
+                  controller.text.trim(),
+                );
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // نافذة إعادة الترتيب
+  void _showReorderDialog(BuildContext context, AppAccountProvider provider) {
+    List<Map<String, dynamic>> tempCats = List.from(provider.categories);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.swap_vert, color: AppColors.goldDark),
+              SizedBox(width: 8),
+              Text('إعادة الترتيب'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'اسحب التصنيف من مكانه لتغيير ترتيبه',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    itemCount: tempCats.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setStateDialog(() {
+                        if (newIndex > oldIndex) newIndex -= 1;
+                        final item = tempCats.removeAt(oldIndex);
+                        tempCats.insert(newIndex, item);
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      final cat = tempCats[index];
+                      return Card(
+                        key: ValueKey(cat['id']),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(Icons.drag_handle,
+                                color: AppColors.primary),
+                          ),
+                          title: Text(
+                            cat['name'].toString(),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          trailing: Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              color: AppColors.goldDark,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:
+                  const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
+              onPressed: () {
+                final orderedIds = tempCats
+                    .map((c) => int.parse(c['id'].toString()))
+                    .toList();
+                provider.reorderCategories(orderedIds);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ تم حفظ الترتيب'),
+                    backgroundColor: AppColors.green,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              child: const Text('حفظ الترتيب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // تأكيد الحذف
+  Future<void> _confirmDelete(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> cat) async {
+    final int catId = int.parse(cat['id'].toString());
+    final int customersCount =
+        await provider.countCustomersInCategory(catId);
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: AppColors.red),
+            SizedBox(width: 8),
+            Text('تأكيد الحذف'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'سيتم حذف التصنيف: "${cat['name']}"',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            if (customersCount > 0) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.redLight,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning,
+                        color: AppColors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '⚠️ يوجد $customersCount حساب داخل هذا التصنيف\nسيتم حذفهم جميعًا مع كل عملياتهم!',
+                        style: const TextStyle(
+                          color: AppColors.red,
+                          fontSize: 13,
+                          height: 1.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else
+              const Text(
+                'لا توجد حسابات داخل هذا التصنيف.',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () {
+              provider.deleteCategory(catId);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🗑️ تم الحذف'),
+                  backgroundColor: AppColors.red,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: const Text('حذف نهائي'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // نافذة إضافة تصنيف جديد
   void _showAddDialog(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
             Icon(Icons.create_new_folder, color: AppColors.primary),
