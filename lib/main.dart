@@ -31,6 +31,7 @@ class AppColors {
   static const Color red = Color(0xFFC62828);
   static const Color redLight = Color(0xFFFFEBEE);
   static const Color whatsapp = Color(0xFF25D366);
+  static const Color drive = Color(0xFF4285F4);
   static const Color background = Color(0xFFF8F9FA);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
@@ -365,7 +366,6 @@ class AppDBHelper {
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    // v1 → v2
     if (oldVersion < 2) {
       debugPrint('🔄 ترقية قاعدة البيانات من v1 إلى v2');
       await db.execute('ALTER TABLE customers ADD COLUMN last_activity TEXT');
@@ -392,7 +392,6 @@ class AppDBHelper {
       debugPrint('✅ تمت الترقية إلى v2');
     }
 
-    // v2 → v3
     if (oldVersion < 3) {
       debugPrint('🔄 ترقية قاعدة البيانات من v2 إلى v3');
       await db.execute(
@@ -1150,22 +1149,29 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _showBackupDialog(BuildContext context) {
+  // ✅ نافذة النسخ الاحتياطي (تدعم الوضع المحلي و Drive)
+  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.backup, color: AppColors.gold),
-            SizedBox(width: 8),
-            Text('النسخ الاحتياطي'),
+            Icon(
+              fromDrive ? Icons.cloud : Icons.backup,
+              color: fromDrive ? AppColors.drive : AppColors.gold,
+            ),
+            const SizedBox(width: 8),
+            Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
           ],
         ),
-        content: const Text(
-            'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
+        content: Text(
+          fromDrive
+              ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
+              : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.',
+        ),
         actions: [
           TextButton.icon(
             icon: const Icon(Icons.download, color: AppColors.green),
@@ -1188,7 +1194,10 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
           ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  fromDrive ? AppColors.drive : AppColors.gold,
+            ),
             icon: const Icon(Icons.upload),
             label: const Text('حفظ نسخة'),
             onPressed: () {
@@ -1649,6 +1658,7 @@ class _HomeScreenState extends State<HomeScreen>
                 });
               },
             ),
+            // ✅ النسخ الاحتياطي المحلي (من الهاتف)
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -1663,6 +1673,23 @@ class _HomeScreenState extends State<HomeScreen>
               onTap: () {
                 Navigator.pop(context);
                 _showBackupDialog(context);
+              },
+            ),
+            // ✅ النسخ الاحتياطي من Google Drive (جديد)
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.drive.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cloud, color: AppColors.drive),
+              ),
+              title: const Text('النسخ الاحتياطي والاستعادة من Drive',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () {
+                Navigator.pop(context);
+                _showBackupDialog(context, fromDrive: true);
               },
             ),
             const Spacer(),
@@ -3752,7 +3779,6 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
-  // نافذة الخيارات السفلية
   void _showOptionsSheet(BuildContext context, AppAccountProvider provider,
       Map<String, dynamic> cat) {
     showModalBottomSheet(
@@ -3845,7 +3871,6 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
-  // نافذة التعديل
   void _showEditDialog(BuildContext context, AppAccountProvider provider,
       Map<String, dynamic> cat) {
     final controller = TextEditingController(text: cat['name'].toString());
@@ -3896,7 +3921,6 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
-  // نافذة إعادة الترتيب
   void _showReorderDialog(BuildContext context, AppAccountProvider provider) {
     List<Map<String, dynamic>> tempCats = List.from(provider.categories);
 
@@ -4003,7 +4027,6 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
-  // تأكيد الحذف
   Future<void> _confirmDelete(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> cat) async {
     final int catId = int.parse(cat['id'].toString());
@@ -4093,7 +4116,6 @@ class CategoriesScreen extends StatelessWidget {
     );
   }
 
-  // نافذة إضافة تصنيف جديد
   void _showAddDialog(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
