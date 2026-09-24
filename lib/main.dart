@@ -617,6 +617,45 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
+  // ✅ جلب التفاصيل الفريدة مرتبة حسب الأكثر استخدامًا
+  Future<List<String>> getDistinctDetails({String query = ''}) async {
+    try {
+      final db = await AppDBHelper.instance.database;
+
+      List<Map<String, dynamic>> result;
+      if (query.trim().isEmpty) {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL 
+            AND TRIM(details) != ''
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 50
+        ''');
+      } else {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL 
+            AND TRIM(details) != ''
+            AND details LIKE ?
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 30
+        ''', ['%$query%']);
+      }
+
+      return result
+          .map((row) => (row['details'] ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('❌ خطأ في جلب التفاصيل: $e');
+      return [];
+    }
+  }
+
   Future<void> loadTransactions(int customerId) async {
     final db = await AppDBHelper.instance.database;
     currentTransactions = await db.query('transactions',
@@ -1149,7 +1188,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ✅ نافذة النسخ الاحتياطي (تدعم الوضع المحلي و Drive)
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
@@ -1658,7 +1696,6 @@ class _HomeScreenState extends State<HomeScreen>
                 });
               },
             ),
-            // ✅ النسخ الاحتياطي المحلي (من الهاتف)
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -1675,7 +1712,6 @@ class _HomeScreenState extends State<HomeScreen>
                 _showBackupDialog(context);
               },
             ),
-            // ✅ النسخ الاحتياطي من Google Drive (جديد)
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -2763,6 +2799,176 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 }
 
 // ----------------------------------------------------
+// ✅ Widget: حقل التفاصيل مع الاقتراحات التلقائية
+// ----------------------------------------------------
+class _DetailsAutocompleteField extends StatefulWidget {
+  final TextEditingController controller;
+  final AppAccountProvider provider;
+  final String hintText;
+
+  const _DetailsAutocompleteField({
+    required this.controller,
+    required this.provider,
+    this.hintText = 'التفاصيل / البيان',
+  });
+
+  @override
+  State<_DetailsAutocompleteField> createState() =>
+      _DetailsAutocompleteFieldState();
+}
+
+class _DetailsAutocompleteFieldState
+    extends State<_DetailsAutocompleteField> {
+  List<String> _suggestions = [];
+  bool _showSuggestions = false;
+  bool _isLoading = false;
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTextChanged);
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTextChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) {
+          setState(() => _showSuggestions = false);
+        }
+      });
+    }
+  }
+
+  void _onTextChanged() {
+    _loadSuggestions(widget.controller.text);
+  }
+
+  Future<void> _loadSuggestions(String query) async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    final results = await widget.provider.getDistinctDetails(query: query);
+
+    if (!mounted) return;
+
+    final filtered =
+        results.where((s) => s.trim() != query.trim()).toList();
+
+    setState(() {
+      _suggestions = filtered;
+      _showSuggestions = _focusNode.hasFocus && filtered.isNotEmpty;
+      _isLoading = false;
+    });
+  }
+
+  void _selectSuggestion(String value) {
+    widget.controller.text = value;
+    widget.controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: value.length),
+    );
+    setState(() {
+      _showSuggestions = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: widget.controller,
+          focusNode: _focusNode,
+          decoration: InputDecoration(
+            labelText: widget.hintText,
+            prefixIcon: const Icon(Icons.notes),
+            suffixIcon: _isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
+          ),
+          onTap: () {
+            if (widget.controller.text.isNotEmpty ||
+                _suggestions.isNotEmpty) {
+              _loadSuggestions(widget.controller.text);
+            }
+          },
+        ),
+        if (_showSuggestions && _suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            constraints: const BoxConstraints(maxHeight: 200),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: AppColors.gold.withOpacity(0.3), width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: _suggestions.length,
+              separatorBuilder: (ctx, i) => Divider(
+                height: 1,
+                color: Colors.grey.shade200,
+              ),
+              itemBuilder: (ctx, i) {
+                final suggestion = _suggestions[i];
+                return InkWell(
+                  onTap: () => _selectSuggestion(suggestion),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.history,
+                            size: 18, color: AppColors.textMuted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            suggestion,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textDark,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ----------------------------------------------------
 // 6. شاشة تفاصيل الحساب
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
@@ -2889,31 +3095,40 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               Text('تعديل العملية'),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: amountCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'المبلغ')),
-              const SizedBox(height: 10),
-              TextField(
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'المبلغ')),
+                const SizedBox(height: 10),
+                _DetailsAutocompleteField(
                   controller: detailsCtrl,
+                  provider: Provider.of<AppAccountProvider>(context,
+                      listen: false),
+                  hintText: 'التفاصيل / البيان',
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: selectedType,
                   decoration:
-                      const InputDecoration(labelText: 'التفاصيل / البيان')),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: selectedType,
-                decoration: const InputDecoration(labelText: 'نوع العملية'),
-                items: const [
-                  DropdownMenuItem(value: 'give', child: Text('له (قبض)')),
-                  DropdownMenuItem(value: 'take', child: Text('عليه (دفع)')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setDialogState(() => selectedType = val);
-                },
-              ),
-            ],
+                      const InputDecoration(labelText: 'نوع العملية'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'give', child: Text('له (قبض)')),
+                    DropdownMenuItem(
+                        value: 'take', child: Text('عليه (دفع)')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null)
+                      setDialogState(() => selectedType = val);
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -3323,21 +3538,26 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             Text(isGive ? 'إضافة مبلغ (له)' : 'إضافة مبلغ (عليه)'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'المبلغ', prefixIcon: Icon(Icons.attach_money))),
-            const SizedBox(height: 10),
-            TextField(
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'المبلغ',
+                      prefixIcon: Icon(Icons.attach_money))),
+              const SizedBox(height: 10),
+              _DetailsAutocompleteField(
                 controller: detailsCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'التفاصيل / البيان',
-                    prefixIcon: Icon(Icons.notes))),
-          ],
+                provider: Provider.of<AppAccountProvider>(context,
+                    listen: false),
+                hintText: 'التفاصيل / البيان',
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -3718,7 +3938,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 }
 
 // ----------------------------------------------------
-// 7. شاشة إدارة التصنيفات (مع تعديل وحذف وترتيب)
+// 7. شاشة إدارة التصنيفات
 // ----------------------------------------------------
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
