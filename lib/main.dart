@@ -19,6 +19,21 @@ import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
 
 // ====================================================
+// ✅ دالة تنسيق الأرقام (تزيل .0 تلقائيًا)
+// ====================================================
+String formatNumber(double value) {
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
+  String str = value.toStringAsFixed(2);
+  // إزالة الأصفار الزائدة في النهاية
+  str = str.replaceAll(RegExp(r'0+$'), '');
+  // إزالة الفاصلة العشرية إذا لم يتبقَ شيء بعدها
+  str = str.replaceAll(RegExp(r'\.$'), '');
+  return str;
+}
+
+// ====================================================
 // الألوان المريحة للعين
 // ====================================================
 class AppColors {
@@ -617,7 +632,6 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
-  // ✅ جلب التفاصيل الفريدة مرتبة حسب الأكثر استخدامًا
   Future<List<String>> getDistinctDetails({String query = ''}) async {
     try {
       final db = await AppDBHelper.instance.database;
@@ -1874,7 +1888,7 @@ class _HomeScreenState extends State<HomeScreen>
                                             ),
                                           ),
                                           Text(
-                                            bal.abs().toStringAsFixed(1),
+                                            formatNumber(bal.abs()),
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 16,
@@ -1940,7 +1954,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'عليه: ${totalTake.toStringAsFixed(1)}',
+                                      'عليه: ${formatNumber(totalTake)}',
                                       style: const TextStyle(
                                         color: AppColors.red,
                                         fontWeight: FontWeight.bold,
@@ -1948,7 +1962,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       ),
                                     ),
                                     Text(
-                                      'له: ${totalGive.toStringAsFixed(1)}',
+                                      'له: ${formatNumber(totalGive)}',
                                       style: const TextStyle(
                                         color: AppColors.green,
                                         fontWeight: FontWeight.bold,
@@ -1959,7 +1973,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${netBalance.abs().toStringAsFixed(1)}',
+                                  'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${formatNumber(netBalance.abs())}',
                                   style: const TextStyle(
                                     color: AppColors.textDark,
                                     fontWeight: FontWeight.bold,
@@ -3349,7 +3363,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                               BorderRadius.circular(6),
                                         ),
                                         child: Text(
-                                          amt.toStringAsFixed(0),
+                                          formatNumber(amt),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                               color: isGive
@@ -3389,7 +3403,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                               BorderRadius.circular(6),
                                         ),
                                         child: Text(
-                                          runBal.abs().toStringAsFixed(0),
+                                          formatNumber(runBal.abs()),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             color: runBal >= 0
@@ -3423,7 +3437,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         color: Colors.redAccent, size: 18),
                     const SizedBox(width: 4),
                     Text(
-                      'عليه: ${totalTake.toStringAsFixed(1)}',
+                      'عليه: ${formatNumber(totalTake)}',
                       style: const TextStyle(
                           color: Colors.redAccent,
                           fontWeight: FontWeight.bold,
@@ -3439,7 +3453,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     borderRadius: BorderRadius.circular(15),
                   ),
                   child: Text(
-                    '${finalBalance.abs().toStringAsFixed(1)} ${finalBalance >= 0 ? "له" : "عليه"}',
+                    '${formatNumber(finalBalance.abs())} ${finalBalance >= 0 ? "له" : "عليه"}',
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -3449,7 +3463,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Row(
                   children: [
                     Text(
-                      'له: ${totalGive.toStringAsFixed(1)}',
+                      'له: ${formatNumber(totalGive)}',
                       style: const TextStyle(
                           color: Colors.greenAccent,
                           fontWeight: FontWeight.bold,
@@ -3673,7 +3687,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.Padding(
                 padding: const pw.EdgeInsets.all(3),
                 child: pw.Text(
-                  '${runBal.abs().toStringAsFixed(1)} ${runBal >= 0 ? "له" : "عليه"}',
+                  '${formatNumber(runBal.abs())} ${runBal >= 0 ? "له" : "عليه"}',
                   style: pw.TextStyle(
                       font: fontBold,
                       fontSize: 8,
@@ -3684,7 +3698,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.Padding(
                 padding: const pw.EdgeInsets.all(3),
                 child: pw.Text(
-                  isGive ? amt.toStringAsFixed(1) : '-',
+                  isGive ? formatNumber(amt) : '-',
                   style: pw.TextStyle(
                       font: isGive ? fontBold : font,
                       fontSize: 8,
@@ -3695,7 +3709,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.Padding(
                 padding: const pw.EdgeInsets.all(3),
                 child: pw.Text(
-                  isGive ? '-' : amt.toStringAsFixed(1),
+                  isGive ? '-' : formatNumber(amt),
                   style: pw.TextStyle(
                       font: isGive ? font : fontBold,
                       fontSize: 8,
@@ -3821,18 +3835,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('إجمالي له: ${totalGive.toStringAsFixed(1)}',
+                    pw.Text('إجمالي له: ${formatNumber(totalGive)}',
                         style: pw.TextStyle(
                             font: fontBold,
                             fontSize: 11,
                             color: greenText)),
-                    pw.Text('إجمالي عليه: ${totalTake.toStringAsFixed(1)}',
+                    pw.Text('إجمالي عليه: ${formatNumber(totalTake)}',
                         style: pw.TextStyle(
                             font: fontBold,
                             fontSize: 11,
                             color: redText)),
                     pw.Text(
-                      'الرصيد: ${finalBal.abs().toStringAsFixed(1)} (${finalBal >= 0 ? "له" : "عليه"})',
+                      'الرصيد: ${formatNumber(finalBal.abs())} (${finalBal >= 0 ? "له" : "عليه"})',
                       style: pw.TextStyle(
                           font: fontBold,
                           fontSize: 11,
@@ -3908,7 +3922,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
     String message = "كشف حساب:\n"
         "العميل: ${widget.customer['name']}\n"
-        "المبلغ الحالي: ${balance.abs().toStringAsFixed(1)} ${widget.customer['currency']} ($status)";
+        "المبلغ الحالي: ${formatNumber(balance.abs())} ${widget.customer['currency']} ($status)";
 
     final Uri url =
         Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
