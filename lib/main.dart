@@ -26,9 +26,7 @@ String formatNumber(double value) {
     return value.toInt().toString();
   }
   String str = value.toStringAsFixed(2);
-  // إزالة الأصفار الزائدة في النهاية
   str = str.replaceAll(RegExp(r'0+$'), '');
-  // إزالة الفاصلة العشرية إذا لم يتبقَ شيء بعدها
   str = str.replaceAll(RegExp(r'\.$'), '');
   return str;
 }
@@ -43,13 +41,17 @@ class AppColors {
   static const Color goldDark = Color(0xFFB8860B);
   static const Color green = Color(0xFF2E7D32);
   static const Color greenLight = Color(0xFFE8F5E9);
+  static const Color greenDarker = Color(0xFFC8E6C9);
   static const Color red = Color(0xFFC62828);
   static const Color redLight = Color(0xFFFFEBEE);
+  static const Color redDarker = Color(0xFFFFCDD2);
+  static const Color greyLight = Color(0xFFE0E0E0);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
   static const Color background = Color(0xFFF8F9FA);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
+  static const Color summaryBar = Color(0xFFB0BEC5);
 }
 
 // ====================================================
@@ -1202,6 +1204,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  // ✅ نافذة النسخ الاحتياطي (تدعم الوضع المحلي و Drive)
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
@@ -1259,6 +1262,114 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
+    );
+  }
+
+  // ✅ نافذة تجميع خيارات النسخ الاحتياطي (Bottom Sheet)
+  void _showBackupOptionsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 15),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'النسخ الاحتياطي والاستعادة',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const Divider(height: 20),
+              // 1. خيارات حفظ البيانات (تلقائي)
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.schedule,
+                      color: AppColors.goldDark),
+                ),
+                title: const Text('خيارات حفظ البيانات',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('حفظ تلقائي يومي',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AutoBackupScreen(),
+                    ),
+                  ).then((_) {
+                    _checkAutoBackup();
+                  });
+                },
+              ),
+              // 2. النسخ الاحتياطي من الهاتف
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.smartphone,
+                      color: AppColors.green),
+                ),
+                title: const Text('النسخ الاحتياطي من الهاتف',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('حفظ / استعادة من الجهاز',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showBackupDialog(context);
+                },
+              ),
+              // 3. النسخ الاحتياطي من Drive
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.drive.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.cloud, color: AppColors.drive),
+                ),
+                title: const Text('النسخ الاحتياطي من Drive',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('حفظ / استعادة من Google Drive',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showBackupDialog(context, fromDrive: true);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1687,29 +1798,7 @@ class _HomeScreenState extends State<HomeScreen>
                 _importFromExcel(context);
               },
             ),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.schedule, color: AppColors.goldDark),
-              ),
-              title: const Text('خيارات حفظ البيانات',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AutoBackupScreen(),
-                  ),
-                ).then((_) {
-                  _checkAutoBackup();
-                });
-              },
-            ),
+            // ✅ العنصر الموحّد الجديد
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -1723,23 +1812,7 @@ class _HomeScreenState extends State<HomeScreen>
                   style: TextStyle(fontWeight: FontWeight.bold)),
               onTap: () {
                 Navigator.pop(context);
-                _showBackupDialog(context);
-              },
-            ),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.drive.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.cloud, color: AppColors.drive),
-              ),
-              title: const Text('النسخ الاحتياطي والاستعادة من Drive',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () {
-                Navigator.pop(context);
-                _showBackupDialog(context, fromDrive: true);
+                _showBackupOptionsSheet(context);
               },
             ),
             const Spacer(),
@@ -1905,82 +1978,90 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
+                    // ✅ شريط المجاميع السفلي الجديد (سطرين + زر + منفصل)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8E8E8),
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.grey.shade400,
-                            width: 1,
-                          ),
-                        ),
-                      ),
+                          horizontal: 8, vertical: 6),
+                      color: AppColors.background,
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Material(
-                            color: AppColors.gold,
-                            shape: const CircleBorder(),
-                            elevation: 4,
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () {
-                                final activeIndex = _tabController!.index;
-                                final activeCategoryId = int.parse(
-                                    categories[activeIndex]['id'].toString());
-                                _showAddCustomerDialog(
-                                    context, activeCategoryId);
-                              },
-                              child: Container(
-                                width: 60,
-                                height: 60,
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.add,
-                                  color: Colors.white,
-                                  size: 32,
-                                ),
+                          // الشريط الملون (~80%)
+                          Expanded(
+                            flex: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.summaryBar,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'له: ${formatNumber(totalGive)}',
+                                        style: const TextStyle(
+                                          color: AppColors.green,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      Text(
+                                        'عليه: ${formatNumber(totalTake)}',
+                                        style: const TextStyle(
+                                          color: AppColors.red,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${formatNumber(netBalance.abs())}',
+                                    style: const TextStyle(
+                                      color: AppColors.textDark,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 6),
+                          // زر + منفصل على اليمين (~20%)
                           Expanded(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'عليه: ${formatNumber(totalTake)}',
-                                      style: const TextStyle(
-                                        color: AppColors.red,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    Text(
-                                      'له: ${formatNumber(totalGive)}',
-                                      style: const TextStyle(
-                                        color: AppColors.green,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${formatNumber(netBalance.abs())}',
-                                  style: const TextStyle(
-                                    color: AppColors.textDark,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
+                            flex: 1,
+                            child: Material(
+                              color: AppColors.gold,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 2,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () {
+                                  final activeIndex = _tabController!.index;
+                                  final activeCategoryId = int.parse(
+                                      categories[activeIndex]['id'].toString());
+                                  _showAddCustomerDialog(
+                                      context, activeCategoryId);
+                                },
+                                child: Container(
+                                  height: 50,
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.add,
+                                    color: Colors.white,
+                                    size: 28,
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ],
@@ -3309,6 +3390,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             final dateTimeFormatted =
                                 _formatDateTime(tx['date'].toString());
 
+                            Color amtBg;
+                            Color balBg;
+                            if (isGive) {
+                              amtBg = AppColors.greenDarker;
+                            } else {
+                              amtBg = AppColors.redDarker;
+                            }
+                            if (runBal > 0) {
+                              balBg = AppColors.greenDarker;
+                            } else if (runBal < 0) {
+                              balBg = AppColors.redDarker;
+                            } else {
+                              balBg = AppColors.greyLight;
+                            }
+
                             return InkWell(
                               onLongPress: () {
                                 _showTransactionOptionsModal(
@@ -3356,19 +3452,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
-                                          color: isGive
-                                              ? AppColors.greenLight
-                                              : AppColors.redLight,
+                                          color: amtBg,
                                           borderRadius:
                                               BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           formatNumber(amt),
                                           textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                              color: isGive
-                                                  ? AppColors.green
-                                                  : AppColors.red,
+                                          style: const TextStyle(
+                                              color: Colors.black,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 12),
                                         ),
@@ -3396,19 +3488,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 6, horizontal: 2),
                                         decoration: BoxDecoration(
-                                          color: runBal >= 0
-                                              ? const Color(0xFFF1F8E9)
-                                              : const Color(0xFFFFF3E0),
+                                          color: balBg,
                                           borderRadius:
                                               BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           formatNumber(runBal.abs()),
                                           textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: runBal >= 0
-                                                ? AppColors.green
-                                                : AppColors.red,
+                                          style: const TextStyle(
+                                            color: Colors.black,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -3425,109 +3513,118 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
+          // ✅ شريط الإجماليات السفلي الجديد (3 بطاقات)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            color: AppColors.primary,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            color: Colors.white,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.arrow_upward,
-                        color: Colors.redAccent, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      'عليه: ${formatNumber(totalTake)}',
-                      style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14),
+                // 🟢 البطاقة اليسرى: له
+                Expanded(
+                  child: Material(
+                    color: AppColors.green,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () =>
+                          _showAddTransactionDialog(context, 'give'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 8, horizontal: 4),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('له',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(
+                              formatNumber(totalGive),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Text(
-                    '${formatNumber(finalBalance.abs())} ${finalBalance >= 0 ? "له" : "عليه"}',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13),
                   ),
                 ),
-                Row(
-                  children: [
-                    Text(
-                      'له: ${formatNumber(totalGive)}',
-                      style: const TextStyle(
-                          color: Colors.greenAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14),
+                const SizedBox(width: 6),
+                // 🟡 البطاقة الوسطى: الرصيد
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 8, horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.gold,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.arrow_downward,
-                        color: Colors.greenAccent, size: 18),
-                  ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          finalBalance == 0
+                              ? 'الرصيد'
+                              : (finalBalance > 0 ? 'له' : 'عليه'),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          formatNumber(finalBalance.abs()),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // 🔴 البطاقة اليمنى: عليه
+                Expanded(
+                  child: Material(
+                    color: AppColors.red,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () =>
+                          _showAddTransactionDialog(context, 'take'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 8, horizontal: 4),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('عليه',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(
+                              formatNumber(totalTake),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.remove, color: Colors.white),
-                    label: const Text('عليه',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-                    onPressed: () =>
-                        _showAddTransactionDialog(context, 'take'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.add, color: Colors.white),
-                    label: const Text('له',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-                    onPressed: () =>
-                        _showAddTransactionDialog(context, 'give'),
-                  ),
-                ),
-              ],
-            ),
-          )
         ],
       ),
     );
