@@ -1117,7 +1117,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// ✅ AppBar مع تدرج أزرق وحواف سفلية
+// ✅ AppBar بتدرج أزرق وحواف سفلية
 // ----------------------------------------------------
 class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? title;
@@ -1125,7 +1125,6 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? leading;
   final PreferredSizeWidget? bottom;
   final double toolbarHeight;
-  final bool roundedBottom;
 
   const GradientAppBar({
     super.key,
@@ -1134,31 +1133,22 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.leading,
     this.bottom,
     this.toolbarHeight = kToolbarHeight,
-    this.roundedBottom = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: roundedBottom
-          ? const BorderRadius.only(
-              bottomLeft: Radius.circular(8),
-              bottomRight: Radius.circular(8),
-            )
-          : BorderRadius.zero,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.appBarGradient,
-        ),
-        child: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          title: title,
-          actions: actions,
-          leading: leading,
-          bottom: bottom,
-          toolbarHeight: toolbarHeight,
-        ),
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.appBarGradient,
+      ),
+      child: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: title,
+        actions: actions,
+        leading: leading,
+        bottom: bottom,
+        toolbarHeight: toolbarHeight,
       ),
     );
   }
@@ -1197,6 +1187,7 @@ class _HomeScreenState extends State<HomeScreen>
       final settings = await AutoBackupService.getSettings();
       final wasEnabled = settings['enabled'] as bool;
       final lastBackupBefore = settings['lastBackup'] as String;
+
       final error = await AutoBackupService.checkAndRunBackup();
 
       if (error != null && mounted) {
@@ -1210,6 +1201,7 @@ class _HomeScreenState extends State<HomeScreen>
       } else if (error == null && wasEnabled && mounted) {
         final newSettings = await AutoBackupService.getSettings();
         final newLastBackup = newSettings['lastBackup'] as String;
+
         if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1235,6 +1227,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1296,7 +1289,7 @@ class _HomeScreenState extends State<HomeScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -1398,6 +1391,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _showSearchDialog() {
     final searchCtrl = TextEditingController(text: searchQuery);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1445,6 +1439,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _importFromExcel(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
+
     if (provider.categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1462,8 +1457,7 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.folder_open, color: AppColors.primary),
@@ -1564,8 +1558,8 @@ class _HomeScreenState extends State<HomeScreen>
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
             title: const Row(
               children: [
                 Icon(Icons.check_circle, color: AppColors.green),
@@ -1632,9 +1626,8 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (categories.isEmpty) {
       return Scaffold(
-        appBar: GradientAppBar(
-          title: const Text('دفتر المحاسب'),
-          roundedBottom: true,
+        appBar: AppBar(
+          title: const Text('دفتر المحاسب الشامل'),
         ),
         body: const Center(child: Text('لا توجد تصنيفات مضافة')),
       );
@@ -1933,20 +1926,46 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط المجاميع السفلي
+                    // ✅ شريط المجاميع السفلي الجديد
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 6),
                       color: AppColors.background,
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // زر + على أقصى يمين (RTL) — أزرق فاتح + أيقونة ذهبية
+                          SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: Material(
+                              color: AppColors.primaryLight,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 2,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () {
+                                  final activeIndex = _tabController!.index;
+                                  final activeCategoryId = int.parse(
+                                      categories[activeIndex]['id'].toString());
+                                  _showAddCustomerDialog(
+                                      context, activeCategoryId);
+                                },
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.add,
+                                    color: AppColors.gold,
+                                    size: 30,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
                           // الشريط الأزرق (السطرين)
                           Expanded(
-                            flex: 4,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
+                                  horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 color: AppColors.summaryBar,
                                 borderRadius: BorderRadius.circular(8),
@@ -1954,6 +1973,7 @@ class _HomeScreenState extends State<HomeScreen>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  // السطر 1: عليه (يمين) + له (يسار)
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -1982,6 +2002,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     color: Colors.white.withOpacity(0.3),
                                   ),
                                   const SizedBox(height: 3),
+                                  // السطر 2: الرصيد في المنتصف
                                   Center(
                                     child: Text(
                                       '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
@@ -2000,34 +2021,6 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          // زر + (خلفية زرقاء فاتحة + أيقونة ذهبية)
-                          Expanded(
-                            flex: 1,
-                            child: Material(
-                              color: AppColors.primaryLight,
-                              borderRadius: BorderRadius.circular(8),
-                              elevation: 2,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(8),
-                                onTap: () {
-                                  final activeIndex = _tabController!.index;
-                                  final activeCategoryId = int.parse(
-                                      categories[activeIndex]['id'].toString());
-                                  _showAddCustomerDialog(
-                                      context, activeCategoryId);
-                                },
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.add,
-                                    color: AppColors.gold,
-                                    size: 30,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -2041,7 +2034,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ بطاقة الحساب الجديدة (العكسية + أحجام مصغرة + ألوان غامقة)
+  // ✅ بطاقة الحساب الجديدة (آمنة + مصغرة + معكوسة)
   Widget _buildCustomerCard(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> customer) {
     final int cId = int.parse(customer['id'].toString());
@@ -2062,99 +2055,112 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Row(
-        children: [
-          // البطاقة البيضاء
-          Expanded(
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              elevation: 2,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          CustomerDetailsScreen(customer: customer),
-                    ),
-                  ).then((_) => provider.loadCustomers());
-                },
-                onLongPress: () =>
-                    _showCustomerOptionsModal(context, provider, customer),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      height: 70,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    CustomerDetailsScreen(customer: customer),
+              ),
+            ).then((_) {
+              provider.loadCustomers();
+            });
+          },
+          onLongPress: () {
+            _showCustomerOptionsModal(context, provider, customer);
+          },
+          child: Stack(
+            children: [
+              // الشريط الملون على يمين البطاقة
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
                 child: Container(
-                  height: 70,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    children: [
-                      // (1) السهم > (أقصى يمين في RTL)
-                      Icon(
-                        Icons.arrow_back_ios,
-                        size: 14,
-                        color: AppColors.greyArrow,
-                      ),
-                      const SizedBox(width: 6),
-                      // (2) السهم ↑↓ (وسط)
-                      // (3) الرقم
-                      Text(
-                        formatNumber(bal.abs()),
-                        style: TextStyle(
-                          color: mainColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 22,
-                        ),
-                      ),
-                      const Spacer(),
-                      // (4) الاسم
-                      Expanded(
-                        child: Text(
-                          custName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: AppColors.textDarkest,
-                          ),
-                          textAlign: TextAlign.left,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // (5) الأيقونة (أقصى يسار في RTL)
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: circleColor,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.person,
-                          color: mainColor,
-                          size: 24,
-                        ),
-                      ),
-                    ],
+                  width: 5,
+                  decoration: BoxDecoration(
+                    color: mainColor,
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(8),
+                      bottomRight: Radius.circular(8),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          // ✅ الشريط الملون على أقصى اليسار (RTL)
-          Container(
-            width: 5,
-            height: 70,
-            decoration: BoxDecoration(
-              color: mainColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                bottomLeft: Radius.circular(8),
+              // محتوى البطاقة
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    // (1) الأيقونة
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: circleColor,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.person,
+                        color: mainColor,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // (2) الاسم
+                    Expanded(
+                      child: Text(
+                        custName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppColors.textDarkest,
+                        ),
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // (3) الرقم
+                    Text(
+                      formatNumber(bal.abs()),
+                      style: TextStyle(
+                        color: mainColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // (4) السهم >
+                    Icon(
+                      Icons.arrow_back_ios,
+                      size: 14,
+                      color: AppColors.greyArrow,
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -2170,7 +2176,7 @@ class _HomeScreenState extends State<HomeScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -2242,8 +2248,7 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.edit, color: AppColors.primary),
@@ -2378,8 +2383,7 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.person_add, color: AppColors.primary),
@@ -3194,7 +3198,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -4207,7 +4211,7 @@ class CategoriesScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
