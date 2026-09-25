@@ -42,16 +42,19 @@ class AppColors {
   static const Color green = Color(0xFF2E7D32);
   static const Color greenLight = Color(0xFFE8F5E9);
   static const Color greenDarker = Color(0xFFC8E6C9);
+  static const Color greenBright = Color(0xFF4CAF50);
   static const Color red = Color(0xFFC62828);
   static const Color redLight = Color(0xFFFFEBEE);
   static const Color redDarker = Color(0xFFFFCDD2);
+  static const Color redBright = Color(0xFFE53935);
   static const Color greyLight = Color(0xFFE0E0E0);
+  static const Color greyArrow = Color(0xFF9E9E9E);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
   static const Color background = Color(0xFFF8F9FA);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
-  static const Color summaryBar = Color(0xFFB0BEC5);
+  static const Color summaryBar = Color(0xFF1E3A5F);
 }
 
 // ====================================================
@@ -1204,7 +1207,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ✅ نافذة النسخ الاحتياطي (تدعم الوضع المحلي و Drive)
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
@@ -1265,7 +1267,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ نافذة تجميع خيارات النسخ الاحتياطي (Bottom Sheet)
   void _showBackupOptionsSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1299,7 +1300,6 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               const Divider(height: 20),
-              // 1. خيارات حفظ البيانات (تلقائي)
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -1326,7 +1326,6 @@ class _HomeScreenState extends State<HomeScreen>
                   });
                 },
               ),
-              // 2. النسخ الاحتياطي من الهاتف
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -1346,7 +1345,6 @@ class _HomeScreenState extends State<HomeScreen>
                   _showBackupDialog(context);
                 },
               ),
-              // 3. النسخ الاحتياطي من Drive
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -1655,6 +1653,26 @@ class _HomeScreenState extends State<HomeScreen>
                             _scaffoldKey.currentState?.openDrawer(),
                       ),
                       const Spacer(),
+                      // ✅ أيقونة المحاسب + العنوان في المنتصف
+                      Row(
+                        children: const [
+                          Icon(
+                            Icons.menu_book,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'المحاسب',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
                       IconButton(
                         icon: const Icon(
                           Icons.search,
@@ -1798,7 +1816,6 @@ class _HomeScreenState extends State<HomeScreen>
                 _importFromExcel(context);
               },
             ),
-            // ✅ العنصر الموحّد الجديد
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -1887,98 +1904,12 @@ class _HomeScreenState extends State<HomeScreen>
                                   const EdgeInsets.symmetric(vertical: 8),
                               itemCount: categoryCustomers.length,
                               itemBuilder: (ctx, i) {
-                                final customer = categoryCustomers[i];
-                                final int cId = int.parse(
-                                    customer['id'].toString());
-                                final String custName =
-                                    (customer['name'] ?? 'حساب')
-                                        .toString();
-                                final String firstLetter =
-                                    custName.isNotEmpty ? custName[0] : '?';
-                                final double bal =
-                                    provider.customerBalances[cId] ?? 0.0;
-                                final bool isGive = bal >= 0;
-
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 5),
-                                  elevation: 1,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(12),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              CustomerDetailsScreen(
-                                                  customer: customer),
-                                        ),
-                                      ).then((_) {
-                                        provider.loadCustomers();
-                                      });
-                                    },
-                                    onLongPress: () {
-                                      _showCustomerOptionsModal(
-                                          context, provider, customer);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 16),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 45,
-                                            height: 45,
-                                            decoration: BoxDecoration(
-                                              color: isGive
-                                                  ? AppColors.greenLight
-                                                  : AppColors.redLight,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              firstLetter,
-                                              style: TextStyle(
-                                                color: isGive
-                                                    ? AppColors.green
-                                                    : AppColors.red,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 20,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          Expanded(
-                                            child: Text(
-                                              custName,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                                color: AppColors.textDark,
-                                              ),
-                                              overflow:
-                                                  TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          Text(
-                                            formatNumber(bal.abs()),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                              color: isGive
-                                                  ? AppColors.green
-                                                  : AppColors.red,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
+                                return _buildCustomerCard(
+                                    context, provider, categoryCustomers[i]);
                               },
                             ),
                     ),
-                    // ✅ شريط المجاميع السفلي الجديد (سطرين + زر + منفصل)
+                    // ✅ شريط المجاميع السفلي الجديد
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 6),
@@ -1986,20 +1917,20 @@ class _HomeScreenState extends State<HomeScreen>
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // الشريط الملون (~80%)
+                          // الشريط الأزرق الداكن (~80%)
                           Expanded(
                             flex: 4,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                                  horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
                                 color: AppColors.summaryBar,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
+                                  // السطر 1: له + عليه
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -2007,28 +1938,41 @@ class _HomeScreenState extends State<HomeScreen>
                                       Text(
                                         'له: ${formatNumber(totalGive)}',
                                         style: const TextStyle(
-                                          color: AppColors.green,
+                                          color: AppColors.greenBright,
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 11,
+                                          fontSize: 16,
                                         ),
                                       ),
                                       Text(
                                         'عليه: ${formatNumber(totalTake)}',
                                         style: const TextStyle(
-                                          color: AppColors.red,
+                                          color: AppColors.redBright,
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 11,
+                                          fontSize: 16,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'الرصيد ${netBalance >= 0 ? "له" : "عليه"}: ${formatNumber(netBalance.abs())}',
-                                    style: const TextStyle(
-                                      color: AppColors.textDark,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
+                                  const SizedBox(height: 3),
+                                  // خط فاصل
+                                  Container(
+                                    height: 1,
+                                    color: Colors.white.withOpacity(0.3),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  // السطر 2: الرصيد في الوسط
+                                  Center(
+                                    child: Text(
+                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                                      style: TextStyle(
+                                        color: netBalance > 0
+                                            ? AppColors.greenBright
+                                            : (netBalance < 0
+                                                ? AppColors.redBright
+                                                : Colors.white),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -2036,7 +1980,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 6),
-                          // زر + منفصل على اليمين (~20%)
+                          // زر + منفصل يمين (~20%)
                           Expanded(
                             flex: 1,
                             child: Material(
@@ -2053,12 +1997,12 @@ class _HomeScreenState extends State<HomeScreen>
                                       context, activeCategoryId);
                                 },
                                 child: Container(
-                                  height: 50,
+                                  height: 62,
                                   alignment: Alignment.center,
                                   child: const Icon(
                                     Icons.add,
                                     color: Colors.white,
-                                    size: 28,
+                                    size: 30,
                                   ),
                                 ),
                               ),
@@ -2070,6 +2014,143 @@ class _HomeScreenState extends State<HomeScreen>
                   ],
                 );
               }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ بطاقة الحساب الجديدة (كما الصورة)
+  Widget _buildCustomerCard(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> customer) {
+    final int cId = int.parse(customer['id'].toString());
+    final String custName = (customer['name'] ?? 'حساب').toString();
+    final double bal = provider.customerBalances[cId] ?? 0.0;
+
+    Color mainColor;
+    Color circleColor;
+    IconData arrowIcon;
+    if (bal > 0) {
+      mainColor = AppColors.green;
+      circleColor = AppColors.greenLight;
+      arrowIcon = Icons.arrow_downward;
+    } else if (bal < 0) {
+      mainColor = AppColors.redBright;
+      circleColor = AppColors.redLight;
+      arrowIcon = Icons.arrow_upward;
+    } else {
+      mainColor = AppColors.green;
+      circleColor = AppColors.greenLight;
+      arrowIcon = Icons.arrow_downward;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: Row(
+        children: [
+          // الشريط الملون على اليسار
+          Container(
+            width: 5,
+            height: 90,
+            decoration: BoxDecoration(
+              color: mainColor,
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(8),
+                bottomRight: Radius.circular(8),
+              ),
+            ),
+          ),
+          // البطاقة البيضاء
+          Expanded(
+            child: Material(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                bottomLeft: Radius.circular(12),
+              ),
+              elevation: 2,
+              child: InkWell(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  bottomLeft: Radius.circular(12),
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          CustomerDetailsScreen(customer: customer),
+                    ),
+                  ).then((_) {
+                    provider.loadCustomers();
+                  });
+                },
+                onLongPress: () {
+                  _showCustomerOptionsModal(context, provider, customer);
+                },
+                child: Container(
+                  height: 90,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      // السهم > (يسار)
+                      Icon(
+                        Icons.arrow_back_ios,
+                        size: 18,
+                        color: AppColors.greyArrow,
+                      ),
+                      const SizedBox(width: 8),
+                      // الرقم (أكبر وأوضح)
+                      Text(
+                        formatNumber(bal.abs()),
+                        style: TextStyle(
+                          color: mainColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 26,
+                        ),
+                      ),
+                      // سهم ↑↓ صغير بجانب الرقم
+                      const SizedBox(width: 4),
+                      Icon(
+                        arrowIcon,
+                        size: 20,
+                        color: mainColor,
+                      ),
+                      const Spacer(),
+                      // اسم الحساب
+                      Expanded(
+                        child: Text(
+                          custName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: AppColors.primary,
+                          ),
+                          textAlign: TextAlign.left,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // الدائرة مع أيقونة الشخص
+                      Container(
+                        width: 55,
+                        height: 55,
+                        decoration: BoxDecoration(
+                          color: circleColor,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.person,
+                          color: mainColor,
+                          size: 30,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -2205,8 +2286,7 @@ class _HomeScreenState extends State<HomeScreen>
                 DropdownButtonFormField<int>(
                   value: provider.categories.any(
                           (c) => int.parse(c['id'].toString()) == selectedCat)
-                      ? selectedCat
-                      : (provider.categories.isNotEmpty
+                      ? selectedCat                      : (provider.categories.isNotEmpty
                           ? int.parse(provider.categories.first['id'].toString())
                           : selectedCat),
                   decoration: const InputDecoration(labelText: 'التصنيف'),
@@ -3513,13 +3593,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          // ✅ شريط الإجماليات السفلي الجديد (3 بطاقات)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             color: Colors.white,
             child: Row(
               children: [
-                // 🟢 البطاقة اليسرى: له
                 Expanded(
                   child: Material(
                     color: AppColors.green,
@@ -3554,7 +3632,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                // 🟡 البطاقة الوسطى: الرصيد
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -3588,7 +3665,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                // 🔴 البطاقة اليمنى: عليه
                 Expanded(
                   child: Material(
                     color: AppColors.red,
@@ -4605,3 +4681,5 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
+
+
