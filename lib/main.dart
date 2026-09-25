@@ -19,7 +19,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
 
 // ====================================================
-// ✅ دالة تنسيق الأرقام (تزيل .0 تلقائيًا)
+// ✅ دالة تنسيق الأرقام
 // ====================================================
 String formatNumber(double value) {
   if (value == value.roundToDouble()) {
@@ -32,7 +32,7 @@ String formatNumber(double value) {
 }
 
 // ====================================================
-// الألوان المريحة للعين
+// الألوان
 // ====================================================
 class AppColors {
   static const Color primary = Color(0xFF1E3A5F);
@@ -43,13 +43,16 @@ class AppColors {
   static const Color green = Color(0xFF2E7D32);
   static const Color greenLight = Color(0xFFE8F5E9);
   static const Color greenDarker = Color(0xFFC8E6C9);
-  static const Color greenBright = Color(0xFF4CAF50);
+  static const Color greenBright = Color(0xFF66BB6A);
+  static const Color greenDark = Color(0xFF1B5E20);
   static const Color red = Color(0xFFC62828);
   static const Color redLight = Color(0xFFFFEBEE);
   static const Color redDarker = Color(0xFFFFCDD2);
-  static const Color redBright = Color(0xFFE53935);
+  static const Color redBright = Color(0xFFEF5350);
+  static const Color redDark = Color(0xFFB71C1C);
   static const Color greyLight = Color(0xFFE0E0E0);
   static const Color greyArrow = Color(0xFF9E9E9E);
+  static const Color textDarkest = Color(0xFF0D1F3F);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
   static const Color background = Color(0xFFF8F9FA);
@@ -65,7 +68,7 @@ class AppColors {
 }
 
 // ====================================================
-// ✅ خدمة النسخ الاحتياطي التلقائي
+// ✅ خدمة النسخ الاحتياطي
 // ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
@@ -116,7 +119,6 @@ class AutoBackupService {
       if (oldStatus.isGranted) return true;
       return false;
     } catch (e) {
-      debugPrint('❌ خطأ في طلب الصلاحية: $e');
       return false;
     }
   }
@@ -142,7 +144,6 @@ class AutoBackupService {
       final lastDbModified = settings['lastDbModified'] as String;
       return lastModified != lastDbModified;
     } catch (e) {
-      debugPrint('❌ خطأ في فحص تغير البيانات: $e');
       return true;
     }
   }
@@ -177,14 +178,10 @@ class AutoBackupService {
       if (!shouldBackup) return null;
 
       final dataChanged = await _hasDataChanged();
-      if (!dataChanged) {
-        debugPrint('ℹ️ لم تتغير البيانات — لا حاجة للنسخ');
-        return null;
-      }
+      if (!dataChanged) return null;
 
       return await performBackup(folderPath);
     } catch (e) {
-      debugPrint('❌ خطأ في النسخ التلقائي: $e');
       return null;
     }
   }
@@ -217,10 +214,8 @@ class AutoBackupService {
         lastDbModified: lastModified,
       );
 
-      debugPrint('✅ تم النسخ الاحتياطي: ${targetFile.path}');
       return null;
     } catch (e) {
-      debugPrint('❌ خطأ في النسخ: $e');
       return '$e';
     }
   }
@@ -289,7 +284,6 @@ void main() async {
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    debugPrint('FlutterError: ${details.exception}');
   };
 
   runZonedGuarded(() async {
@@ -308,10 +302,7 @@ void main() async {
     );
 
     Future.delayed(const Duration(seconds: 2), () async {
-      final error = await AutoBackupService.checkAndRunBackup();
-      if (error != null) {
-        debugPrint('⚠️ فشل النسخ التلقائي: $error');
-      }
+      await AutoBackupService.checkAndRunBackup();
     });
   }, (error, stack) {
     debugPrint('ZoneError: $error\n$stack');
@@ -661,7 +652,6 @@ class AppAccountProvider extends ChangeNotifier {
           .where((s) => s.trim().isNotEmpty)
           .toList();
     } catch (e) {
-      debugPrint('❌ خطأ في جلب التفاصيل: $e');
       return [];
     }
   }
@@ -1051,6 +1041,7 @@ class AppAccountProvider extends ChangeNotifier {
     return DateTime.now().toString().split('.')[0];
   }
 }
+
 // ----------------------------------------------------
 // 3. التطبيق الرئيسي
 // ----------------------------------------------------
@@ -1097,16 +1088,16 @@ class AlMuhasibApp extends StatelessWidget {
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: AppColors.gold, width: 2),
           ),
           labelStyle: const TextStyle(color: AppColors.primary),
@@ -1115,7 +1106,7 @@ class AlMuhasibApp extends StatelessWidget {
           color: Colors.white,
           elevation: 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         useMaterial3: false,
@@ -1126,7 +1117,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// ✅ Widget: AppBar بتدرج أزرق
+// ✅ AppBar مع تدرج أزرق وحواف سفلية
 // ----------------------------------------------------
 class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? title;
@@ -1134,6 +1125,7 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? leading;
   final PreferredSizeWidget? bottom;
   final double toolbarHeight;
+  final bool roundedBottom;
 
   const GradientAppBar({
     super.key,
@@ -1142,22 +1134,31 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.leading,
     this.bottom,
     this.toolbarHeight = kToolbarHeight,
+    this.roundedBottom = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.appBarGradient,
-      ),
-      child: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: title,
-        actions: actions,
-        leading: leading,
-        bottom: bottom,
-        toolbarHeight: toolbarHeight,
+    return ClipRRect(
+      borderRadius: roundedBottom
+          ? const BorderRadius.only(
+              bottomLeft: Radius.circular(8),
+              bottomRight: Radius.circular(8),
+            )
+          : BorderRadius.zero,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: AppColors.appBarGradient,
+        ),
+        child: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: title,
+          actions: actions,
+          leading: leading,
+          bottom: bottom,
+          toolbarHeight: toolbarHeight,
+        ),
       ),
     );
   }
@@ -1196,7 +1197,6 @@ class _HomeScreenState extends State<HomeScreen>
       final settings = await AutoBackupService.getSettings();
       final wasEnabled = settings['enabled'] as bool;
       final lastBackupBefore = settings['lastBackup'] as String;
-
       final error = await AutoBackupService.checkAndRunBackup();
 
       if (error != null && mounted) {
@@ -1210,7 +1210,6 @@ class _HomeScreenState extends State<HomeScreen>
       } else if (error == null && wasEnabled && mounted) {
         final newSettings = await AutoBackupService.getSettings();
         final newLastBackup = newSettings['lastBackup'] as String;
-
         if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1236,11 +1235,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: Row(
           children: [
             Icon(
@@ -1298,7 +1296,7 @@ class _HomeScreenState extends State<HomeScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -1400,11 +1398,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _showSearchDialog() {
     final searchCtrl = TextEditingController(text: searchQuery);
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.search, color: AppColors.primary),
@@ -1419,7 +1416,7 @@ class _HomeScreenState extends State<HomeScreen>
             labelText: 'اسم الحساب',
             prefixIcon: const Icon(Icons.search),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
           onChanged: (val) {
@@ -1448,7 +1445,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _importFromExcel(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
-
     if (provider.categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1467,7 +1463,7 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.folder_open, color: AppColors.primary),
@@ -1568,8 +1564,8 @@ class _HomeScreenState extends State<HomeScreen>
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             title: const Row(
               children: [
                 Icon(Icons.check_circle, color: AppColors.green),
@@ -1636,8 +1632,9 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (categories.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('دفتر المحاسب الشامل'),
+        appBar: GradientAppBar(
+          title: const Text('دفتر المحاسب'),
+          roundedBottom: true,
         ),
         body: const Center(child: Text('لا توجد تصنيفات مضافة')),
       );
@@ -1660,75 +1657,81 @@ class _HomeScreenState extends State<HomeScreen>
         backgroundColor: Colors.transparent,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(104),
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: AppColors.appBarGradient,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(8),
+              bottomRight: Radius.circular(8),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 56,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.menu,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                        onPressed: () =>
-                            _scaffoldKey.currentState?.openDrawer(),
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: const [
-                          Icon(
-                            Icons.menu_book,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: AppColors.appBarGradient,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 56,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.menu,
                             color: Colors.white,
-                            size: 24,
+                            size: 26,
                           ),
-                          SizedBox(width: 8),
-                          Text(
-                            'المحاسب',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.search,
-                          color: Colors.white,
-                          size: 26,
+                          onPressed: () =>
+                              _scaffoldKey.currentState?.openDrawer(),
                         ),
-                        onPressed: _showSearchDialog,
-                      ),
-                      const SizedBox(width: 4),
-                    ],
+                        const Spacer(),
+                        Row(
+                          children: const [
+                            Icon(
+                              Icons.menu_book,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'المحاسب',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.search,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                          onPressed: _showSearchDialog,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
                   ),
-                ),
-                SizedBox(
-                  height: 48,
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    indicatorColor: AppColors.gold,
-                    indicatorWeight: 3,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white70,
-                    labelStyle: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
-                    tabs: categories
-                        .map((cat) => Tab(text: cat['name'].toString()))
-                        .toList(),
+                  SizedBox(
+                    height: 48,
+                    child: TabBar(
+                      controller: _tabController,
+                      isScrollable: true,
+                      indicatorColor: AppColors.gold,
+                      indicatorWeight: 3,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.white70,
+                      labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15),
+                      tabs: categories
+                          .map((cat) => Tab(text: cat['name'].toString()))
+                          .toList(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1922,7 +1925,7 @@ class _HomeScreenState extends State<HomeScreen>
                             )
                           : ListView.builder(
                               padding:
-                                  const EdgeInsets.symmetric(vertical: 8),
+                                  const EdgeInsets.symmetric(vertical: 6),
                               itemCount: categoryCustomers.length,
                               itemBuilder: (ctx, i) {
                                 return _buildCustomerCard(
@@ -1930,14 +1933,15 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط المجاميع السفلي الجديد
+                    // ✅ شريط المجاميع السفلي
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 6),
                       color: AppColors.background,
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // الشريط الأزرق (السطرين)
                           Expanded(
                             flex: 4,
                             child: Container(
@@ -1955,19 +1959,19 @@ class _HomeScreenState extends State<HomeScreen>
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        'له: ${formatNumber(totalGive)}',
-                                        style: const TextStyle(
-                                          color: AppColors.greenBright,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      Text(
                                         'عليه: ${formatNumber(totalTake)}',
                                         style: const TextStyle(
                                           color: AppColors.redBright,
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                      Text(
+                                        'له: ${formatNumber(totalGive)}',
+                                        style: const TextStyle(
+                                          color: AppColors.greenBright,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
                                         ),
                                       ),
                                     ],
@@ -1988,7 +1992,7 @@ class _HomeScreenState extends State<HomeScreen>
                                                 ? AppColors.redBright
                                                 : Colors.white),
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 13,
+                                        fontSize: 15,
                                       ),
                                     ),
                                   ),
@@ -1997,10 +2001,11 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 6),
+                          // زر + (خلفية زرقاء فاتحة + أيقونة ذهبية)
                           Expanded(
                             flex: 1,
                             child: Material(
-                              color: AppColors.gold,
+                              color: AppColors.primaryLight,
                               borderRadius: BorderRadius.circular(8),
                               elevation: 2,
                               child: InkWell(
@@ -2013,11 +2018,10 @@ class _HomeScreenState extends State<HomeScreen>
                                       context, activeCategoryId);
                                 },
                                 child: Container(
-                                  height: 62,
                                   alignment: Alignment.center,
                                   child: const Icon(
                                     Icons.add,
-                                    color: Colors.white,
+                                    color: AppColors.gold,
                                     size: 30,
                                   ),
                                 ),
@@ -2037,7 +2041,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ بطاقة الحساب الجديدة (كما الصورة)
+  // ✅ بطاقة الحساب الجديدة (العكسية + أحجام مصغرة + ألوان غامقة)
   Widget _buildCustomerCard(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> customer) {
     final int cId = int.parse(customer['id'].toString());
@@ -2046,49 +2050,29 @@ class _HomeScreenState extends State<HomeScreen>
 
     Color mainColor;
     Color circleColor;
-    IconData arrowIcon;
     if (bal > 0) {
-      mainColor = AppColors.green;
+      mainColor = AppColors.greenDark;
       circleColor = AppColors.greenLight;
-      arrowIcon = Icons.arrow_downward;
     } else if (bal < 0) {
-      mainColor = AppColors.redBright;
+      mainColor = AppColors.redDark;
       circleColor = AppColors.redLight;
-      arrowIcon = Icons.arrow_upward;
     } else {
-      mainColor = AppColors.green;
+      mainColor = AppColors.greenDark;
       circleColor = AppColors.greenLight;
-      arrowIcon = Icons.arrow_downward;
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
-          Container(
-            width: 5,
-            height: 90,
-            decoration: BoxDecoration(
-              color: mainColor,
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(8),
-                bottomRight: Radius.circular(8),
-              ),
-            ),
-          ),
+          // البطاقة البيضاء
           Expanded(
             child: Material(
               color: Colors.white,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                bottomLeft: Radius.circular(12),
-              ),
+              borderRadius: BorderRadius.circular(8),
               elevation: 2,
               child: InkWell(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  bottomLeft: Radius.circular(12),
-                ),
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -2096,55 +2080,51 @@ class _HomeScreenState extends State<HomeScreen>
                       builder: (_) =>
                           CustomerDetailsScreen(customer: customer),
                     ),
-                  ).then((_) {
-                    provider.loadCustomers();
-                  });
+                  ).then((_) => provider.loadCustomers());
                 },
-                onLongPress: () {
-                  _showCustomerOptionsModal(context, provider, customer);
-                },
+                onLongPress: () =>
+                    _showCustomerOptionsModal(context, provider, customer),
                 child: Container(
-                  height: 90,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  height: 70,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Row(
                     children: [
+                      // (1) السهم > (أقصى يمين في RTL)
                       Icon(
                         Icons.arrow_back_ios,
-                        size: 18,
+                        size: 14,
                         color: AppColors.greyArrow,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
+                      // (2) السهم ↑↓ (وسط)
+                      // (3) الرقم
                       Text(
                         formatNumber(bal.abs()),
                         style: TextStyle(
                           color: mainColor,
                           fontWeight: FontWeight.bold,
-                          fontSize: 26,
+                          fontSize: 22,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        arrowIcon,
-                        size: 20,
-                        color: mainColor,
-                      ),
                       const Spacer(),
+                      // (4) الاسم
                       Expanded(
                         child: Text(
                           custName,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: AppColors.primary,
+                            fontSize: 16,
+                            color: AppColors.textDarkest,
                           ),
                           textAlign: TextAlign.left,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 10),
+                      // (5) الأيقونة (أقصى يسار في RTL)
                       Container(
-                        width: 55,
-                        height: 55,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           color: circleColor,
                           shape: BoxShape.circle,
@@ -2153,12 +2133,24 @@ class _HomeScreenState extends State<HomeScreen>
                         child: Icon(
                           Icons.person,
                           color: mainColor,
-                          size: 30,
+                          size: 24,
                         ),
                       ),
                     ],
                   ),
                 ),
+              ),
+            ),
+          ),
+          // ✅ الشريط الملون على أقصى اليسار (RTL)
+          Container(
+            width: 5,
+            height: 70,
+            decoration: BoxDecoration(
+              color: mainColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                bottomLeft: Radius.circular(8),
               ),
             ),
           ),
@@ -2178,7 +2170,7 @@ class _HomeScreenState extends State<HomeScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -2251,7 +2243,7 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.edit, color: AppColors.primary),
@@ -2346,7 +2338,7 @@ class _HomeScreenState extends State<HomeScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.warning_amber, color: AppColors.red),
@@ -2387,7 +2379,7 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.person_add, color: AppColors.primary),
@@ -2519,7 +2511,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(8)),
             title: const Row(
               children: [
                 Icon(Icons.security, color: AppColors.gold),
@@ -2792,7 +2784,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                        borderRadius: BorderRadius.circular(8)),
                     title: const Text('مجلد حفظ البيانات'),
                     content: SelectableText(
                       _folderPath,
@@ -2911,7 +2903,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       minimumSize: const Size(double.infinity, 50),
                     ),
@@ -2939,7 +2931,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       minimumSize: const Size(double.infinity, 50),
                     ),
@@ -2958,7 +2950,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppColors.gold.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.gold.withOpacity(0.3)),
               ),
               child: const Row(
@@ -3104,7 +3096,7 @@ class _DetailsAutocompleteFieldState
             constraints: const BoxConstraints(maxHeight: 200),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(
                   color: AppColors.gold.withOpacity(0.3), width: 1),
               boxShadow: [
@@ -3202,7 +3194,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -3276,7 +3268,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.edit_note, color: AppColors.primary),
@@ -3732,7 +3724,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: Row(
           children: [
             Icon(
@@ -4182,7 +4174,7 @@ class CategoriesScreen extends StatelessWidget {
                   margin:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     onLongPress: () =>
                         _showOptionsSheet(context, provider, cat),
                     child: ListTile(
@@ -4215,7 +4207,7 @@ class CategoriesScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -4310,7 +4302,7 @@ class CategoriesScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.edit, color: AppColors.primary),
@@ -4360,7 +4352,7 @@ class CategoriesScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: const Row(
             children: [
               Icon(Icons.swap_vert, color: AppColors.goldDark),
@@ -4470,7 +4462,7 @@ class CategoriesScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.warning_amber, color: AppColors.red),
@@ -4553,7 +4545,7 @@ class CategoriesScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.create_new_folder, color: AppColors.primary),
@@ -4662,7 +4654,7 @@ class CurrenciesScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Row(
           children: [
             Icon(Icons.monetization_on, color: AppColors.goldDark),
