@@ -36,7 +36,8 @@ String formatNumber(double value) {
 // ====================================================
 class AppColors {
   static const Color primary = Color(0xFF1E3A5F);
-  static const Color primaryLight = Color(0xFF2C5282);
+  static const Color primaryLight = Color(0xFF3B7CB8);
+  static const Color primaryDark = Color(0xFF1E3A5F);
   static const Color gold = Color(0xFFD4A017);
   static const Color goldDark = Color(0xFFB8860B);
   static const Color green = Color(0xFF2E7D32);
@@ -55,6 +56,12 @@ class AppColors {
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
   static const Color summaryBar = Color(0xFF1E3A5F);
+
+  static const LinearGradient appBarGradient = LinearGradient(
+    colors: [Color(0xFF3B7CB8), Color(0xFF1E3A5F)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }
 
 // ====================================================
@@ -387,9 +394,7 @@ class AppDBHelper {
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      debugPrint('🔄 ترقية قاعدة البيانات من v1 إلى v2');
       await db.execute('ALTER TABLE customers ADD COLUMN last_activity TEXT');
-
       final customers = await db.query('customers');
       for (var cust in customers) {
         final cId = cust['id'];
@@ -409,14 +414,11 @@ class AppDBHelper {
           );
         }
       }
-      debugPrint('✅ تمت الترقية إلى v2');
     }
 
     if (oldVersion < 3) {
-      debugPrint('🔄 ترقية قاعدة البيانات من v2 إلى v3');
       await db.execute(
           'ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0');
-
       final cats = await db.query('categories', orderBy: 'id ASC');
       for (int i = 0; i < cats.length; i++) {
         await db.update(
@@ -426,7 +428,6 @@ class AppDBHelper {
           whereArgs: [cats[i]['id']],
         );
       }
-      debugPrint('✅ تمت الترقية إلى v3');
     }
   }
 
@@ -477,14 +478,12 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<void> addCategory(String name) async {
     final db = await AppDBHelper.instance.database;
-
     final maxResult = await db.rawQuery(
         'SELECT MAX(sort_order) as max_order FROM categories');
     int maxOrder = 0;
     if (maxResult.isNotEmpty && maxResult.first['max_order'] != null) {
       maxOrder = int.parse(maxResult.first['max_order'].toString());
     }
-
     await db.insert('categories', {
       'name': name,
       'sort_order': maxOrder + 1,
@@ -530,22 +529,18 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<void> deleteCategory(int id) async {
     final db = await AppDBHelper.instance.database;
-
     final customersInCat = await db.query(
       'customers',
       where: 'category_id = ?',
       whereArgs: [id],
     );
-
     for (var cust in customersInCat) {
       final custId = cust['id'];
       await db.delete('transactions',
           where: 'customer_id = ?', whereArgs: [custId]);
     }
-
     await db.delete('customers', where: 'category_id = ?', whereArgs: [id]);
     await db.delete('categories', where: 'id = ?', whereArgs: [id]);
-
     await loadCategories();
     await loadCustomers();
   }
@@ -564,7 +559,6 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<void> loadCustomers() async {
     final db = await AppDBHelper.instance.database;
-
     customers = await db.rawQuery('''
       SELECT * FROM customers
       ORDER BY 
@@ -575,7 +569,6 @@ class AppAccountProvider extends ChangeNotifier {
         last_activity DESC,
         id DESC
     ''');
-
     await calculateAllCustomerBalances();
     notifyListeners();
   }
@@ -640,7 +633,6 @@ class AppAccountProvider extends ChangeNotifier {
   Future<List<String>> getDistinctDetails({String query = ''}) async {
     try {
       final db = await AppDBHelper.instance.database;
-
       List<Map<String, dynamic>> result;
       if (query.trim().isEmpty) {
         result = await db.rawQuery('''
@@ -664,7 +656,6 @@ class AppAccountProvider extends ChangeNotifier {
           LIMIT 30
         ''', ['%$query%']);
       }
-
       return result
           .map((row) => (row['details'] ?? '').toString())
           .where((s) => s.trim().isNotEmpty)
@@ -692,14 +683,12 @@ class AppAccountProvider extends ChangeNotifier {
       'details': details,
       'date': date,
     });
-
     await db.update(
       'customers',
       {'last_activity': date},
       where: 'id = ?',
       whereArgs: [customerId],
     );
-
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -717,7 +706,6 @@ class AppAccountProvider extends ChangeNotifier {
       where: 'id = ?',
       whereArgs: [id],
     );
-
     final now = DateTime.now().toString().split('.')[0];
     await db.update(
       'customers',
@@ -725,7 +713,6 @@ class AppAccountProvider extends ChangeNotifier {
       where: 'id = ?',
       whereArgs: [customerId],
     );
-
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -1040,7 +1027,6 @@ class AppAccountProvider extends ChangeNotifier {
 
   String _normalizeDate(String dateStr) {
     dateStr = dateStr.trim();
-
     try {
       DateTime dt = DateTime.parse(dateStr);
       return dt.toString().split('.')[0];
@@ -1065,7 +1051,6 @@ class AppAccountProvider extends ChangeNotifier {
     return DateTime.now().toString().split('.')[0];
   }
 }
-
 // ----------------------------------------------------
 // 3. التطبيق الرئيسي
 // ----------------------------------------------------
@@ -1093,7 +1078,7 @@ class AlMuhasibApp extends StatelessWidget {
           surface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.primary,
+          backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
           elevation: 0,
           centerTitle: true,
@@ -1138,6 +1123,48 @@ class AlMuhasibApp extends StatelessWidget {
       home: const HomeScreen(),
     );
   }
+}
+
+// ----------------------------------------------------
+// ✅ Widget: AppBar بتدرج أزرق
+// ----------------------------------------------------
+class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final Widget? title;
+  final List<Widget>? actions;
+  final Widget? leading;
+  final PreferredSizeWidget? bottom;
+  final double toolbarHeight;
+
+  const GradientAppBar({
+    super.key,
+    this.title,
+    this.actions,
+    this.leading,
+    this.bottom,
+    this.toolbarHeight = kToolbarHeight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.appBarGradient,
+      ),
+      child: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: title,
+        actions: actions,
+        leading: leading,
+        bottom: bottom,
+        toolbarHeight: toolbarHeight,
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
 }
 
 // ----------------------------------------------------
@@ -1538,7 +1565,6 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (context.mounted) {
         Navigator.pop(context);
-
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -1631,11 +1657,13 @@ class _HomeScreenState extends State<HomeScreen>
       appBar: AppBar(
         toolbarHeight: 0,
         elevation: 0,
-        backgroundColor: AppColors.primary,
+        backgroundColor: Colors.transparent,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(104),
           child: Container(
-            color: AppColors.primary,
+            decoration: const BoxDecoration(
+              gradient: AppColors.appBarGradient,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1653,7 +1681,6 @@ class _HomeScreenState extends State<HomeScreen>
                             _scaffoldKey.currentState?.openDrawer(),
                       ),
                       const Spacer(),
-                      // ✅ أيقونة المحاسب + العنوان في المنتصف
                       Row(
                         children: const [
                           Icon(
@@ -1714,11 +1741,7 @@ class _HomeScreenState extends State<HomeScreen>
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.primary, AppColors.primaryLight],
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                ),
+                gradient: AppColors.appBarGradient,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1849,8 +1872,7 @@ class _HomeScreenState extends State<HomeScreen>
             child: TabBarView(
               controller: _tabController,
               children: categories.map((cat) {
-                final int currentCatId =
-                    int.parse(cat['id'].toString());
+                final int currentCatId = int.parse(cat['id'].toString());
 
                 final categoryCustomers = provider.customers.where((c) {
                   final int customerCatId =
@@ -1858,9 +1880,8 @@ class _HomeScreenState extends State<HomeScreen>
                   final matchesCategory = customerCatId == currentCatId;
                   final String name = (c['name'] ?? '').toString();
                   final String phone = (c['phone'] ?? '').toString();
-                  final matchesSearch =
-                      name.contains(searchQuery) ||
-                          phone.contains(searchQuery);
+                  final matchesSearch = name.contains(searchQuery) ||
+                      phone.contains(searchQuery);
                   return matchesCategory && matchesSearch;
                 }).toList();
 
@@ -1917,7 +1938,6 @@ class _HomeScreenState extends State<HomeScreen>
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // الشريط الأزرق الداكن (~80%)
                           Expanded(
                             flex: 4,
                             child: Container(
@@ -1930,7 +1950,6 @@ class _HomeScreenState extends State<HomeScreen>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  // السطر 1: له + عليه
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -1954,13 +1973,11 @@ class _HomeScreenState extends State<HomeScreen>
                                     ],
                                   ),
                                   const SizedBox(height: 3),
-                                  // خط فاصل
                                   Container(
                                     height: 1,
                                     color: Colors.white.withOpacity(0.3),
                                   ),
                                   const SizedBox(height: 3),
-                                  // السطر 2: الرصيد في الوسط
                                   Center(
                                     child: Text(
                                       '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
@@ -1980,7 +1997,6 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 6),
-                          // زر + منفصل يمين (~20%)
                           Expanded(
                             flex: 1,
                             child: Material(
@@ -2049,7 +2065,6 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: Row(
         children: [
-          // الشريط الملون على اليسار
           Container(
             width: 5,
             height: 90,
@@ -2061,7 +2076,6 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-          // البطاقة البيضاء
           Expanded(
             child: Material(
               color: Colors.white,
@@ -2094,14 +2108,12 @@ class _HomeScreenState extends State<HomeScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     children: [
-                      // السهم > (يسار)
                       Icon(
                         Icons.arrow_back_ios,
                         size: 18,
                         color: AppColors.greyArrow,
                       ),
                       const SizedBox(width: 8),
-                      // الرقم (أكبر وأوضح)
                       Text(
                         formatNumber(bal.abs()),
                         style: TextStyle(
@@ -2110,7 +2122,6 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 26,
                         ),
                       ),
-                      // سهم ↑↓ صغير بجانب الرقم
                       const SizedBox(width: 4),
                       Icon(
                         arrowIcon,
@@ -2118,7 +2129,6 @@ class _HomeScreenState extends State<HomeScreen>
                         color: mainColor,
                       ),
                       const Spacer(),
-                      // اسم الحساب
                       Expanded(
                         child: Text(
                           custName,
@@ -2132,7 +2142,6 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                       const SizedBox(width: 10),
-                      // الدائرة مع أيقونة الشخص
                       Container(
                         width: 55,
                         height: 55,
@@ -2286,7 +2295,8 @@ class _HomeScreenState extends State<HomeScreen>
                 DropdownButtonFormField<int>(
                   value: provider.categories.any(
                           (c) => int.parse(c['id'].toString()) == selectedCat)
-                      ? selectedCat                      : (provider.categories.isNotEmpty
+                      ? selectedCat
+                      : (provider.categories.isNotEmpty
                           ? int.parse(provider.categories.first['id'].toString())
                           : selectedCat),
                   decoration: const InputDecoration(labelText: 'التصنيف'),
@@ -2705,8 +2715,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: GradientAppBar(
         title: const Text('خيارات حفظ البيانات'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: ListView(
         children: [
@@ -3365,7 +3379,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final displayTransactions = processedTransactions.reversed.toList();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: GradientAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3378,6 +3392,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 style: const TextStyle(fontSize: 13, color: Colors.white70),
               ),
           ],
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
@@ -4135,7 +4153,13 @@ class CategoriesScreen extends StatelessWidget {
     final provider = Provider.of<AppAccountProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('إدارة التصنيفات')),
+      appBar: GradientAppBar(
+        title: const Text('إدارة التصنيفات'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: provider.categories.isEmpty
           ? Center(
               child: Column(
@@ -4577,7 +4601,13 @@ class CurrenciesScreen extends StatelessWidget {
     final provider = Provider.of<AppAccountProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('إدارة العملات')),
+      appBar: GradientAppBar(
+        title: const Text('إدارة العملات'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: provider.currencies.isEmpty
           ? Center(
               child: Column(
@@ -4681,5 +4711,3 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
-
-
