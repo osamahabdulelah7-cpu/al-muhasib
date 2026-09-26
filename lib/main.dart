@@ -2033,138 +2033,157 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+// ✅ بطاقة الحساب (كل العناصر في المنتصف عموديًا)
+Widget _buildCustomerCard(BuildContext context,
+    AppAccountProvider provider, Map<String, dynamic> customer) {
+  final int cId = int.parse(customer['id'].toString());
+  final String custName = (customer['name'] ?? 'حساب').toString();
+  final double bal = provider.customerBalances[cId] ?? 0.0;
 
-  // ✅ بطاقة الحساب الجديدة (آمنة + مصغرة + معكوسة)
-  Widget _buildCustomerCard(BuildContext context,
-      AppAccountProvider provider, Map<String, dynamic> customer) {
-    final int cId = int.parse(customer['id'].toString());
-    final String custName = (customer['name'] ?? 'حساب').toString();
-    final double bal = provider.customerBalances[cId] ?? 0.0;
+  Color mainColor;
+  Color circleColor;
+  if (bal > 0) {
+    mainColor = AppColors.greenDark;
+    circleColor = AppColors.greenLight;
+  } else if (bal < 0) {
+    mainColor = AppColors.redDark;
+    circleColor = AppColors.redLight;
+  } else {
+    mainColor = AppColors.greenDark;
+    circleColor = AppColors.greenLight;
+  }
 
-    Color mainColor;
-    Color circleColor;
-    if (bal > 0) {
-      mainColor = AppColors.greenDark;
-      circleColor = AppColors.greenLight;
-    } else if (bal < 0) {
-      mainColor = AppColors.redDark;
-      circleColor = AppColors.redLight;
-    } else {
-      mainColor = AppColors.greenDark;
-      circleColor = AppColors.greenLight;
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      height: 70,
-      decoration: BoxDecoration(
-        color: Colors.white,
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    height: 70,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.08),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    CustomerDetailsScreen(customer: customer),
-              ),
-            ).then((_) {
-              provider.loadCustomers();
-            });
-          },
-          onLongPress: () {
-            _showCustomerOptionsModal(context, provider, customer);
-          },
-          child: Stack(
-            children: [
-              // الشريط الملون على يمين البطاقة
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(
-                  width: 5,
-                  decoration: BoxDecoration(
-                    color: mainColor,
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(8),
-                      bottomRight: Radius.circular(8),
-                    ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  CustomerDetailsScreen(customer: customer),
+            ),
+          ).then((_) {
+            provider.loadCustomers();
+          });
+        },
+        onLongPress: () {
+          _showCustomerOptionsModal(context, provider, customer);
+        },
+        child: Stack(
+          children: [
+            // الشريط الملون على يمين البطاقة
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: 5,
+                decoration: BoxDecoration(
+                  color: mainColor,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
                   ),
                 ),
               ),
-              // محتوى البطاقة
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // (1) الأيقونة
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: circleColor,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.person,
-                        color: mainColor,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    // (2) الاسم
-                    Expanded(
-                      child: Text(
-                        custName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: AppColors.textDarkest,
+            ),
+            // محتوى البطاقة — كل عنصر مُوسَّط في 70 بكسل
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  // (1) الأيقونة — في المنتصف
+                  SizedBox(
+                    height: 70,
+                    child: Center(
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: circleColor,
+                          shape: BoxShape.circle,
                         ),
-                        textAlign: TextAlign.right,
-                        overflow: TextOverflow.ellipsis,
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.person,
+                          color: mainColor,
+                          size: 24,
+                        ),
                       ),
                     ),
-                    // (3) الرقم
-                    Text(
-                      formatNumber(bal.abs()),
-                      style: TextStyle(
-                        color: mainColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  // (2) الاسم — في المنتصف
+                  Expanded(
+                    child: SizedBox(
+                      height: 70,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          custName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: AppColors.textDarkest,
+                          ),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    // (4) السهم >
-                    Icon(
-                      Icons.arrow_back_ios,
-                      size: 14,
-                      color: AppColors.greyArrow,
+                  ),
+                  // (3) الرقم — في المنتصف
+                  SizedBox(
+                    height: 70,
+                    child: Center(
+                      child: Text(
+                        formatNumber(bal.abs()),
+                        style: TextStyle(
+                          color: mainColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 6),
+                  // (4) السهم > — في المنتصف
+                  SizedBox(
+                    height: 70,
+                    child: Center(
+                      child: Icon(
+                        Icons.arrow_back_ios,
+                        size: 14,
+                        color: AppColors.greyArrow,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   void dispose() {
