@@ -3453,12 +3453,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               );
                               return;
                             }
-                            final dateStr = '${selectedDate.year}-'
-                                '${selectedDate.month}-'
-                                '${selectedDate.day} '
-                                '${TimeOfDay.now().hour.toString().padLeft(2, '0')}:'
-                                '${TimeOfDay.now().minute.toString().padLeft(2, '0')}:'
-                                '${TimeOfDay.now().second.toString().padLeft(2, '0')}';
+                            final now = DateTime.now();
+final dateStr = '${selectedDate.year}-'
+    '${selectedDate.month}-'
+    '${selectedDate.day} '
+    '${now.hour.toString().padLeft(2, '0')}:'
+    '${now.minute.toString().padLeft(2, '0')}:'
+    '${now.second.toString().padLeft(2, '0')}';
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
@@ -3499,12 +3500,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               );
                               return;
                             }
-                            final dateStr = '${selectedDate.year}-'
-                                '${selectedDate.month}-'
-                                '${selectedDate.day} '
-                                '${TimeOfDay.now().hour.toString().padLeft(2, '0')}:'
-                                '${TimeOfDay.now().minute.toString().padLeft(2, '0')}:'
-                                '${TimeOfDay.now().second.toString().padLeft(2, '0')}';
+final now = DateTime.now();
+final dateStr = '${selectedDate.year}-'
+    '${selectedDate.month}-'
+    '${selectedDate.day} '
+    '${now.hour.toString().padLeft(2, '0')}:'
+    '${now.minute.toString().padLeft(2, '0')}:'
+    '${now.second.toString().padLeft(2, '0')}';
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
