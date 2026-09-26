@@ -3380,6 +3380,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  
   // ✅ نافذة إضافة عملية جديدة (بدون رموز + و −)
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
@@ -3495,16 +3496,231 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           child: const Text('عليه',
                               style: TextStyle(
                                   fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
+                              fontWeight: FontWeight.bold)),
+                         // ✅ نافذة إضافة عملية جديدة
+// (القائمة العائمة تظهر فوق المبلغ والتاريخ + أصغر من النافذة)
+void _showAddTransactionDialog(BuildContext context) {
+  final amountCtrl = TextEditingController();
+  final detailsCtrl = TextEditingController();
+  DateTime selectedDate = DateTime.now();
+  final dateCtrl = TextEditingController(
+      text:
+          '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
+
+  // المفتاح للتحكم في القائمة العائمة
+  OverlayEntry? overlayEntry;
+  final GlobalKey detailsFieldKey = GlobalKey();
+
+  // إزالة القائمة العائمة
+  void removeOverlay() {
+    overlayEntry?.remove();
+    overlayEntry = null;
+  }
+
+  showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (context, setDialogState) {
+        // دالة عرض القائمة العائمة
+        Future<void> loadAndShowSuggestions(String query) async {
+          final trimmed = query.trim();
+          if (trimmed.length < 2) {
+            removeOverlay();
+            if (context.mounted) setDialogState(() {});
+            return;
+          }
+
+          final results = await Provider.of<AppAccountProvider>(context,
+                  listen: false)
+              .getDistinctDetails(query: trimmed);
+
+          final filtered =
+              results.where((s) => s.trim() != trimmed).toList();
+
+          if (!context.mounted) return;
+
+          if (filtered.isEmpty) {
+            removeOverlay();
+            if (context.mounted) setDialogState(() {});
+            return;
+          }
+
+          removeOverlay();
+
+          // تحديد موقع حقل التفاصيل
+          final RenderBox? box =
+              detailsFieldKey.currentContext?.findRenderObject()
+                  as RenderBox?;
+          if (box == null) return;
+
+          final offset = box.localToGlobal(Offset.zero);
+          final screenWidth = MediaQuery.of(context).size.width;
+          final listWidth = screenWidth * 0.70;
+
+          overlayEntry = OverlayEntry(
+            builder: (overlayCtx) => Positioned(
+              left: (screenWidth - listWidth) / 2,
+              top: offset.dy - 210,
+              width: listWidth,
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.gold.withOpacity(0.4), width: 1),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: filtered.length,
+                    separatorBuilder: (ctx, i) => Divider(
+                      height: 1,
+                      color: Colors.grey.shade200,
+                    ),
+                    itemBuilder: (ctx, i) {
+                      final s = filtered[i];
+                      return InkWell(
+                        onTap: () {
+                          removeOverlay();
+                          detailsCtrl.text = s;
+                          detailsCtrl.selection =
+                              TextSelection.fromPosition(
+                            TextPosition(offset: s.length),
+                          );
+                          if (context.mounted) {
+                            setDialogState(() {});
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.history,
+                                  size: 18, color: AppColors.textMuted),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  s,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textDark,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          Overlay.of(context, rootOverlay: true)
+              .insert(overlayEntry!);
+        }
+
+        // مراقبة الكتابة
+        detailsCtrl.removeListener(() {});
+        detailsCtrl.addListener(() {
+          loadAndShowSuggestions(detailsCtrl.text);
+        });
+
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: Row(
+            children: [
+              const Icon(Icons.add_circle_outline,
+                  color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text('إضافة عملية جديدة'),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  removeOverlay();
+                  Navigator.pop(ctx);
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // المبلغ
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'المبلغ',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // التاريخ
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                          dateCtrl.text =
+                              '${picked.year}-${picked.month}-${picked.day}';
+                        });
+                      }
+                    },
+                    child: AbsorbPointer(
+                      child: TextField(
+                        controller: dateCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'التاريخ',
+                          prefixIcon: Icon(Icons.calendar_today),
+                          suffixIcon: Icon(Icons.edit, size: 18),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // التفاصيل (مع المفتاح)
+                  TextField(
+                    key: detailsFieldKey,
+                    controller: detailsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'التفاصيل / البيان',
+                      prefixIcon: Icon(Icons.notes),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // أزرار له / عليه
+                  Row(
+                    children: [
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
-                            final amount = double.tryParse(amountCtrl.text);
+                            final amount =
+                                double.tryParse(amountCtrl.text);
                             if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
                                 const SnackBar(
                                   content: Text('الرجاء إدخال المبلغ'),
                                   backgroundColor: AppColors.red,
@@ -3522,18 +3738,72 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
-                              int.parse(widget.customer['id'].toString()),
+                              int.parse(
+                                  widget.customer['id'].toString()),
+                              amount,
+                              'take',
+                              detailsCtrl.text,
+                              dateStr,
+                            );
+                            removeOverlay();
+                            Navigator.pop(ctx);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.red,
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('عليه',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final amount =
+                                double.tryParse(amountCtrl.text);
+                            if (amount == null || amount <= 0) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                const SnackBar(
+                                  content: Text('الرجاء إدخال المبلغ'),
+                                  backgroundColor: AppColors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            final now = DateTime.now();
+                            final dateStr = '${selectedDate.year}-'
+                                '${selectedDate.month}-'
+                                '${selectedDate.day} '
+                                '${now.hour.toString().padLeft(2, '0')}:'
+                                '${now.minute.toString().padLeft(2, '0')}:'
+                                '${now.second.toString().padLeft(2, '0')}';
+                            Provider.of<AppAccountProvider>(context,
+                                    listen: false)
+                                .addTransaction(
+                              int.parse(
+                                  widget.customer['id'].toString()),
                               amount,
                               'give',
                               detailsCtrl.text,
                               dateStr,
                             );
+                            removeOverlay();
                             Navigator.pop(ctx);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.green,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -3550,6 +3820,24 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                removeOverlay();
+                Navigator.pop(ctx);
+              },
+              child: const Text('إلغاء',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+          ],
+        );
+      },
+    ),
+  ).then((_) {
+    // عند إغلاق النافذة → إزالة القائمة العائمة
+    removeOverlay();
+  });
+} 
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
