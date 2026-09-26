@@ -2036,7 +2036,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ بطاقة الحساب (كل العناصر في المنتصف)
+  // ✅ بطاقة الحساب
   Widget _buildCustomerCard(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> customer) {
     final int cId = int.parse(customer['id'].toString());
@@ -3001,193 +3001,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 }
 
 // ----------------------------------------------------
-// ✅ Widget: حقل التفاصيل مع الاقتراحات التلقائية
-// (حرفان + للأعلى + 4-5 اقتراحات + اختفاء بعد الاختيار)
-// ----------------------------------------------------
-class _DetailsAutocompleteField extends StatefulWidget {
-  final TextEditingController controller;
-  final AppAccountProvider provider;
-  final String hintText;
-
-  const _DetailsAutocompleteField({
-    required this.controller,
-    required this.provider,
-    this.hintText = 'التفاصيل / البيان',
-  });
-
-  @override
-  State<_DetailsAutocompleteField> createState() =>
-      _DetailsAutocompleteFieldState();
-}
-
-class _DetailsAutocompleteFieldState
-    extends State<_DetailsAutocompleteField> {
-  List<String> _suggestions = [];
-  bool _showSuggestions = false;
-  bool _isLoading = false;
-  final FocusNode _focusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onTextChanged);
-    _focusNode.addListener(_onFocusChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onTextChanged);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _onFocusChanged() {
-    if (!_focusNode.hasFocus) {
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted) {
-          setState(() => _showSuggestions = false);
-        }
-      });
-    }
-  }
-
-  void _onTextChanged() {
-    _loadSuggestions(widget.controller.text);
-  }
-
-  Future<void> _loadSuggestions(String query) async {
-    final trimmed = query.trim();
-    // لا تظهر الاقتراحات إلا بعد كتابة حرفين على الأقل
-    if (trimmed.length < 2) {
-      if (mounted) {
-        setState(() {
-          _suggestions = [];
-          _showSuggestions = false;
-          _isLoading = false;
-        });
-      }
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    final results = await widget.provider.getDistinctDetails(query: trimmed);
-
-    if (!mounted) return;
-
-    // استبعاد النص المطابق تمامًا
-    final filtered =
-        results.where((s) => s.trim() != trimmed).toList();
-
-    setState(() {
-      _suggestions = filtered;
-      _showSuggestions = _focusNode.hasFocus && filtered.isNotEmpty;
-      _isLoading = false;
-    });
-  }
-
-  void _selectSuggestion(String value) {
-    widget.controller.text = value;
-    widget.controller.selection = TextSelection.fromPosition(
-      TextPosition(offset: value.length),
-    );
-    setState(() {
-      _showSuggestions = false;
-      _suggestions = [];
-    });
-    // بعد الاختيار، عند متابعة الكتابة تظهر القائمة من جديد
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: widget.controller,
-          focusNode: _focusNode,
-          decoration: InputDecoration(
-            labelText: widget.hintText,
-            prefixIcon: const Icon(Icons.notes),
-            suffixIcon: _isLoading
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : null,
-          ),
-          onTap: () {
-            if (widget.controller.text.trim().length >= 2 &&
-                _suggestions.isNotEmpty) {
-              _loadSuggestions(widget.controller.text);
-            }
-          },
-        ),
-        if (_showSuggestions && _suggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            constraints: const BoxConstraints(maxHeight: 200),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: AppColors.gold.withOpacity(0.3), width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              itemCount: _suggestions.length,
-              separatorBuilder: (ctx, i) => Divider(
-                height: 1,
-                color: Colors.grey.shade200,
-              ),
-              itemBuilder: (ctx, i) {
-                final suggestion = _suggestions[i];
-                return InkWell(
-                  onTap: () => _selectSuggestion(suggestion),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.history,
-                            size: 18, color: AppColors.textMuted),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            suggestion,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textDark,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ----------------------------------------------------
 // 6. شاشة تفاصيل الحساب
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
@@ -3324,12 +3137,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'المبلغ')),
                 const SizedBox(height: 10),
-                _DetailsAutocompleteField(
-                  controller: detailsCtrl,
-                  provider: Provider.of<AppAccountProvider>(context,
-                      listen: false),
-                  hintText: 'التفاصيل / البيان',
-                ),
+                TextField(
+                    controller: detailsCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'التفاصيل / البيان')),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   value: selectedType,
@@ -3380,261 +3191,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  
-  // ✅ نافذة إضافة عملية جديدة (بدون رموز + و −)
+  // ✅ نافذة إضافة عملية جديدة (بدون اقتراحات - مبسطة)
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
     final dateCtrl = TextEditingController(
-        text: '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
+        text:
+            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          title: const Row(
-            children: [
-              Icon(Icons.add_circle_outline, color: AppColors.primary),
-              SizedBox(width: 8),
-              Text('إضافة عملية جديدة'),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'المبلغ',
-                      prefixIcon: Icon(Icons.attach_money),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() {
-                          selectedDate = picked;
-                          dateCtrl.text =
-                              '${picked.year}-${picked.month}-${picked.day}';
-                        });
-                      }
-                    },
-                    child: AbsorbPointer(
-                      child: TextField(
-                        controller: dateCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'التاريخ',
-                          prefixIcon: Icon(Icons.calendar_today),
-                          suffixIcon: Icon(Icons.edit, size: 18),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _DetailsAutocompleteField(
-                    controller: detailsCtrl,
-                    provider: Provider.of<AppAccountProvider>(context,
-                        listen: false),
-                    hintText: 'التفاصيل / البيان',
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            final amount = double.tryParse(amountCtrl.text);
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('الرجاء إدخال المبلغ'),
-                                  backgroundColor: AppColors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            final now = DateTime.now();
-                            final dateStr = '${selectedDate.year}-'
-                                '${selectedDate.month}-'
-                                '${selectedDate.day} '
-                                '${now.hour.toString().padLeft(2, '0')}:'
-                                '${now.minute.toString().padLeft(2, '0')}:'
-                                '${now.second.toString().padLeft(2, '0')}';
-                            Provider.of<AppAccountProvider>(context,
-                                    listen: false)
-                                .addTransaction(
-                              int.parse(widget.customer['id'].toString()),
-                              amount,
-                              'take',
-                              detailsCtrl.text,
-                              dateStr,
-                            );
-                            Navigator.pop(ctx);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('عليه',
-                              style: TextStyle(
-                                  fontSize: 16,
-                              fontWeight: FontWeight.bold)),
-                         // ✅ نافذة إضافة عملية جديدة
-// (القائمة العائمة تظهر فوق المبلغ والتاريخ + أصغر من النافذة)
-void _showAddTransactionDialog(BuildContext context) {
-  final amountCtrl = TextEditingController();
-  final detailsCtrl = TextEditingController();
-  DateTime selectedDate = DateTime.now();
-  final dateCtrl = TextEditingController(
-      text:
-          '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
-
-  // المفتاح للتحكم في القائمة العائمة
-  OverlayEntry? overlayEntry;
-  final GlobalKey detailsFieldKey = GlobalKey();
-
-  // إزالة القائمة العائمة
-  void removeOverlay() {
-    overlayEntry?.remove();
-    overlayEntry = null;
-  }
-
-  showDialog(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (context, setDialogState) {
-        // دالة عرض القائمة العائمة
-        Future<void> loadAndShowSuggestions(String query) async {
-          final trimmed = query.trim();
-          if (trimmed.length < 2) {
-            removeOverlay();
-            if (context.mounted) setDialogState(() {});
-            return;
-          }
-
-          final results = await Provider.of<AppAccountProvider>(context,
-                  listen: false)
-              .getDistinctDetails(query: trimmed);
-
-          final filtered =
-              results.where((s) => s.trim() != trimmed).toList();
-
-          if (!context.mounted) return;
-
-          if (filtered.isEmpty) {
-            removeOverlay();
-            if (context.mounted) setDialogState(() {});
-            return;
-          }
-
-          removeOverlay();
-
-          // تحديد موقع حقل التفاصيل
-          final RenderBox? box =
-              detailsFieldKey.currentContext?.findRenderObject()
-                  as RenderBox?;
-          if (box == null) return;
-
-          final offset = box.localToGlobal(Offset.zero);
-          final screenWidth = MediaQuery.of(context).size.width;
-          final listWidth = screenWidth * 0.70;
-
-          overlayEntry = OverlayEntry(
-            builder: (overlayCtx) => Positioned(
-              left: (screenWidth - listWidth) / 2,
-              top: offset.dy - 210,
-              width: listWidth,
-              child: Material(
-                elevation: 8,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  constraints: const BoxConstraints(maxHeight: 200),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: AppColors.gold.withOpacity(0.4), width: 1),
-                  ),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    itemCount: filtered.length,
-                    separatorBuilder: (ctx, i) => Divider(
-                      height: 1,
-                      color: Colors.grey.shade200,
-                    ),
-                    itemBuilder: (ctx, i) {
-                      final s = filtered[i];
-                      return InkWell(
-                        onTap: () {
-                          removeOverlay();
-                          detailsCtrl.text = s;
-                          detailsCtrl.selection =
-                              TextSelection.fromPosition(
-                            TextPosition(offset: s.length),
-                          );
-                          if (context.mounted) {
-                            setDialogState(() {});
-                          }
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.history,
-                                  size: 18, color: AppColors.textMuted),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  s,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: AppColors.textDark,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          );
-
-          Overlay.of(context, rootOverlay: true)
-              .insert(overlayEntry!);
-        }
-
-        // مراقبة الكتابة
-        detailsCtrl.removeListener(() {});
-        detailsCtrl.addListener(() {
-          loadAndShowSuggestions(detailsCtrl.text);
-        });
-
-        return AlertDialog(
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           title: Row(
@@ -3646,10 +3215,7 @@ void _showAddTransactionDialog(BuildContext context) {
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.close, size: 20),
-                onPressed: () {
-                  removeOverlay();
-                  Navigator.pop(ctx);
-                },
+                onPressed: () => Navigator.pop(ctx),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -3661,7 +3227,6 @@ void _showAddTransactionDialog(BuildContext context) {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // المبلغ
                   TextField(
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
@@ -3671,7 +3236,6 @@ void _showAddTransactionDialog(BuildContext context) {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // التاريخ
                   InkWell(
                     onTap: () async {
                       final picked = await showDatePicker(
@@ -3700,9 +3264,7 @@ void _showAddTransactionDialog(BuildContext context) {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // التفاصيل (مع المفتاح)
                   TextField(
-                    key: detailsFieldKey,
                     controller: detailsCtrl,
                     decoration: const InputDecoration(
                       labelText: 'التفاصيل / البيان',
@@ -3710,7 +3272,6 @@ void _showAddTransactionDialog(BuildContext context) {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // أزرار له / عليه
                   Row(
                     children: [
                       Expanded(
@@ -3738,14 +3299,12 @@ void _showAddTransactionDialog(BuildContext context) {
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
-                              int.parse(
-                                  widget.customer['id'].toString()),
+                              int.parse(widget.customer['id'].toString()),
                               amount,
                               'take',
                               detailsCtrl.text,
                               dateStr,
                             );
-                            removeOverlay();
                             Navigator.pop(ctx);
                           },
                           style: ElevatedButton.styleFrom(
@@ -3789,14 +3348,12 @@ void _showAddTransactionDialog(BuildContext context) {
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
-                              int.parse(
-                                  widget.customer['id'].toString()),
+                              int.parse(widget.customer['id'].toString()),
                               amount,
                               'give',
                               detailsCtrl.text,
                               dateStr,
                             );
-                            removeOverlay();
                             Navigator.pop(ctx);
                           },
                           style: ElevatedButton.styleFrom(
@@ -3820,24 +3377,6 @@ void _showAddTransactionDialog(BuildContext context) {
               ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                removeOverlay();
-                Navigator.pop(ctx);
-              },
-              child: const Text('إلغاء',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          ],
-        );
-      },
-    ),
-  ).then((_) {
-    // عند إغلاق النافذة → إزالة القائمة العائمة
-    removeOverlay();
-  });
-} 
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -3988,7 +3527,6 @@ void _showAddTransactionDialog(BuildContext context) {
                             final dateTimeFormatted =
                                 _formatDateTime(tx['date'].toString());
 
-                            // ألوان قوية
                             Color amtBg = isGive
                                 ? AppColors.green
                                 : AppColors.red;
