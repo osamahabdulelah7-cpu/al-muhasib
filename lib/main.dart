@@ -65,6 +65,12 @@ class AppColors {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
+
+  static const LinearGradient summaryGradient = LinearGradient(
+    colors: [Color(0xFF3B7CB8), Color(0xFF1E3A5F)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }
 
 // ====================================================
@@ -645,7 +651,7 @@ class AppAccountProvider extends ChangeNotifier {
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
           LIMIT 30
-        ''', ['%$query%']);
+        ''', ['$query%']);
       }
       return result
           .map((row) => (row['details'] ?? '').toString())
@@ -1926,14 +1932,13 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط المجاميع السفلي
+                    // ✅ شريط المجاميع السفلي مع تدرج أزرق
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 6),
                       color: AppColors.background,
                       child: Row(
                         children: [
-                          // زر + أزرق فاتح + أيقونة ذهبية
                           SizedBox(
                             width: 56,
                             height: 56,
@@ -1961,13 +1966,12 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           const SizedBox(width: 6),
-                          // الشريط الأزرق
                           Expanded(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                color: AppColors.summaryBar,
+                                gradient: AppColors.summaryGradient,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
@@ -2106,7 +2110,6 @@ class _HomeScreenState extends State<HomeScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Row(
                   children: [
-                    // (1) الأيقونة
                     SizedBox(
                       height: 70,
                       child: Center(
@@ -2127,7 +2130,6 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     const SizedBox(width: 10),
-                    // (2) الاسم
                     Expanded(
                       child: SizedBox(
                         height: 70,
@@ -2146,7 +2148,6 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                     ),
-                    // (3) الرقم
                     SizedBox(
                       height: 70,
                       child: Center(
@@ -2161,7 +2162,6 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     const SizedBox(width: 6),
-                    // (4) السهم >
                     SizedBox(
                       height: 70,
                       child: Center(
@@ -3002,6 +3002,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 
 // ----------------------------------------------------
 // ✅ Widget: حقل التفاصيل مع الاقتراحات التلقائية
+// (حرفان + للأعلى + 4-5 اقتراحات + اختفاء بعد الاختيار)
 // ----------------------------------------------------
 class _DetailsAutocompleteField extends StatefulWidget {
   final TextEditingController controller;
@@ -3055,15 +3056,29 @@ class _DetailsAutocompleteFieldState
   }
 
   Future<void> _loadSuggestions(String query) async {
+    final trimmed = query.trim();
+    // لا تظهر الاقتراحات إلا بعد كتابة حرفين على الأقل
+    if (trimmed.length < 2) {
+      if (mounted) {
+        setState(() {
+          _suggestions = [];
+          _showSuggestions = false;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final results = await widget.provider.getDistinctDetails(query: query);
+    final results = await widget.provider.getDistinctDetails(query: trimmed);
 
     if (!mounted) return;
 
+    // استبعاد النص المطابق تمامًا
     final filtered =
-        results.where((s) => s.trim() != query.trim()).toList();
+        results.where((s) => s.trim() != trimmed).toList();
 
     setState(() {
       _suggestions = filtered;
@@ -3079,7 +3094,9 @@ class _DetailsAutocompleteFieldState
     );
     setState(() {
       _showSuggestions = false;
+      _suggestions = [];
     });
+    // بعد الاختيار، عند متابعة الكتابة تظهر القائمة من جديد
   }
 
   @override
@@ -3105,7 +3122,7 @@ class _DetailsAutocompleteFieldState
                 : null,
           ),
           onTap: () {
-            if (widget.controller.text.isNotEmpty ||
+            if (widget.controller.text.trim().length >= 2 &&
                 _suggestions.isNotEmpty) {
               _loadSuggestions(widget.controller.text);
             }
@@ -3363,7 +3380,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ نافذة إضافة عملية جديدة (المبلغ + التاريخ + التفاصيل + له/عليه)
+  // ✅ نافذة إضافة عملية جديدة (بدون رموز + و −)
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -3390,7 +3407,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // المبلغ
                   TextField(
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
@@ -3400,7 +3416,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // التاريخ (قابل للتعديل بالضغط)
                   InkWell(
                     onTap: () async {
                       final picked = await showDatePicker(
@@ -3429,7 +3444,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // التفاصيل مع الاقتراحات
                   _DetailsAutocompleteField(
                     controller: detailsCtrl,
                     provider: Provider.of<AppAccountProvider>(context,
@@ -3437,11 +3451,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     hintText: 'التفاصيل / البيان',
                   ),
                   const SizedBox(height: 16),
-                  // زرين: عليه (أحمر) + له (أخضر)
                   Row(
                     children: [
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: ElevatedButton(
                           onPressed: () {
                             final amount = double.tryParse(amountCtrl.text);
                             if (amount == null || amount <= 0) {
@@ -3454,12 +3467,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               return;
                             }
                             final now = DateTime.now();
-final dateStr = '${selectedDate.year}-'
-    '${selectedDate.month}-'
-    '${selectedDate.day} '
-    '${now.hour.toString().padLeft(2, '0')}:'
-    '${now.minute.toString().padLeft(2, '0')}:'
-    '${now.second.toString().padLeft(2, '0')}';
+                            final dateStr = '${selectedDate.year}-'
+                                '${selectedDate.month}-'
+                                '${selectedDate.day} '
+                                '${now.hour.toString().padLeft(2, '0')}:'
+                                '${now.minute.toString().padLeft(2, '0')}:'
+                                '${now.second.toString().padLeft(2, '0')}';
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
@@ -3479,16 +3492,15 @@ final dateStr = '${selectedDate.year}-'
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          icon: const Icon(Icons.remove),
-                          label: const Text('عليه',
+                          child: const Text('عليه',
                               style: TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold)),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: ElevatedButton(
                           onPressed: () {
                             final amount = double.tryParse(amountCtrl.text);
                             if (amount == null || amount <= 0) {
@@ -3500,13 +3512,13 @@ final dateStr = '${selectedDate.year}-'
                               );
                               return;
                             }
-final now = DateTime.now();
-final dateStr = '${selectedDate.year}-'
-    '${selectedDate.month}-'
-    '${selectedDate.day} '
-    '${now.hour.toString().padLeft(2, '0')}:'
-    '${now.minute.toString().padLeft(2, '0')}:'
-    '${now.second.toString().padLeft(2, '0')}';
+                            final now = DateTime.now();
+                            final dateStr = '${selectedDate.year}-'
+                                '${selectedDate.month}-'
+                                '${selectedDate.day} '
+                                '${now.hour.toString().padLeft(2, '0')}:'
+                                '${now.minute.toString().padLeft(2, '0')}:'
+                                '${now.second.toString().padLeft(2, '0')}';
                             Provider.of<AppAccountProvider>(context,
                                     listen: false)
                                 .addTransaction(
@@ -3526,10 +3538,9 @@ final dateStr = '${selectedDate.year}-'
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          icon: const Icon(Icons.add),
-                          label: const Text('له',
+                          child: const Text('له',
                               style: TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold)),
                         ),
                       ),
@@ -3689,16 +3700,13 @@ final dateStr = '${selectedDate.year}-'
                             final dateTimeFormatted =
                                 _formatDateTime(tx['date'].toString());
 
-                            // ✅ الألوان القوية
+                            // ألوان قوية
                             Color amtBg = isGive
                                 ? AppColors.green
                                 : AppColors.red;
-                            Color balBg;
-                            if (runBal >= 0) {
-                              balBg = AppColors.green;
-                            } else {
-                              balBg = AppColors.red;
-                            }
+                            Color balBg = runBal >= 0
+                                ? AppColors.green
+                                : AppColors.red;
 
                             return InkWell(
                               onLongPress: () {
@@ -3755,7 +3763,7 @@ final dateStr = '${selectedDate.year}-'
                                           formatNumber(amt),
                                           textAlign: TextAlign.center,
                                           style: const TextStyle(
-                                              color: Colors.black,
+                                              color: Colors.white,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 12),
                                         ),
@@ -3791,7 +3799,7 @@ final dateStr = '${selectedDate.year}-'
                                           formatNumber(runBal.abs()),
                                           textAlign: TextAlign.center,
                                           style: const TextStyle(
-                                            color: Colors.black,
+                                            color: Colors.white,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -3808,13 +3816,12 @@ final dateStr = '${selectedDate.year}-'
                     ],
                   ),
           ),
-          // ✅ الشريط السفلي الجديد (مثل الشاشة الرئيسية)
+          // ✅ شريط سفلي بتدرج أزرق
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             color: AppColors.background,
             child: Row(
               children: [
-                // زر + (أزرق فاتح + أيقونة ذهبية)
                 SizedBox(
                   width: 56,
                   height: 56,
@@ -3836,13 +3843,12 @@ final dateStr = '${selectedDate.year}-'
                   ),
                 ),
                 const SizedBox(width: 6),
-                // الشريط الأزرق
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.summaryBar,
+                      gradient: AppColors.summaryGradient,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
