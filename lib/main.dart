@@ -1933,122 +1933,97 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // ✅ شريط المجاميع السفلي مع كبسولات
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      color: AppColors.background,
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 56,
-                            height: 56,
-                            child: Material(
-                              color: AppColors.primaryLight,
-                              borderRadius: BorderRadius.circular(8),
-                              elevation: 2,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(8),
-                                onTap: () {
-                                  final activeIndex = _tabController!.index;
-                                  final activeCategoryId = int.parse(
-                                      categories[activeIndex]['id'].toString());
-                                  _showAddCustomerDialog(
-                                      context, activeCategoryId);
-                                },
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.add,
-                                    color: AppColors.gold,
-                                    size: 30,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                gradient: AppColors.summaryGradient,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      // كبسولة "عليه"
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.red,
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          'عليه: ${formatNumber(totalTake)}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                      // كبسولة "له"
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.green,
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          'له: ${formatNumber(totalGive)}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  // كبسولة الرصيد (في المنتصف)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: netBalance > 0
-                                          ? AppColors.green
-                                          : (netBalance < 0
-                                              ? AppColors.red
-                                              : AppColors.greyPill),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    
+                    // ✅ شريط المجاميع السفلي (بدون كبسولات)
+Container(
+  padding: const EdgeInsets.symmetric(
+      horizontal: 8, vertical: 6),
+  color: AppColors.background,
+  child: Row(
+    children: [
+      SizedBox(
+        width: 56,
+        height: 56,
+        child: Material(
+          color: AppColors.primaryLight,
+          borderRadius: BorderRadius.circular(8),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              final activeIndex = _tabController!.index;
+              final activeCategoryId = int.parse(
+                  categories[activeIndex]['id'].toString());
+              _showAddCustomerDialog(
+                  context, activeCategoryId);
+            },
+            child: const Center(
+              child: Icon(
+                Icons.add,
+                color: AppColors.gold,
+                size: 30,
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: AppColors.summaryGradient,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'عليه: ${formatNumber(totalTake)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
+                  ),
+                  Text(
+                    'له: ${formatNumber(totalGive)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Container(
+                height: 1,
+                color: Colors.white.withOpacity(0.3),
+              ),
+              const SizedBox(height: 3),
+              Center(
+                child: Text(
+                  '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  ),
+),
                   ],
                 );
               }).toList(),
@@ -3676,113 +3651,90 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          // ✅ شريط سفلي بتدرج أزرق + كبسولات
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            color: AppColors.background,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: Material(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(8),
-                    elevation: 2,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => _showAddTransactionDialog(context),
-                      child: const Center(
-                        child: Icon(
-                          Icons.add,
-                          color: AppColors.gold,
-                          size: 30,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.summaryGradient,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                          children: [
-                            // كبسولة "عليه"
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.red,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'عليه: ${formatNumber(totalTake)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            // كبسولة "له"
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.green,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'له: ${formatNumber(totalGive)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        // كبسولة الرصيد
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: finalBalance > 0
-                                ? AppColors.green
-                                : (finalBalance < 0
-                                    ? AppColors.red
-                                    : AppColors.greyPill),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+          
+          // ✅ شريط سفلي بتدرج أزرق (بدون كبسولات)
+Container(
+  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+  color: AppColors.background,
+  child: Row(
+    children: [
+      SizedBox(
+        width: 56,
+        height: 56,
+        child: Material(
+          color: AppColors.primaryLight,
+          borderRadius: BorderRadius.circular(8),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _showAddTransactionDialog(context),
+            child: const Center(
+              child: Icon(
+                Icons.add,
+                color: AppColors.gold,
+                size: 30,
+              ),
             ),
           ),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: AppColors.summaryGradient,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'عليه: ${formatNumber(totalTake)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    'له: ${formatNumber(totalGive)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Container(
+                height: 1,
+                color: Colors.white.withOpacity(0.3),
+              ),
+              const SizedBox(height: 3),
+              Center(
+                child: Text(
+                  '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  ),
+),
         ],
       ),
     );
