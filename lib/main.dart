@@ -3383,18 +3383,7 @@ void _showAddTransactionDialog(BuildContext context) {
     ),
   );
 }  
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+          
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context);
