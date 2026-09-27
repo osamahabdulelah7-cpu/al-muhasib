@@ -52,6 +52,7 @@ class AppColors {
   static const Color redDark = Color(0xFFB71C1C);
   static const Color greyLight = Color(0xFFE0E0E0);
   static const Color greyArrow = Color(0xFF9E9E9E);
+  static const Color greyPill = Color(0xFF757575);
   static const Color textDarkest = Color(0xFF0D1F3F);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
@@ -1932,285 +1933,291 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    
-  // ✅ شريط المجاميع السفلي مع كبسولات
-Container(
-  padding: const EdgeInsets.symmetric(
-      horizontal: 8, vertical: 6),
-  color: AppColors.background,
-  child: Row(
-    children: [
-      SizedBox(
-        width: 56,
-        height: 56,
-        child: Material(
-          color: AppColors.primaryLight,
-          borderRadius: BorderRadius.circular(8),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              final activeIndex = _tabController!.index;
-              final activeCategoryId = int.parse(
-                  categories[activeIndex]['id'].toString());
-              _showAddCustomerDialog(
-                  context, activeCategoryId);
-            },
-            child: const Center(
-              child: Icon(
-                Icons.add,
-                color: AppColors.gold,
-                size: 30,
-              ),
+                    // ✅ شريط المجاميع السفلي مع كبسولات
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      color: AppColors.background,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: Material(
+                              color: AppColors.primaryLight,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 2,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () {
+                                  final activeIndex = _tabController!.index;
+                                  final activeCategoryId = int.parse(
+                                      categories[activeIndex]['id'].toString());
+                                  _showAddCustomerDialog(
+                                      context, activeCategoryId);
+                                },
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.add,
+                                    color: AppColors.gold,
+                                    size: 30,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                gradient: AppColors.summaryGradient,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // كبسولة "عليه"
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.red,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'عليه: ${formatNumber(totalTake)}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                      // كبسولة "له"
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.green,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'له: ${formatNumber(totalGive)}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  // كبسولة الرصيد (في المنتصف)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: netBalance > 0
+                                          ? AppColors.green
+                                          : (netBalance < 0
+                                              ? AppColors.red
+                                              : AppColors.greyPill),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
-        ),
+        ],
       ),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: AppColors.summaryGradient,
-            borderRadius: BorderRadius.circular(8),
+    );
+  }
+
+  // ✅ بطاقة الحساب (مع كبسولة للرقم)
+  Widget _buildCustomerCard(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> customer) {
+    final int cId = int.parse(customer['id'].toString());
+    final String custName = (customer['name'] ?? 'حساب').toString();
+    final double bal = provider.customerBalances[cId] ?? 0.0;
+
+    Color mainColor;
+    Color circleColor;
+    Color pillBg;
+    if (bal > 0) {
+      mainColor = AppColors.greenDark;
+      circleColor = AppColors.greenLight;
+      pillBg = AppColors.green;
+    } else if (bal < 0) {
+      mainColor = AppColors.redDark;
+      circleColor = AppColors.redLight;
+      pillBg = AppColors.red;
+    } else {
+      mainColor = AppColors.greenDark;
+      circleColor = AppColors.greenLight;
+      pillBg = AppColors.green;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      height: 70,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  // كبسولة "عليه"
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.red,
-                      borderRadius:
-                          BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'عليه: ${formatNumber(totalTake)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  // كبسولة "له"
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.green,
-                      borderRadius:
-                          BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'له: ${formatNumber(totalGive)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    CustomerDetailsScreen(customer: customer),
               ),
-              const SizedBox(height: 4),
-              // كبسولة الرصيد (في المنتصف)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: netBalance > 0
-                      ? AppColors.green
-                      : (netBalance < 0
-                          ? AppColors.red
-                          : const Color(0xFF757575)),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+            ).then((_) {
+              provider.loadCustomers();
+            });
+          },
+          onLongPress: () {
+            _showCustomerOptionsModal(context, provider, customer);
+          },
+          child: Stack(
+            children: [
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: 5,
+                  decoration: BoxDecoration(
+                    color: mainColor,
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(8),
+                      bottomRight: Radius.circular(8),
+                    ),
                   ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      height: 70,
+                      child: Center(
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: circleColor,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.person,
+                            color: mainColor,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 70,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            custName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppColors.textDarkest,
+                            ),
+                            textAlign: TextAlign.right,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // كبسولة الرقم
+                    SizedBox(
+                      height: 70,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: pillBg,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            formatNumber(bal.abs()),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 70,
+                      child: Center(
+                        child: Icon(
+                          Icons.arrow_back_ios,
+                          size: 14,
+                          color: AppColors.greyArrow,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
-    ],
-  ),
-),
-                    
-// ✅ بطاقة الحساب (مع كبسولة للرقم)
-Widget _buildCustomerCard(BuildContext context,
-    AppAccountProvider provider, Map<String, dynamic> customer) {
-  final int cId = int.parse(customer['id'].toString());
-  final String custName = (customer['name'] ?? 'حساب').toString();
-  final double bal = provider.customerBalances[cId] ?? 0.0;
-
-  Color mainColor;
-  Color circleColor;
-  Color pillBg;
-  if (bal > 0) {
-    mainColor = AppColors.greenDark;
-    circleColor = AppColors.greenLight;
-    pillBg = AppColors.green;
-  } else if (bal < 0) {
-    mainColor = AppColors.redDark;
-    circleColor = AppColors.redLight;
-    pillBg = AppColors.red;
-  } else {
-    mainColor = AppColors.greenDark;
-    circleColor = AppColors.greenLight;
-    pillBg = AppColors.green;
+    );
   }
 
-  return Container(
-    margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    height: 70,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.08),
-          blurRadius: 4,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  CustomerDetailsScreen(customer: customer),
-            ),
-          ).then((_) {
-            provider.loadCustomers();
-          });
-        },
-        onLongPress: () {
-          _showCustomerOptionsModal(context, provider, customer);
-        },
-        child: Stack(
-          children: [
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: 5,
-                decoration: BoxDecoration(
-                  color: mainColor,
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(8),
-                    bottomRight: Radius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  // الأيقونة
-                  SizedBox(
-                    height: 70,
-                    child: Center(
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: circleColor,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.person,
-                          color: mainColor,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // الاسم
-                  Expanded(
-                    child: SizedBox(
-                      height: 70,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          custName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: AppColors.textDarkest,
-                          ),
-                          textAlign: TextAlign.right,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // ✅ كبسولة الرقم
-                  SizedBox(
-                    height: 70,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: pillBg,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          formatNumber(bal.abs()),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  // السهم >
-                  SizedBox(
-                    height: 70,
-                    child: Center(
-                      child: Icon(
-                        Icons.arrow_back_ios,
-                        size: 14,
-                        color: AppColors.greyArrow,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
   @override
   void dispose() {
     _tabController?.dispose();
@@ -3219,200 +3226,203 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ),
     );
   }
-// ✅ نافذة إضافة عملية جديدة (بدون زر إلغاء — الأزرار في الأسفل)
-void _showAddTransactionDialog(BuildContext context) {
-  final amountCtrl = TextEditingController();
-  final detailsCtrl = TextEditingController();
-  DateTime selectedDate = DateTime.now();
-  final dateCtrl = TextEditingController(
-      text:
-          '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
 
-  showDialog(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (context, setDialogState) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        title: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close, size: 22),
-              onPressed: () => Navigator.pop(ctx),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-            const Spacer(),
-            const Icon(Icons.add_circle_outline,
-                color: AppColors.primary),
-            const SizedBox(width: 8),
-            const Text('إضافة عملية جديدة'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: amountCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ',
-                    prefixIcon: Icon(Icons.attach_money),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) {
-                      setDialogState(() {
-                        selectedDate = picked;
-                        dateCtrl.text =
-                            '${picked.year}-${picked.month}-${picked.day}';
-                      });
-                    }
-                  },
-                  child: AbsorbPointer(
-                    child: TextField(
-                      controller: dateCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'التاريخ',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        suffixIcon: Icon(Icons.edit, size: 18),
-                      ),
+  // ✅ نافذة إضافة عملية جديدة (بدون إلغاء — له/عليه في الأسفل)
+  void _showAddTransactionDialog(BuildContext context) {
+    final amountCtrl = TextEditingController();
+    final detailsCtrl = TextEditingController();
+    DateTime selectedDate = DateTime.now();
+    final dateCtrl = TextEditingController(
+        text:
+            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          title: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close, size: 22),
+                onPressed: () => Navigator.pop(ctx),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const Spacer(),
+              const Text(
+                'إضافة عملية جديدة',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.add_circle_outline,
+                  color: AppColors.primary),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'المبلغ',
+                      prefixIcon: Icon(Icons.attach_money),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: detailsCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'التفاصيل / البيان',
-                    prefixIcon: Icon(Icons.notes),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // أزرار له / عليه (بدون رموز + في مكان إلغاء)
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount =
-                              double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) {
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(
-                              const SnackBar(
-                                content: Text('الرجاء إدخال المبلغ'),
-                                backgroundColor: AppColors.red,
-                              ),
-                            );
-                            return;
-                          }
-                          final now = DateTime.now();
-                          final dateStr = '${selectedDate.year}-'
-                              '${selectedDate.month}-'
-                              '${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:'
-                              '${now.minute.toString().padLeft(2, '0')}:'
-                              '${now.second.toString().padLeft(2, '0')}';
-                          Provider.of<AppAccountProvider>(context,
-                                  listen: false)
-                              .addTransaction(
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'take',
-                            detailsCtrl.text,
-                            dateStr,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.red,
-                          foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                          dateCtrl.text =
+                              '${picked.year}-${picked.month}-${picked.day}';
+                        });
+                      }
+                    },
+                    child: AbsorbPointer(
+                      child: TextField(
+                        controller: dateCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'التاريخ',
+                          prefixIcon: Icon(Icons.calendar_today),
+                          suffixIcon: Icon(Icons.edit, size: 18),
                         ),
-                        child: const Text('عليه',
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount =
-                              double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) {
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(
-                              const SnackBar(
-                                content: Text('الرجاء إدخال المبلغ'),
-                                backgroundColor: AppColors.red,
-                              ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: detailsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'التفاصيل / البيان',
+                      prefixIcon: Icon(Icons.notes),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final amount =
+                                double.tryParse(amountCtrl.text);
+                            if (amount == null || amount <= 0) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                const SnackBar(
+                                  content: Text('الرجاء إدخال المبلغ'),
+                                  backgroundColor: AppColors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            final now = DateTime.now();
+                            final dateStr = '${selectedDate.year}-'
+                                '${selectedDate.month}-'
+                                '${selectedDate.day} '
+                                '${now.hour.toString().padLeft(2, '0')}:'
+                                '${now.minute.toString().padLeft(2, '0')}:'
+                                '${now.second.toString().padLeft(2, '0')}';
+                            Provider.of<AppAccountProvider>(context,
+                                    listen: false)
+                                .addTransaction(
+                              int.parse(widget.customer['id'].toString()),
+                              amount,
+                              'take',
+                              detailsCtrl.text,
+                              dateStr,
                             );
-                            return;
-                          }
-                          final now = DateTime.now();
-                          final dateStr = '${selectedDate.year}-'
-                              '${selectedDate.month}-'
-                              '${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:'
-                              '${now.minute.toString().padLeft(2, '0')}:'
-                              '${now.second.toString().padLeft(2, '0')}';
-                          Provider.of<AppAccountProvider>(context,
-                                  listen: false)
-                              .addTransaction(
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'give',
-                            detailsCtrl.text,
-                            dateStr,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green,
-                          foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            Navigator.pop(ctx);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.red,
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
+                          child: const Text('عليه',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text('له',
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold)),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final amount =
+                                double.tryParse(amountCtrl.text);
+                            if (amount == null || amount <= 0) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                const SnackBar(
+                                  content: Text('الرجاء إدخال المبلغ'),
+                                  backgroundColor: AppColors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            final now = DateTime.now();
+                            final dateStr = '${selectedDate.year}-'
+                                '${selectedDate.month}-'
+                                '${selectedDate.day} '
+                                '${now.hour.toString().padLeft(2, '0')}:'
+                                '${now.minute.toString().padLeft(2, '0')}:'
+                                '${now.second.toString().padLeft(2, '0')}';
+                            Provider.of<AppAccountProvider>(context,
+                                    listen: false)
+                                .addTransaction(
+                              int.parse(widget.customer['id'].toString()),
+                              amount,
+                              'give',
+                              detailsCtrl.text,
+                              dateStr,
+                            );
+                            Navigator.pop(ctx);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.green,
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('له',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}  
-          
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppAccountProvider>(context);
@@ -3666,114 +3676,118 @@ void _showAddTransactionDialog(BuildContext context) {
                     ],
                   ),
           ),
-         (
-// ✅ شريط سفلي بتدرج أزرق + كبسولات
-Container(
-  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-  color: AppColors.background,
-  child: Row(
-    children: [
-      SizedBox(
-        width: 56,
-        height: 56,
-        child: Material(
-          color: AppColors.primaryLight,
-          borderRadius: BorderRadius.circular(8),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => _showAddTransactionDialog(context),
-            child: const Center(
-              child: Icon(
-                Icons.add,
-                color: AppColors.gold,
-                size: 30,
-              ),
+          // ✅ شريط سفلي بتدرج أزرق + كبسولات
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            color: AppColors.background,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: Material(
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(8),
+                    elevation: 2,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _showAddTransactionDialog(context),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add,
+                          color: AppColors.gold,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.summaryGradient,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            // كبسولة "عليه"
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.red,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'عليه: ${formatNumber(totalTake)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            // كبسولة "له"
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.green,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'له: ${formatNumber(totalGive)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // كبسولة الرصيد
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: finalBalance > 0
+                                ? AppColors.green
+                                : (finalBalance < 0
+                                    ? AppColors.red
+                                    : AppColors.greyPill),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
+        ],
       ),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: AppColors.summaryGradient,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  // كبسولة "عليه"
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.red,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'عليه: ${formatNumber(totalTake)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  // كبسولة "له"
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.green,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'له: ${formatNumber(totalGive)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // كبسولة الرصيد
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: finalBalance > 0
-                      ? AppColors.green
-                      : (finalBalance < 0
-                          ? AppColors.red
-                          : const Color(0xFF757575)),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ],
-  ),
-),
+    );
+  }
+
   pw.Widget _pdfHeaderCell(String text, pw.Font font) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(4),
