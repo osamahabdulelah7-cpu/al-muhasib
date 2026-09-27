@@ -3190,193 +3190,199 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ),
     );
   }
+// ✅ نافذة إضافة عملية جديدة (بدون زر إلغاء — الأزرار في الأسفل)
+void _showAddTransactionDialog(BuildContext context) {
+  final amountCtrl = TextEditingController();
+  final detailsCtrl = TextEditingController();
+  DateTime selectedDate = DateTime.now();
+  final dateCtrl = TextEditingController(
+      text:
+          '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
 
-  // ✅ نافذة إضافة عملية جديدة (بدون اقتراحات - مبسطة)
-  void _showAddTransactionDialog(BuildContext context) {
-    final amountCtrl = TextEditingController();
-    final detailsCtrl = TextEditingController();
-    DateTime selectedDate = DateTime.now();
-    final dateCtrl = TextEditingController(
-        text:
-            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          title: Row(
-            children: [
-              const Icon(Icons.add_circle_outline,
-                  color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text('إضافة عملية جديدة'),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                onPressed: () => Navigator.pop(ctx),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'المبلغ',
-                      prefixIcon: Icon(Icons.attach_money),
-                    ),
+  showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        title: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.close, size: 22),
+              onPressed: () => Navigator.pop(ctx),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const Spacer(),
+            const Icon(Icons.add_circle_outline,
+                color: AppColors.primary),
+            const SizedBox(width: 8),
+            const Text('إضافة عملية جديدة'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'المبلغ',
+                    prefixIcon: Icon(Icons.attach_money),
                   ),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() {
-                          selectedDate = picked;
-                          dateCtrl.text =
-                              '${picked.year}-${picked.month}-${picked.day}';
-                        });
-                      }
-                    },
-                    child: AbsorbPointer(
-                      child: TextField(
-                        controller: dateCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'التاريخ',
-                          prefixIcon: Icon(Icons.calendar_today),
-                          suffixIcon: Icon(Icons.edit, size: 18),
-                        ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setDialogState(() {
+                        selectedDate = picked;
+                        dateCtrl.text =
+                            '${picked.year}-${picked.month}-${picked.day}';
+                      });
+                    }
+                  },
+                  child: AbsorbPointer(
+                    child: TextField(
+                      controller: dateCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'التاريخ',
+                        prefixIcon: Icon(Icons.calendar_today),
+                        suffixIcon: Icon(Icons.edit, size: 18),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: detailsCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'التفاصيل / البيان',
-                      prefixIcon: Icon(Icons.notes),
-                    ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: detailsCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'التفاصيل / البيان',
+                    prefixIcon: Icon(Icons.notes),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            final amount =
-                                double.tryParse(amountCtrl.text);
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                const SnackBar(
-                                  content: Text('الرجاء إدخال المبلغ'),
-                                  backgroundColor: AppColors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            final now = DateTime.now();
-                            final dateStr = '${selectedDate.year}-'
-                                '${selectedDate.month}-'
-                                '${selectedDate.day} '
-                                '${now.hour.toString().padLeft(2, '0')}:'
-                                '${now.minute.toString().padLeft(2, '0')}:'
-                                '${now.second.toString().padLeft(2, '0')}';
-                            Provider.of<AppAccountProvider>(context,
-                                    listen: false)
-                                .addTransaction(
-                              int.parse(widget.customer['id'].toString()),
-                              amount,
-                              'take',
-                              detailsCtrl.text,
-                              dateStr,
+                ),
+                const SizedBox(height: 16),
+                // أزرار له / عليه (بدون رموز + في مكان إلغاء)
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount =
+                              double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) {
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              const SnackBar(
+                                content: Text('الرجاء إدخال المبلغ'),
+                                backgroundColor: AppColors.red,
+                              ),
                             );
-                            Navigator.pop(ctx);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.red,
-                            foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            return;
+                          }
+                          final now = DateTime.now();
+                          final dateStr = '${selectedDate.year}-'
+                              '${selectedDate.month}-'
+                              '${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:'
+                              '${now.minute.toString().padLeft(2, '0')}:'
+                              '${now.second.toString().padLeft(2, '0')}';
+                          Provider.of<AppAccountProvider>(context,
+                                  listen: false)
+                              .addTransaction(
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'take',
+                            detailsCtrl.text,
+                            dateStr,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.red,
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text('عليه',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
                         ),
+                        child: const Text('عليه',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            final amount =
-                                double.tryParse(amountCtrl.text);
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                const SnackBar(
-                                  content: Text('الرجاء إدخال المبلغ'),
-                                  backgroundColor: AppColors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            final now = DateTime.now();
-                            final dateStr = '${selectedDate.year}-'
-                                '${selectedDate.month}-'
-                                '${selectedDate.day} '
-                                '${now.hour.toString().padLeft(2, '0')}:'
-                                '${now.minute.toString().padLeft(2, '0')}:'
-                                '${now.second.toString().padLeft(2, '0')}';
-                            Provider.of<AppAccountProvider>(context,
-                                    listen: false)
-                                .addTransaction(
-                              int.parse(widget.customer['id'].toString()),
-                              amount,
-                              'give',
-                              detailsCtrl.text,
-                              dateStr,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount =
+                              double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) {
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              const SnackBar(
+                                content: Text('الرجاء إدخال المبلغ'),
+                                backgroundColor: AppColors.red,
+                              ),
                             );
-                            Navigator.pop(ctx);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.green,
-                            foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            return;
+                          }
+                          final now = DateTime.now();
+                          final dateStr = '${selectedDate.year}-'
+                              '${selectedDate.month}-'
+                              '${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:'
+                              '${now.minute.toString().padLeft(2, '0')}:'
+                              '${now.second.toString().padLeft(2, '0')}';
+                          Provider.of<AppAccountProvider>(context,
+                                  listen: false)
+                              .addTransaction(
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'give',
+                            detailsCtrl.text,
+                            dateStr,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.green,
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text('له',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
                         ),
+                        child: const Text('له',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+        ),
+      ),
+    ),
+  );
+}  
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
