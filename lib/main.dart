@@ -17,6 +17,10 @@ import 'package:printing/printing.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
+import 'package:http/http.dart' as http;
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:googleapis_auth/auth_io.dart' as auth;
 
 // ====================================================
 // ✅ دالة تنسيق الأرقام
@@ -75,6 +79,183 @@ class AppColors {
 }
 
 // ====================================================
+// ✅ خدمة Google Drive
+// ====================================================
+class GoogleDriveService {
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'https://www.googleapis.com/auth/drive.appdata',
+    ],
+  );
+
+  static GoogleSignInAccount? _currentUser;
+  static drive.DriveApi? _driveApi;
+
+  static bool get isSignedIn => _currentUser != null;
+  static String? get userEmail => _currentUser?.email;
+  static String? get userName => _currentUser?.displayName;
+
+  static Future<bool> signIn() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) return false;
+      _currentUser = account;
+      final authHeaders = await account.authHeaders;
+      final authenticateClient = GoogleAuthClient(authHeaders);
+      _driveApi = drive.DriveApi(authenticateClient);
+      return true;
+    } catch (e) {
+      debugPrint('❌ خطأ في تسجيل الدخول: $e');
+      return false;
+    }
+  }
+
+  static Future<void> signOut() async {
+    try {
+      await _googleSignIn.signOut();
+      _currentUser = null;
+      _driveApi = null;
+    } catch (e) {
+      debugPrint('❌ خطأ في تسجيل الخروج: $e');
+    }
+  }
+
+  static Future<bool> trySilentSignIn() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account == null) return false;
+      _currentUser = account;
+      final authHeaders = await account.authHeaders;
+      final authenticateClient = GoogleAuthClient(authHeaders);
+      _driveApi = drive.DriveApi(authenticateClient);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<String?> uploadBackup(File dbFile) async {
+    if (_driveApi == null) {
+      return 'الرجاء تسجيل الدخول أولاً';
+    }
+
+    try {
+      final now = DateTime.now();
+      final fileName = 'al_muhasib_'
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
+          '_'
+          '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}'
+          '_'
+          '${now.second.toString().padLeft(2, '0')}'
+          '.db';
+
+      final fileContent = await dbFile.readAsBytes();
+
+      final driveFile = drive.File();
+      driveFile.name = fileName;
+      driveFile.parents = ['appDataFolder'];
+
+      final media = drive.Media(
+        Stream.value(fileContent),
+        fileContent.length,
+        contentType: 'application/octet-stream',
+      );
+
+      await _driveApi!.files.create(
+        driveFile,
+        uploadMedia: media,
+        $fields: 'id,name,size,createdTime',
+      );
+
+      debugPrint('✅ تم الرفع: $fileName');
+      return null;
+    } catch (e) {
+      debugPrint('❌ خطأ في الرفع: $e');
+      return 'فشل الرفع: $e';
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> listBackups() async {
+    if (_driveApi == null) return [];
+
+    try {
+      final result = await _driveApi!.files.list(
+        spaces: 'appDataFolder',
+        q: "name contains 'al_muhasib_'",
+        orderBy: 'createdTime desc',
+        $fields: 'files(id,name,size,createdTime)',
+      );
+
+      return (result.files ?? [])
+          .map((f) => {
+                'id': f.id ?? '',
+                'name': f.name ?? '',
+                'size': f.size ?? '0',
+                'createdTime': f.createdTime?.toIso8601String() ?? '',
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('❌ خطأ في السرد: $e');
+      return [];
+    }
+  }
+
+  static Future<File?> downloadBackup(String fileId, String fileName) async {
+    if (_driveApi == null) return null;
+
+    try {
+      final result = await _driveApi!.files.get(
+        fileId,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      ) as drive.Media;
+
+      final List<int> dataStore = [];
+      await for (final chunk in result.stream) {
+        dataStore.addAll(chunk);
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(dataStore);
+
+      debugPrint('✅ تم التنزيل: ${file.path}');
+      return file;
+    } catch (e) {
+      debugPrint('❌ خطأ في التنزيل: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> deleteBackup(String fileId) async {
+    if (_driveApi == null) return false;
+
+    try {
+      await _driveApi!.files.delete(fileId);
+      return true;
+    } catch (e) {
+      debugPrint('❌ خطأ في الحذف: $e');
+      return false;
+    }
+  }
+}
+
+// ====================================================
+// ✅ Google Auth Client
+// ====================================================
+class GoogleAuthClient extends http.BaseClient {
+  final Map<String, String> _headers;
+  final http.Client _client = http.Client();
+
+  GoogleAuthClient(this._headers);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers.addAll(_headers);
+    return _client.send(request);
+  }
+}
+
+// ====================================================
 // ✅ خدمة النسخ الاحتياطي
 // ====================================================
 class AutoBackupService {
@@ -85,6 +266,13 @@ class AutoBackupService {
   static const String _prefLastBackup = 'auto_backup_last_time';
   static const String _prefLastDbModified = 'auto_backup_last_db_modified';
 
+  static const String _prefDriveEnabled = 'drive_backup_enabled';
+  static const String _prefDriveHour = 'drive_backup_hour';
+  static const String _prefDriveMinute = 'drive_backup_minute';
+  static const String _prefDriveLastBackup = 'drive_backup_last_time';
+  static const String _prefDriveLastDbModified = 'drive_backup_last_db_modified';
+  static const int _maxDriveBackups = 5;
+
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -94,6 +282,11 @@ class AutoBackupService {
       'folderPath': prefs.getString(_prefFolderPath) ?? '',
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
       'lastDbModified': prefs.getString(_prefLastDbModified) ?? '',
+      'driveEnabled': prefs.getBool(_prefDriveEnabled) ?? false,
+      'driveHour': prefs.getInt(_prefDriveHour) ?? 4,
+      'driveMinute': prefs.getInt(_prefDriveMinute) ?? 0,
+      'driveLastBackup': prefs.getString(_prefDriveLastBackup) ?? '',
+      'driveLastDbModified': prefs.getString(_prefDriveLastDbModified) ?? '',
     };
   }
 
@@ -104,6 +297,11 @@ class AutoBackupService {
     String? folderPath,
     String? lastBackup,
     String? lastDbModified,
+    bool? driveEnabled,
+    int? driveHour,
+    int? driveMinute,
+    String? driveLastBackup,
+    String? driveLastDbModified,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (enabled != null) await prefs.setBool(_prefEnabled, enabled);
@@ -113,6 +311,17 @@ class AutoBackupService {
     if (lastBackup != null) await prefs.setString(_prefLastBackup, lastBackup);
     if (lastDbModified != null) {
       await prefs.setString(_prefLastDbModified, lastDbModified);
+    }
+    if (driveEnabled != null) {
+      await prefs.setBool(_prefDriveEnabled, driveEnabled);
+    }
+    if (driveHour != null) await prefs.setInt(_prefDriveHour, driveHour);
+    if (driveMinute != null) await prefs.setInt(_prefDriveMinute, driveMinute);
+    if (driveLastBackup != null) {
+      await prefs.setString(_prefDriveLastBackup, driveLastBackup);
+    }
+    if (driveLastDbModified != null) {
+      await prefs.setString(_prefDriveLastDbModified, driveLastDbModified);
     }
   }
 
@@ -155,6 +364,19 @@ class AutoBackupService {
     }
   }
 
+  static Future<bool> _hasDataChangedForDrive() async {
+    try {
+      final dbFile = await _getDatabaseFile();
+      if (!await dbFile.exists()) return false;
+      final lastModified = (await dbFile.stat()).modified.toIso8601String();
+      final settings = await getSettings();
+      final lastDbModified = settings['driveLastDbModified'] as String;
+      return lastModified != lastDbModified;
+    } catch (e) {
+      return true;
+    }
+  }
+
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
@@ -190,6 +412,81 @@ class AutoBackupService {
       return await performBackup(folderPath);
     } catch (e) {
       return null;
+    }
+  }
+
+  static Future<String?> checkAndRunDriveBackup() async {
+    try {
+      final settings = await getSettings();
+      if (settings['driveEnabled'] != true) return null;
+
+      if (!GoogleDriveService.isSignedIn) {
+        final silent = await GoogleDriveService.trySilentSignIn();
+        if (!silent) return null;
+      }
+
+      final now = DateTime.now();
+      final hour = settings['driveHour'] as int;
+      final minute = settings['driveMinute'] as int;
+      final todayTarget =
+          DateTime(now.year, now.month, now.day, hour, minute);
+
+      final lastBackupStr = settings['driveLastBackup'] as String;
+      DateTime? lastBackup;
+      if (lastBackupStr.isNotEmpty) {
+        lastBackup = DateTime.tryParse(lastBackupStr);
+      }
+
+      bool shouldBackup = false;
+      if (lastBackup == null) {
+        shouldBackup = true;
+      } else if (now.isAfter(todayTarget) &&
+          lastBackup.isBefore(todayTarget)) {
+        shouldBackup = true;
+      }
+
+      if (!shouldBackup) return null;
+
+      final dataChanged = await _hasDataChangedForDrive();
+      if (!dataChanged) return null;
+
+      final dbFile = await _getDatabaseFile();
+      final error = await GoogleDriveService.uploadBackup(dbFile);
+
+      if (error == null) {
+        final lastModified =
+            (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+          driveLastBackup: now.toIso8601String(),
+          driveLastDbModified: lastModified,
+        );
+        await _cleanOldDriveBackups();
+        return null;
+      } else {
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  static Future<void> _cleanOldDriveBackups() async {
+    try {
+      final backups = await GoogleDriveService.listBackups();
+      if (backups.length <= _maxDriveBackups) return;
+
+      backups.sort((a, b) {
+        final aDate = a['createdTime'] as String;
+        final bDate = b['createdTime'] as String;
+        return bDate.compareTo(aDate);
+      });
+
+      for (int i = _maxDriveBackups; i < backups.length; i++) {
+        final id = backups[i]['id'] as String;
+        await GoogleDriveService.deleteBackup(id);
+      }
+    } catch (e) {
+      debugPrint('⚠️ خطأ في حذف النسخ القديمة: $e');
     }
   }
 
@@ -236,6 +533,33 @@ class AutoBackupService {
     return await performBackup(folderPath);
   }
 
+  static Future<String?> runDriveBackupNow() async {
+    if (!GoogleDriveService.isSignedIn) {
+      return 'الرجاء تسجيل الدخول إلى Google';
+    }
+
+    try {
+      final dbFile = await _getDatabaseFile();
+      final error = await GoogleDriveService.uploadBackup(dbFile);
+
+      if (error == null) {
+        final now = DateTime.now();
+        final lastModified =
+            (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+          driveLastBackup: now.toIso8601String(),
+          driveLastDbModified: lastModified,
+        );
+        await _cleanOldDriveBackups();
+        return null;
+      } else {
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   static Future<int> countBackups() async {
     try {
       final settings = await getSettings();
@@ -250,6 +574,16 @@ class AutoBackupService {
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
           .length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static Future<int> countDriveBackups() async {
+    if (!GoogleDriveService.isSignedIn) return 0;
+    try {
+      final backups = await GoogleDriveService.listBackups();
+      return backups.length;
     } catch (e) {
       return 0;
     }
@@ -310,6 +644,7 @@ void main() async {
 
     Future.delayed(const Duration(seconds: 2), () async {
       await AutoBackupService.checkAndRunBackup();
+      await AutoBackupService.checkAndRunDriveBackup();
     });
   }, (error, stack) {
     debugPrint('ZoneError: $error\n$stack');
@@ -748,6 +1083,17 @@ class AppAccountProvider extends ChangeNotifier {
       debugPrint('خطأ أثناء الاستعادة: $e');
     }
     return false;
+  }
+
+  Future<bool> importBackupFromFile(File selectedFile) async {
+    try {
+      await AppDBHelper.instance.restoreDatabase(selectedFile);
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      debugPrint('خطأ أثناء الاستعادة: $e');
+      return false;
+    }
   }
 
   Future<Map<String, dynamic>> importFromExcel(
@@ -1227,8 +1573,53 @@ class _HomeScreenState extends State<HomeScreen>
           }
         }
       }
+
+      await _checkDriveBackup();
     } catch (e) {
       debugPrint('❌ خطأ في فحص النسخ: $e');
+    }
+  }
+
+  Future<void> _checkDriveBackup() async {
+    try {
+      final settings = await AutoBackupService.getSettings();
+      final wasEnabled = settings['driveEnabled'] as bool;
+      final lastBackupBefore = settings['driveLastBackup'] as String;
+
+      final error = await AutoBackupService.checkAndRunDriveBackup();
+
+      if (error != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ فشل النسخ على Drive: $error'),
+            backgroundColor: AppColors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      } else if (error == null && wasEnabled && mounted) {
+        final newSettings = await AutoBackupService.getSettings();
+        final newLastBackup = newSettings['driveLastBackup'] as String;
+
+        if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.cloud_done, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('☁️ تم النسخ على Google Drive'),
+                  ],
+                ),
+                backgroundColor: AppColors.drive,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ خطأ في فحص Drive: $e');
     }
   }
 
@@ -1337,7 +1728,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 title: const Text('خيارات حفظ البيانات',
                     style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('حفظ تلقائي يومي',
+                subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1933,97 +2324,96 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    
-                    // ✅ شريط المجاميع السفلي (بدون كبسولات)
-Container(
-  padding: const EdgeInsets.symmetric(
-      horizontal: 8, vertical: 6),
-  color: AppColors.background,
-  child: Row(
-    children: [
-      SizedBox(
-        width: 56,
-        height: 56,
-        child: Material(
-          color: AppColors.primaryLight,
-          borderRadius: BorderRadius.circular(8),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              final activeIndex = _tabController!.index;
-              final activeCategoryId = int.parse(
-                  categories[activeIndex]['id'].toString());
-              _showAddCustomerDialog(
-                  context, activeCategoryId);
-            },
-            child: const Center(
-              child: Icon(
-                Icons.add,
-                color: AppColors.gold,
-                size: 30,
-              ),
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: AppColors.summaryGradient,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'عليه: ${formatNumber(totalTake)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                    // شريط المجاميع السفلي (بدون كبسولات)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      color: AppColors.background,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: Material(
+                              color: AppColors.primaryLight,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 2,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () {
+                                  final activeIndex = _tabController!.index;
+                                  final activeCategoryId = int.parse(
+                                      categories[activeIndex]['id'].toString());
+                                  _showAddCustomerDialog(
+                                      context, activeCategoryId);
+                                },
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.add,
+                                    color: AppColors.gold,
+                                    size: 30,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                gradient: AppColors.summaryGradient,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'عليه: ${formatNumber(totalTake)}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                      Text(
+                                        'له: ${formatNumber(totalGive)}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    height: 1,
+                                    color: Colors.white.withOpacity(0.3),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Center(
+                                    child: Text(
+                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Text(
-                    'له: ${formatNumber(totalGive)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Container(
-                height: 1,
-                color: Colors.white.withOpacity(0.3),
-              ),
-              const SizedBox(height: 3),
-              Center(
-                child: Text(
-                  '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ],
-  ),
-),
                   ],
                 );
               }).toList(),
@@ -2150,7 +2540,6 @@ Container(
                         ),
                       ),
                     ),
-                    // كبسولة الرقم
                     SizedBox(
                       height: 70,
                       child: Center(
@@ -2491,7 +2880,7 @@ Container(
 }
 
 // ----------------------------------------------------
-// 5. صفحة خيارات حفظ البيانات
+// 5. صفحة خيارات حفظ البيانات (مع Drive)
 // ----------------------------------------------------
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -2501,11 +2890,21 @@ class AutoBackupScreen extends StatefulWidget {
 }
 
 class _AutoBackupScreenState extends State<AutoBackupScreen> {
+  // محلي
   bool _enabled = false;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
   String _folderPath = '';
   String _lastBackup = '';
   int _backupCount = 0;
+
+  // Drive
+  bool _driveEnabled = false;
+  TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
+  String _driveLastBackup = '';
+  int _driveBackupCount = 0;
+  bool _signedIn = false;
+  String? _userEmail;
+
   bool _loading = true;
 
   @override
@@ -2517,6 +2916,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   Future<void> _loadSettings() async {
     final settings = await AutoBackupService.getSettings();
     final count = await AutoBackupService.countBackups();
+    final driveCount = await AutoBackupService.countDriveBackups();
+
+    final signedIn = GoogleDriveService.isSignedIn ||
+        await GoogleDriveService.trySilentSignIn();
 
     if (!mounted) return;
     setState(() {
@@ -2528,10 +2931,25 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _folderPath = settings['folderPath'] as String;
       _lastBackup = settings['lastBackup'] as String;
       _backupCount = count;
+
+      _driveEnabled = settings['driveEnabled'] as bool;
+      _driveTime = TimeOfDay(
+        hour: settings['driveHour'] as int,
+        minute: settings['driveMinute'] as int,
+      );
+      _driveLastBackup = settings['driveLastBackup'] as String;
+      _driveBackupCount = driveCount;
+
+      _signedIn = signedIn;
+      _userEmail = GoogleDriveService.userEmail;
+
       _loading = false;
     });
   }
 
+  // ==========================================
+  // النسخ المحلي
+  // ==========================================
   Future<void> _toggleEnabled(bool value) async {
     if (value) {
       final hasPermission = await AutoBackupService.hasStoragePermission();
@@ -2717,6 +3135,338 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
+  // ==========================================
+  // النسخ على Drive
+  // ==========================================
+  Future<void> _toggleDriveEnabled(bool value) async {
+    if (value) {
+      // تسجيل الدخول مطلوب
+      if (!GoogleDriveService.isSignedIn) {
+        final signedIn = await GoogleDriveService.signIn();
+        if (!signedIn) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ لم يتم تسجيل الدخول'),
+                backgroundColor: AppColors.red,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() {
+          _signedIn = true;
+          _userEmail = GoogleDriveService.userEmail;
+        });
+      }
+    }
+
+    await AutoBackupService.saveSettings(driveEnabled: value);
+    setState(() => _driveEnabled = value);
+  }
+
+  Future<void> _pickDriveTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _driveTime,
+      helpText: 'اختر وقت النسخ على Drive',
+      cancelText: 'إلغاء',
+      confirmText: 'تأكيد',
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      await AutoBackupService.saveSettings(
+        driveHour: picked.hour,
+        driveMinute: picked.minute,
+      );
+      setState(() => _driveTime = picked);
+    }
+  }
+
+  Future<void> _signInGoogle() async {
+    final signedIn = await GoogleDriveService.signIn();
+    if (!mounted) return;
+
+    if (signedIn) {
+      setState(() {
+        _signedIn = true;
+        _userEmail = GoogleDriveService.userEmail;
+      });
+      await _loadSettings();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ تم تسجيل الدخول: ${_userEmail ?? ''}'),
+          backgroundColor: AppColors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ فشل تسجيل الدخول'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _signOutGoogle() async {
+    await GoogleDriveService.signOut();
+    if (!mounted) return;
+    setState(() {
+      _signedIn = false;
+      _userEmail = null;
+      _driveBackupCount = 0;
+      _driveLastBackup = '';
+    });
+    await AutoBackupService.saveSettings(driveEnabled: false);
+    setState(() => _driveEnabled = false);
+  }
+
+  Future<void> _runDriveBackupNow() async {
+    if (!GoogleDriveService.isSignedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء تسجيل الدخول أولاً'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: AppColors.drive),
+      ),
+    );
+
+    final error = await AutoBackupService.runDriveBackupNow();
+
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    if (error == null) {
+      await _loadSettings();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cloud_done, color: Colors.white),
+                SizedBox(width: 8),
+                Text('☁️ تم الرفع على Drive بنجاح'),
+              ],
+            ),
+            backgroundColor: AppColors.drive,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ فشل: $error'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showDriveRestoreDialog() async {
+    if (!GoogleDriveService.isSignedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء تسجيل الدخول أولاً'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: AppColors.drive),
+      ),
+    );
+
+    final backups = await GoogleDriveService.listBackups();
+
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    if (backups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد نسخ على Drive'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_download, color: AppColors.drive),
+            SizedBox(width: 8),
+            Text('اختر نسخة للاستعادة'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: ListView.separated(
+            itemCount: backups.length,
+            separatorBuilder: (ctx, i) => const Divider(height: 1),
+            itemBuilder: (ctx, i) {
+              final b = backups[i];
+              final name = b['name'] as String;
+              final size = b['size'] as String;
+              final created = b['createdTime'] as String;
+
+              String formattedDate = '';
+              try {
+                final dt = DateTime.parse(created);
+                formattedDate =
+                    '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+                    '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+              } catch (_) {
+                formattedDate = created;
+              }
+
+              final sizeKB = (int.tryParse(size) ?? 0) / 1024;
+              final sizeStr = '${sizeKB.toStringAsFixed(1)} KB';
+
+              return ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.drive.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.description,
+                      color: AppColors.drive),
+                ),
+                title: Text(formattedDate,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('$sizeStr • $name',
+                    style: const TextStyle(fontSize: 11)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _restoreFromDrive(b);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء',
+                style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _restoreFromDrive(Map<String, dynamic> backup) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: AppColors.red),
+            SizedBox(width: 8),
+            Text('تحذير'),
+          ],
+        ),
+        content: const Text(
+          'سيتم استبدال البيانات الحالية بالنسخة المحددة.\n\n'
+          'هل أنت متأكد؟',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء',
+                style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.red,
+                foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('استعادة'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: AppColors.drive),
+      ),
+    );
+
+    final file = await GoogleDriveService.downloadBackup(
+      backup['id'] as String,
+      backup['name'] as String,
+    );
+
+    if (!mounted) return;
+
+    if (file == null) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ فشل التنزيل'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final success = await provider.importBackupFromFile(file);
+
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success
+            ? '✅ تمت الاستعادة من Drive'
+            : '❌ فشل الاستعادة'),
+        backgroundColor: success ? AppColors.green : AppColors.red,
+      ),
+    );
+
+    if (success) {
+      await _loadSettings();
+    }
+  }
+
   String _formatLastBackup() {
     if (_lastBackup.isEmpty) return 'لا يوجد';
     try {
@@ -2727,6 +3477,19 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           '${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return _lastBackup;
+    }
+  }
+
+  String _formatDriveLastBackup() {
+    if (_driveLastBackup.isEmpty) return 'لا يوجد';
+    try {
+      final dt = DateTime.parse(_driveLastBackup);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:'
+          '${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return _driveLastBackup;
     }
   }
 
@@ -2748,6 +3511,28 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       ),
       body: ListView(
         children: [
+          // ========================================
+          // قسم النسخ المحلي
+          // ========================================
+          Container(
+            color: AppColors.primary.withOpacity(0.08),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 10),
+            child: const Row(
+              children: [
+                Icon(Icons.smartphone, color: AppColors.primary, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'النسخ الاحتياطي المحلي',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Container(
             color: Colors.white,
             child: SwitchListTile(
@@ -2798,9 +3583,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               ),
             ),
             subtitle: Text(
-              _folderPath.isEmpty
-                  ? 'لم يتم تحديد مجلد'
-                  : '$_folderPath/',
+              _folderPath.isEmpty ? 'لم يتم تحديد مجلد' : '$_folderPath/',
               style: TextStyle(
                 fontSize: 13,
                 color: _folderPath.isEmpty
@@ -2818,10 +3601,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                     title: const Text('مجلد حفظ البيانات'),
-                    content: SelectableText(
-                      _folderPath,
-                      style: const TextStyle(fontSize: 13),
-                    ),
+                    content: SelectableText(_folderPath,
+                        style: const TextStyle(fontSize: 13)),
                     actions: [
                       TextButton(
                         onPressed: () {
@@ -2883,7 +3664,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   color: Color(0xFF7B1FA2), size: 26),
             ),
             title: const Text(
-              'آخر نسخة',
+              'آخر نسخة محلية',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -2909,7 +3690,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   color: Color(0xFF2E7D32), size: 26),
             ),
             title: const Text(
-              'عدد النسخ',
+              'عدد النسخ المحلية',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -2923,6 +3704,209 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             ),
           ),
           const SizedBox(height: 20),
+
+          // ========================================
+          // قسم النسخ على Drive
+          // ========================================
+          Container(
+            color: AppColors.drive.withOpacity(0.08),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 10),
+            child: const Row(
+              children: [
+                Icon(Icons.cloud, color: AppColors.drive, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'النسخ الاحتياطي على Google Drive',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.drive,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // حالة تسجيل الدخول
+          Container(
+            color: Colors.white,
+            child: ListTile(
+              leading: Container(
+                width: 45,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: _signedIn
+                      ? AppColors.green.withOpacity(0.15)
+                      : AppColors.drive.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _signedIn ? Icons.check_circle : Icons.login,
+                  color: _signedIn ? AppColors.green : AppColors.drive,
+                  size: 26,
+                ),
+              ),
+              title: Text(
+                _signedIn ? 'الحساب المتصل' : 'تسجيل الدخول إلى Google',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textDark,
+                ),
+              ),
+              subtitle: Text(
+                _signedIn ? (_userEmail ?? '') : 'اضغط لتسجيل الدخول',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _signedIn
+                      ? AppColors.green
+                      : AppColors.textMuted,
+                ),
+              ),
+              trailing: _signedIn
+                  ? IconButton(
+                      icon: const Icon(Icons.logout,
+                          color: AppColors.red),
+                      onPressed: _signOutGoogle,
+                    )
+                  : null,
+              onTap: _signedIn ? null : _signInGoogle,
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // تفعيل النسخ التلقائي على Drive
+          Container(
+            color: Colors.white,
+            child: SwitchListTile(
+              value: _driveEnabled,
+              onChanged: _signedIn ? _toggleDriveEnabled : null,
+              activeColor: AppColors.drive,
+              secondary: Container(
+                width: 45,
+                height: 45,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE3F2FD),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.cloud_upload,
+                    color: AppColors.drive, size: 26),
+              ),
+              title: const Text(
+                'النسخ التلقائي على Drive',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textDark,
+                ),
+              ),
+              subtitle: Text(
+                _signedIn
+                    ? 'رفع نسخة يومياً (بشرط تغير البيانات)'
+                    : 'سجّل الدخول أولاً',
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted),
+              ),
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // وقت النسخ على Drive
+          ListTile(
+            enabled: _signedIn,
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE3F2FD),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.schedule,
+                  color: AppColors.drive, size: 26),
+            ),
+            title: const Text(
+              'وقت النسخ على Drive',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              '${_driveTime.hour.toString().padLeft(2, '0')}:'
+              '${_driveTime.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+            onTap: _signedIn ? _pickDriveTime : null,
+          ),
+
+          const Divider(height: 1),
+
+          // آخر نسخة على Drive
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3E5F5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.history,
+                  color: Color(0xFF7B1FA2), size: 26),
+            ),
+            title: const Text(
+              'آخر نسخة على Drive',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              _formatDriveLastBackup(),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // عدد النسخ على Drive
+          ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE8F5E9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.cloud_done,
+                  color: Color(0xFF2E7D32), size: 26),
+            ),
+            title: const Text(
+              'عدد النسخ على Drive',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            subtitle: Text(
+              '$_driveBackupCount / 5 ملف',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ========================================
+          // الأزرار
+          // ========================================
           if (_enabled && _folderPath.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2940,24 +3924,39 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       minimumSize: const Size(double.infinity, 50),
                     ),
                     icon: const Icon(Icons.backup),
-                    label: const Text('نسخ الآن (تجريبي)',
+                    label: const Text('نسخ محلي الآن',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+
+          if (_signedIn)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _runDriveBackupNow,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.drive,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text('رفع نسخة على Drive الآن',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
-                    onPressed: () async {
-                      final error =
-                          await AutoBackupService.shareLatestBackup();
-                      if (error != null && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(error),
-                            backgroundColor: AppColors.red,
-                          ),
-                        );
-                      }
-                    },
+                    onPressed: _showDriveRestoreDialog,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
@@ -2967,14 +3966,15 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       ),
                       minimumSize: const Size(double.infinity, 50),
                     ),
-                    icon: const Icon(Icons.share),
-                    label: const Text('مشاركة آخر نسخة',
+                    icon: const Icon(Icons.cloud_download),
+                    label: const Text('استعادة من Drive',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
             ),
+
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2992,7 +3992,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'يتم الحفظ عند فتح التطبيق إذا فات الموعد المحدد وكانت البيانات قد تغيرت',
+                      'النسخ التلقائي (محلي + Drive) يعمل عند فتح التطبيق إذا فات الموعد المحدد وتغيرت البيانات',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textDark,
@@ -3202,7 +4202,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ نافذة إضافة عملية جديدة (بدون إلغاء — له/عليه في الأسفل)
+  // ✅ نافذة إضافة عملية جديدة
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -3651,90 +4651,89 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          
-          // ✅ شريط سفلي بتدرج أزرق (بدون كبسولات)
-Container(
-  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-  color: AppColors.background,
-  child: Row(
-    children: [
-      SizedBox(
-        width: 56,
-        height: 56,
-        child: Material(
-          color: AppColors.primaryLight,
-          borderRadius: BorderRadius.circular(8),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => _showAddTransactionDialog(context),
-            child: const Center(
-              child: Icon(
-                Icons.add,
-                color: AppColors.gold,
-                size: 30,
-              ),
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: AppColors.summaryGradient,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'عليه: ${formatNumber(totalTake)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+          // ✅ شريط سفلي بتدرج أزرق
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            color: AppColors.background,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: Material(
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(8),
+                    elevation: 2,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _showAddTransactionDialog(context),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add,
+                          color: AppColors.gold,
+                          size: 30,
+                        ),
+                      ),
                     ),
-                  ),
-                  Text(
-                    'له: ${formatNumber(totalGive)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Container(
-                height: 1,
-                color: Colors.white.withOpacity(0.3),
-              ),
-              const SizedBox(height: 3),
-              Center(
-                child: Text(
-                  '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.summaryGradient,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'عليه: ${formatNumber(totalTake)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                            Text(
+                              'له: ${formatNumber(totalGive)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Container(
+                          height: 1,
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                        const SizedBox(height: 3),
+                        Center(
+                          child: Text(
+                            '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
-    ],
-  ),
-),
         ],
       ),
     );
