@@ -3769,7 +3769,7 @@ Container(
                   SizedBox(height: 15),
                   Text('جاري إنتاج PDF...'),
                   SizedBox(height: 5),
-                  Text('قد يستغرق 1-3 ثانية',
+                  Text('قد يستغرق 10-30 ثانية',
                       style: TextStyle(fontSize: 11, color: Colors.grey)),
                 ],
               ),
