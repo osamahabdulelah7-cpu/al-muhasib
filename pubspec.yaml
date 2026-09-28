@@ -33,7 +33,7 @@ dependencies:
 
   # Google Drive Sync
   google_sign_in: ^6.2.1
-  googleapis: ^13.2.0
+  googleapis: ^13.1.0
 
 dev_dependencies:
   flutter_test:
