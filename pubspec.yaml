@@ -52,7 +52,7 @@ flutter:
   fonts:
     - family: Cairo
       fonts:
-        - asset: assets/fonts/Cairo[slnt,wght].ttf
+        - asset: assets/fonts/Cairo-Regular.ttf
 
 flutter_launcher_icons:
   android: "launcher_icon"
