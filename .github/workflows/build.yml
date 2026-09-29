@@ -56,44 +56,34 @@ jobs:
         run: flutter build apk --release --no-tree-shake-icons
 
       # ============================================
-      # ✅ توليد Keystore ثابت (يُنفّذ مرة واحدة فقط)
+      # ✅ استخراج Keystore الثابت من Secrets
       # ============================================
-      - name: Generate Stable Keystore
+      - name: Decode Keystore from Secrets
         run: |
-          keytool -genkeypair -v \
-            -keystore release.keystore \
-            -storepass android123 \
-            -alias almuhasib \
-            -keypass android123 \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Al Muhasib, OU=Development, O=Al Muhasib, L=Yemen, C=YE"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          echo "✅ تم استخراج Keystore"
+          ls -lh release.keystore
 
-          echo ""
+      # ============================================
+      # ✅ عرض SHA-1 للتأكد من ثباته
+      # ============================================
+      - name: Show SHA-1 Fingerprint
+        run: |
           echo "========================================"
           echo "🔑 SHA-1 CERTIFICATE FINGERPRINT"
           echo "========================================"
 
           keytool -list -v \
             -keystore release.keystore \
-            -storepass android123 \
-            -alias almuhasib | grep "SHA1:"
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -alias ${{ secrets.KEY_ALIAS }} | grep "SHA1:"
 
           echo "========================================"
-          echo ""
 
-      # ✅ تحويل Keystore إلى Base64 لحفظه
-      - name: Convert Keystore to Base64
-        run: |
-          base64 -w 0 release.keystore > release.keystore.base64
-          echo "✅ تم التحويل إلى Base64"
-          echo ""
-          echo "حجم الملف:"
-          ls -lh release.keystore.base64
-
-      # ✅ توقيع APK باستخدام Keystore الثابت
-      - name: Sign APK
+      # ============================================
+      # ✅ توقيع APK بالـ Keystore الثابت
+      # ============================================
+      - name: Sign APK with Stable Keystore
         run: |
           BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
 
@@ -103,21 +93,17 @@ jobs:
 
           $BUILD_TOOLS_PATH/apksigner sign \
             --ks release.keystore \
-            --ks-pass pass:android123 \
-            --key-pass pass:android123 \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
             --out build/app/outputs/flutter-apk/app-release-signed.apk \
             build/app/outputs/flutter-apk/app-release-aligned.apk
 
-      # ✅ رفع APK
+      # ============================================
+      # ✅ رفع APK النهائي
+      # ============================================
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4.3.6
         with:
           name: Al-Mohaseb-APK
           path: build/app/outputs/flutter-apk/app-release-signed.apk
-
-      # ✅ رفع Keystore (لتحميله مرة واحدة)
-      - name: Upload Keystore
-        uses: actions/upload-artifact@v4.3.6
-        with:
-          name: release-keystore
-          path: release.keystore.base64
