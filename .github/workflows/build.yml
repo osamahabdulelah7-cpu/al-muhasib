@@ -25,14 +25,9 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Download Fonts and Icon
+      - name: Download Icon
         run: |
           mkdir -p assets/fonts
-          
-          echo "📥 تحميل الخطوط..."
-          curl -fL "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hOA-W1ToLQ-HmkA.ttf" \
-            -o assets/fonts/Cairo-Regular.ttf
-          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           
           echo "📥 تحميل الشعار..."
           curl -fL "https://api.iconify.design/mdi/alpha-m-circle.svg?color=%23FFB300&width=512&height=512" \
