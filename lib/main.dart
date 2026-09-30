@@ -60,28 +60,27 @@ class AppColors {
   static const Color textDarkest = Color(0xFF0D1F3F);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
-  static const Color background = Color(0xFFF0F5FA); // ✅ خلفية زرقاء فاتحة جداً
+  
+  // ✅ الألوان الجديدة المطلوبة
+  static const Color background = Color(0xFFE0E0E0); // خلفية رصاصية
+  static const Color solidBlue = Color(0xFF7EB8E8); // أزرق ثابت
+  static const Color cardWhite = Colors.white; // البطاقات بيضاء
+
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
-  static const Color summaryBar = Color(0xFFB3D4F0); // ✅ أزرق فاتح لشريط المجاميع
+  static const Color summaryBar = Color(0xFF7EB8E8);
 
-  // ✅ التدرج الجديد (أزرق فاتح)
+  // تم إلغاء التدرجات واستبدالها بألوان ثابتة
   static const LinearGradient appBarGradient = LinearGradient(
-    colors: [Color(0xFFA8D0F0), Color(0xFF7EB8E8)], // أزرق فاتح
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
+    colors: [solidBlue, solidBlue],
   );
-
-  // ✅ تدرج شريط المجاميع السفلي (أزرق فاتح جداً)
   static const LinearGradient summaryGradient = LinearGradient(
-    colors: [Color(0xFFD4E8F8), Color(0xFFB3D4F0)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
+    colors: [solidBlue, solidBlue],
   );
 }
 
 // ====================================================
-// ✅ خدمة Google Drive (بدون تغيير)
+// ✅ خدمة Google Drive
 // ====================================================
 class GoogleDriveService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -242,7 +241,7 @@ class GoogleDriveService {
 }
 
 // ====================================================
-// ✅ Google Auth Client (بدون تغيير)
+// ✅ Google Auth Client
 // ====================================================
 class GoogleAuthClient extends http.BaseClient {
   final Map<String, String> _headers;
@@ -258,7 +257,7 @@ class GoogleAuthClient extends http.BaseClient {
 }
 
 // ====================================================
-// ✅ خدمة النسخ الاحتياطي (بدون تغيير)
+// ✅ خدمة النسخ الاحتياطي
 // ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
@@ -625,10 +624,9 @@ class AutoBackupService {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ تغيير نمط شريط الحالة إلى فاتح
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark, // أيقونات داكنة
+    statusBarIconBrightness: Brightness.dark,
     statusBarBrightness: Brightness.light,
   ));
 
@@ -661,7 +659,7 @@ void main() async {
 }
 
 // ----------------------------------------------------
-// 1. قاعدة البيانات (بدون تغيير)
+// 1. قاعدة البيانات
 // ----------------------------------------------------
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
@@ -788,7 +786,7 @@ class AppDBHelper {
 }
 
 // ----------------------------------------------------
-// 2. إدارة البيانات (بدون تغيير)
+// 2. إدارة البيانات
 // ----------------------------------------------------
 class AppAccountProvider extends ChangeNotifier {
   List<Map<String, dynamic>> customers = [];
@@ -1405,7 +1403,7 @@ class AppAccountProvider extends ChangeNotifier {
 }
 
 // ----------------------------------------------------
-// 3. التطبيق الرئيسي (معدل)
+// 3. التطبيق الرئيسي
 // ----------------------------------------------------
 class AlMuhasibApp extends StatelessWidget {
   const AlMuhasibApp({super.key});
@@ -1423,6 +1421,7 @@ class AlMuhasibApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: ThemeData(
+        fontFamily: 'Cairo',
         primaryColor: AppColors.primary,
         scaffoldBackgroundColor: AppColors.background,
         colorScheme: const ColorScheme.light(
@@ -1432,18 +1431,18 @@ class AlMuhasibApp extends StatelessWidget {
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.black, // ✅ نص داكن
+          foregroundColor: Colors.black,
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-            color: Colors.black, // ✅ نص داكن
+            color: Colors.black,
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Colors.white, // ✅ خلفية بيضاء
-          foregroundColor: AppColors.gold, // ✅ أيقونة ذهبية
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.gold,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -1500,9 +1499,7 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.appBarGradient,
-      ),
+      color: AppColors.solidBlue,
       child: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -1511,8 +1508,8 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
         leading: leading,
         bottom: bottom,
         toolbarHeight: toolbarHeight,
-        foregroundColor: Colors.black, // ✅ نص داكن
-        iconTheme: const IconThemeData(color: Colors.black), // ✅ أيقونات داكنة
+        foregroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
     );
   }
@@ -1523,7 +1520,7 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 // ----------------------------------------------------
-// 4. الشاشة الرئيسية (معدلة)
+// 4. الشاشة الرئيسية
 // ----------------------------------------------------
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -2065,9 +2062,7 @@ class _HomeScreenState extends State<HomeScreen>
               bottomRight: Radius.circular(8),
             ),
             child: Container(
-              decoration: const BoxDecoration(
-                gradient: AppColors.appBarGradient,
-              ),
+              color: AppColors.solidBlue,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2078,7 +2073,7 @@ class _HomeScreenState extends State<HomeScreen>
                         IconButton(
                           icon: const Icon(
                             Icons.menu,
-                            color: Colors.black, // ✅ داكن
+                            color: Colors.black,
                             size: 26,
                           ),
                           onPressed: () =>
@@ -2089,14 +2084,14 @@ class _HomeScreenState extends State<HomeScreen>
                           children: const [
                             Icon(
                               Icons.menu_book,
-                              color: Colors.black, // ✅ داكن
+                              color: Colors.black,
                               size: 24,
                             ),
                             SizedBox(width: 8),
                             Text(
                               'المحاسب',
                               style: TextStyle(
-                                color: Colors.black, // ✅ داكن
+                                color: Colors.black,
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -2107,7 +2102,7 @@ class _HomeScreenState extends State<HomeScreen>
                         IconButton(
                           icon: const Icon(
                             Icons.search,
-                            color: Colors.black, // ✅ داكن
+                            color: Colors.black,
                             size: 26,
                           ),
                           onPressed: _showSearchDialog,
@@ -2121,10 +2116,10 @@ class _HomeScreenState extends State<HomeScreen>
                     child: TabBar(
                       controller: _tabController,
                       isScrollable: true,
-                      indicatorColor: AppColors.primary, // ✅ مؤشر داكن
+                      indicatorColor: AppColors.primary,
                       indicatorWeight: 3,
-                      labelColor: Colors.black, // ✅ نص نشط داكن
-                      unselectedLabelColor: Colors.black54, // ✅ نص غير نشط رمادي داكن
+                      labelColor: Colors.black,
+                      unselectedLabelColor: Colors.black54,
                       labelStyle: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 15),
                       tabs: categories
@@ -2145,9 +2140,7 @@ class _HomeScreenState extends State<HomeScreen>
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
-              decoration: const BoxDecoration(
-                gradient: AppColors.appBarGradient,
-              ),
+              color: AppColors.solidBlue,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2168,7 +2161,7 @@ class _HomeScreenState extends State<HomeScreen>
                   const Text(
                     'تطبيق المحاسب',
                     style: TextStyle(
-                      color: Colors.black, // ✅ داكن
+                      color: Colors.black,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -2176,7 +2169,7 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(height: 8),
                   const Text(
                     'المهندس : اسامه الاضرعي',
-                    style: TextStyle(color: Colors.black54, fontSize: 14), // ✅ داكن
+                    style: TextStyle(color: Colors.black54, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -2186,7 +2179,7 @@ class _HomeScreenState extends State<HomeScreen>
                       Text(
                         '770638276',
                         style:
-                            TextStyle(color: Colors.black54, fontSize: 14), // ✅ داكن
+                            TextStyle(color: Colors.black54, fontSize: 14),
                       ),
                     ],
                   ),
@@ -2335,7 +2328,6 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                             ),
                     ),
-                    // شريط المجاميع السفلي (معدل)
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 6),
@@ -2346,8 +2338,8 @@ class _HomeScreenState extends State<HomeScreen>
                             width: 56,
                             height: 56,
                             child: Material(
-                              color: Colors.white, // ✅ خلفية بيضاء
-                              borderRadius: BorderRadius.circular(28), // ✅ دائري
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(28),
                               elevation: 3,
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(28),
@@ -2361,7 +2353,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 child: const Center(
                                   child: Icon(
                                     Icons.add,
-                                    color: AppColors.gold, // ✅ أيقونة ذهبية
+                                    color: AppColors.gold,
                                     size: 30,
                                   ),
                                 ),
@@ -2374,7 +2366,7 @@ class _HomeScreenState extends State<HomeScreen>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                gradient: AppColors.summaryGradient, // ✅ أزرق فاتح
+                                color: AppColors.solidBlue,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
@@ -2387,7 +2379,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       Text(
                                         'عليه: ${formatNumber(totalTake)}',
                                         style: const TextStyle(
-                                          color: Colors.black, // ✅ داكن
+                                          color: Colors.black,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 18,
                                         ),
@@ -2395,7 +2387,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       Text(
                                         'له: ${formatNumber(totalGive)}',
                                         style: const TextStyle(
-                                          color: Colors.black, // ✅ داكن
+                                          color: Colors.black,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 18,
                                         ),
@@ -2405,14 +2397,14 @@ class _HomeScreenState extends State<HomeScreen>
                                   const SizedBox(height: 3),
                                   Container(
                                     height: 1,
-                                    color: Colors.black.withOpacity(0.2), // ✅ خط داكن
+                                    color: Colors.black.withOpacity(0.2),
                                   ),
                                   const SizedBox(height: 3),
                                   Center(
                                     child: Text(
                                       '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
                                       style: const TextStyle(
-                                        color: Colors.black, // ✅ داكن
+                                        color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 15,
                                       ),
@@ -2435,7 +2427,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ بطاقة الحساب (معدلة بخلفية رصاصية)
   Widget _buildCustomerCard(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> customer) {
     final int cId = int.parse(customer['id'].toString());
@@ -2463,7 +2454,7 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       height: 70,
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F5F5), // ✅ خلفية رصاصية فاتحة
+        color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -2891,7 +2882,7 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ----------------------------------------------------
-// 5. صفحة خيارات حفظ البيانات (بدون تغيير)
+// 5. صفحة خيارات حفظ البيانات
 // ----------------------------------------------------
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -3507,7 +3498,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       appBar: GradientAppBar(
         title: const Text('خيارات حفظ البيانات'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black), // ✅ داكن
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -3986,7 +3977,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 }
 
 // ----------------------------------------------------
-// 6. شاشة تفاصيل الحساب (معدلة)
+// 6. شاشة تفاصيل الحساب
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -4181,8 +4172,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final detailsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
     final dateCtrl = TextEditingController(
-        text:
-            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day}');
+        text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
     showDialog(
       context: context,
@@ -4216,49 +4206,74 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'المبلغ',
-                      prefixIcon: Icon(Icons.attach_money),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() {
-                          selectedDate = picked;
-                          dateCtrl.text =
-                              '${picked.year}-${picked.month}-${picked.day}';
-                        });
-                      }
-                    },
-                    child: AbsorbPointer(
-                      child: TextField(
-                        controller: dateCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'التاريخ',
-                          prefixIcon: Icon(Icons.calendar_today),
-                          suffixIcon: Icon(Icons.edit, size: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: amountCtrl,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.right,
+                          decoration: const InputDecoration(
+                            labelText: 'المبلغ',
+                            border: UnderlineInputBorder(),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        flex: 2,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: selectedDate,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                selectedDate = picked;
+                                dateCtrl.text =
+                                    '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
+                              });
+                            }
+                          },
+                          child: AbsorbPointer(
+                            child: TextField(
+                              controller: dateCtrl,
+                              textAlign: TextAlign.right,
+                              decoration: const InputDecoration(
+                                labelText: 'التاريخ',
+                                border: UnderlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: detailsCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'التفاصيل / البيان',
-                      prefixIcon: Icon(Icons.notes),
-                    ),
+                  const SizedBox(height: 15),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: detailsCtrl,
+                          textAlign: TextAlign.right,
+                          decoration: const InputDecoration(
+                            labelText: 'التفاصيل / البيان',
+                            border: UnderlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt, color: Colors.grey),
+                        onPressed: () {
+                          // TODO: فتح الكاميرا أو الملفات
+                        },
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -4300,9 +4315,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             backgroundColor: AppColors.red,
                             foregroundColor: Colors.white,
                             padding:
-                                const EdgeInsets.symmetric(vertical: 16),
+                                const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                             ),
                           ),
                           child: const Text('عليه',
@@ -4349,9 +4364,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             backgroundColor: AppColors.green,
                             foregroundColor: Colors.white,
                             padding:
-                                const EdgeInsets.symmetric(vertical: 16),
+                                const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                             ),
                           ),
                           child: const Text('له',
@@ -4405,29 +4420,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.customer['name'].toString(),
-                style: const TextStyle(fontSize: 18, color: Colors.black)), // ✅ داكن
+                style: const TextStyle(fontSize: 18, color: Colors.black)),
             if (widget.customer['phone'] != null &&
                 widget.customer['phone'].toString().trim().isNotEmpty)
               Text(
                 widget.customer['phone'].toString(),
-                style: const TextStyle(fontSize: 13, color: Colors.black54), // ✅ داكن
+                style: const TextStyle(fontSize: 13, color: Colors.black54),
               ),
           ],
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black), // ✅ داكن
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf, color: AppColors.gold), // يبقى ذهبي
+            icon: const Icon(Icons.picture_as_pdf, color: AppColors.gold),
             onPressed: () => _exportToPdf(
                 processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
             icon: const Icon(
               Icons.chat,
-              color: AppColors.whatsapp, // يبقى أخضر واتساب
+              color: AppColors.whatsapp,
               size: 26,
             ),
             tooltip: 'إرسال عبر واتساب',
@@ -4455,11 +4470,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   )
                 : Column(
                     children: [
-                      // ✅ رأس الجدول (أزرق فاتح + نص داكن)
                       Container(
-                        decoration: const BoxDecoration(
-                          gradient: AppColors.summaryGradient,
-                        ),
+                        color: AppColors.solidBlue,
                         padding: const EdgeInsets.symmetric(
                             vertical: 12, horizontal: 4),
                         child: const Row(
@@ -4469,7 +4481,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 child: Text('التاريخ',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: Colors.black, // ✅ داكن
+                                        color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13))),
                             Expanded(
@@ -4477,7 +4489,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 child: Text('المبلغ',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: Colors.black, // ✅ داكن
+                                        color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13))),
                             Expanded(
@@ -4485,7 +4497,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 child: Text('التفاصيل',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: Colors.black, // ✅ داكن
+                                        color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13))),
                             Expanded(
@@ -4493,7 +4505,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 child: Text('الرصيد',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: Colors.black, // ✅ داكن
+                                        color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13))),
                           ],
@@ -4627,7 +4639,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
           ),
-          // ✅ شريط سفلي بتدرج أزرق فاتح
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             color: AppColors.background,
@@ -4637,8 +4648,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   width: 56,
                   height: 56,
                   child: Material(
-                    color: Colors.white, // ✅ خلفية بيضاء
-                    borderRadius: BorderRadius.circular(28), // ✅ دائري
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
                     elevation: 3,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(28),
@@ -4646,7 +4657,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       child: const Center(
                         child: Icon(
                           Icons.add,
-                          color: AppColors.gold, // ✅ أيقونة ذهبية
+                          color: AppColors.gold,
                           size: 30,
                         ),
                       ),
@@ -4659,7 +4670,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      gradient: AppColors.summaryGradient, // ✅ أزرق فاتح
+                      color: AppColors.solidBlue,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -4672,7 +4683,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             Text(
                               'عليه: ${formatNumber(totalTake)}',
                               style: const TextStyle(
-                                color: Colors.black, // ✅ داكن
+                                color: Colors.black,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
                               ),
@@ -4680,7 +4691,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             Text(
                               'له: ${formatNumber(totalGive)}',
                               style: const TextStyle(
-                                color: Colors.black, // ✅ داكن
+                                color: Colors.black,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
                               ),
@@ -4690,14 +4701,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         const SizedBox(height: 3),
                         Container(
                           height: 1,
-                          color: Colors.black.withOpacity(0.2), // ✅ خط داكن
+                          color: Colors.black.withOpacity(0.2),
                         ),
                         const SizedBox(height: 3),
                         Center(
                           child: Text(
                             '${finalBalance == 0 ? "الرصيد" : (finalBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(finalBalance.abs())}',
                             style: const TextStyle(
-                              color: Colors.black, // ✅ داكن
+                              color: Colors.black,
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
                             ),
@@ -4758,7 +4769,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final fontData =
           await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
       final fontBoldData =
-          await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
       final font = pw.Font.ttf(fontData);
       final fontBold = pw.Font.ttf(fontBoldData);
 
@@ -5062,7 +5073,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 }
 
 // ----------------------------------------------------
-// 7. شاشة إدارة التصنيفات (بدون تغيير)
+// 7. شاشة إدارة التصنيفات
 // ----------------------------------------------------
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
@@ -5075,7 +5086,7 @@ class CategoriesScreen extends StatelessWidget {
       appBar: GradientAppBar(
         title: const Text('إدارة التصنيفات'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black), // ✅ داكن
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -5510,7 +5521,7 @@ class CategoriesScreen extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// 8. شاشة إدارة العملات (بدون تغيير)
+// 8. شاشة إدارة العملات
 // ----------------------------------------------------
 class CurrenciesScreen extends StatelessWidget {
   const CurrenciesScreen({super.key});
@@ -5523,7 +5534,7 @@ class CurrenciesScreen extends StatelessWidget {
       appBar: GradientAppBar(
         title: const Text('إدارة العملات'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black), // ✅ داكن
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
