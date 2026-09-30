@@ -24,14 +24,22 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:image_picker/image_picker.dart';
 
+// ====================================================
+// ✅ دالة تنسيق الأرقام
+// ====================================================
 String formatNumber(double value) {
-  if (value == value.roundToDouble()) return value.toInt().toString();
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
   String str = value.toStringAsFixed(2);
   str = str.replaceAll(RegExp(r'0+$'), '');
   str = str.replaceAll(RegExp(r'\.$'), '');
   return str;
 }
 
+// ====================================================
+// ✅ الألوان
+// ====================================================
 class AppColors {
   static const Color primary = Color(0xFF1E3A5F);
   static const Color primaryLight = Color(0xFF3B7CB8);
@@ -53,13 +61,16 @@ class AppColors {
   static const Color textMuted = Color(0xFF6B7280);
 }
 
-// ==================== Google Drive Service ====================
+// ====================================================
+// ✅ خدمة Google Drive
+// ====================================================
 class GoogleDriveService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['https://www.googleapis.com/auth/drive.appdata'],
   );
   static GoogleSignInAccount? _currentUser;
   static drive.DriveApi? _driveApi;
+
   static bool get isSignedIn => _currentUser != null;
   static String? get userEmail => _currentUser?.email;
 
@@ -99,8 +110,10 @@ class GoogleDriveService {
     if (_driveApi == null) return 'الرجاء تسجيل الدخول أولاً';
     try {
       final now = DateTime.now();
-      final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}.db';
+      final fileName = 'al_muhasib_'
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_'
+          '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_'
+          '${now.second.toString().padLeft(2, '0')}.db';
       final fileContent = await dbFile.readAsBytes();
       final driveFile = drive.File()
         ..name = fileName
@@ -178,7 +191,9 @@ class GoogleAuthClient extends http.BaseClient {
   }
 }
 
-// ==================== AutoBackupService ====================
+// ====================================================
+// ✅ خدمة النسخ الاحتياطي
+// ====================================================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
   static const String _prefHour = 'auto_backup_hour';
@@ -306,9 +321,7 @@ class AutoBackupService {
           settings['hour'] as int, settings['minute'] as int);
       DateTime? lastBackup;
       final lastBackupStr = settings['lastBackup'] as String;
-      if (lastBackupStr.isNotEmpty) {
-        lastBackup = DateTime.tryParse(lastBackupStr);
-      }
+      if (lastBackupStr.isNotEmpty) lastBackup = DateTime.tryParse(lastBackupStr);
       bool shouldBackup = lastBackup == null ||
           (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
       if (!shouldBackup) return null;
@@ -331,9 +344,7 @@ class AutoBackupService {
           settings['driveHour'] as int, settings['driveMinute'] as int);
       DateTime? lastBackup;
       final lastBackupStr = settings['driveLastBackup'] as String;
-      if (lastBackupStr.isNotEmpty) {
-        lastBackup = DateTime.tryParse(lastBackupStr);
-      }
+      if (lastBackupStr.isNotEmpty) lastBackup = DateTime.tryParse(lastBackupStr);
       bool shouldBackup = lastBackup == null ||
           (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
       if (!shouldBackup) return null;
@@ -376,8 +387,9 @@ class AutoBackupService {
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
       final now = DateTime.now();
-      final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}.db';
+      final fileName = 'al_muhasib_'
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_'
+          '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}.db';
       await dbFile.copy(p.join(folderPath, fileName));
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
@@ -396,9 +408,7 @@ class AutoBackupService {
   }
 
   static Future<String?> runDriveBackupNow() async {
-    if (!GoogleDriveService.isSignedIn) {
-      return 'الرجاء تسجيل الدخول إلى Google';
-    }
+    if (!GoogleDriveService.isSignedIn) return 'الرجاء تسجيل الدخول إلى Google';
     try {
       final dbFile = await _getDatabaseFile();
       final error = await GoogleDriveService.uploadBackup(dbFile);
@@ -479,7 +489,9 @@ void main() async {
   });
 }
 
-// ==================== AppDBHelper ====================
+// ====================================================
+// 1. قاعدة البيانات
+// ====================================================
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
   static Database? _db;
@@ -585,7 +597,9 @@ class AppDBHelper {
   }
 }
 
-// ==================== AppAccountProvider ====================
+// ====================================================
+// 2. إدارة البيانات
+// ====================================================
 class AppAccountProvider extends ChangeNotifier {
   List<Map<String, dynamic>> customers = [];
   List<Map<String, dynamic>> categories = [];
@@ -798,7 +812,8 @@ class AppAccountProvider extends ChangeNotifier {
     try {
       final dbPath = await getDatabasesPath();
       final path = p.join(dbPath, 'al_muhasib_final_v6.db');
-      if (await File(path).exists()) {
+      final file = File(path);
+      if (await file.exists()) {
         await Share.shareXFiles([XFile(path)],
             text: 'نسخة احتياطية - تطبيق المحاسب');
       }
@@ -811,8 +826,8 @@ class AppAccountProvider extends ChangeNotifier {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       if (result != null && result.files.single.path != null) {
-        await AppDBHelper.instance
-            .restoreDatabase(File(result.files.single.path!));
+        File selectedFile = File(result.files.single.path!);
+        await AppDBHelper.instance.restoreDatabase(selectedFile);
         await loadInitialData();
         return true;
       }
@@ -828,6 +843,7 @@ class AppAccountProvider extends ChangeNotifier {
       await loadInitialData();
       return true;
     } catch (e) {
+      debugPrint('خطأ أثناء الاستعادة: $e');
       return false;
     }
   }
@@ -1068,7 +1084,9 @@ class AppAccountProvider extends ChangeNotifier {
   }
 }
 
-// ==================== AlMuhasibApp ====================
+// ====================================================
+// 3. التطبيق الرئيسي
+// ====================================================
 class AlMuhasibApp extends StatelessWidget {
   const AlMuhasibApp({super.key});
 
@@ -1099,9 +1117,7 @@ class AlMuhasibApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-              color: Colors.black,
-              fontSize: 18,
-              fontWeight: FontWeight.bold),
+              color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
           backgroundColor: Colors.white,
@@ -1111,8 +1127,8 @@ class AlMuhasibApp extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -1174,7 +1190,9 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
       Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
 }
 
-// ==================== HomeScreen ====================
+// ====================================================
+// 4. الشاشة الرئيسية
+// ====================================================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -1307,90 +1325,6 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
         ],
-      ),
-    );
-  }
-
-  void _showBackupOptionsSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(top: 10),
-            decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2)),
-          ),
-          const SizedBox(height: 15),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Text('النسخ الاحتياطي والاستعادة',
-                style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark)),
-          ),
-          const Divider(height: 20),
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.schedule, color: AppColors.goldDark),
-            ),
-            title: const Text('خيارات حفظ البيانات',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
-            onTap: () {
-              Navigator.pop(ctx);
-              Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const AutoBackupScreen()))
-                  .then((_) => _checkAutoBackup());
-            },
-          ),
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                  color: AppColors.green.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.smartphone, color: AppColors.green),
-            ),
-            title: const Text('النسخ الاحتياطي من الهاتف',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('حفظ / استعادة من الجهاز',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
-            onTap: () {
-              Navigator.pop(ctx);
-              _showBackupDialog(context);
-            },
-          ),
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                  color: AppColors.drive.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.cloud, color: AppColors.drive),
-            ),
-            title: const Text('النسخ الاحتياطي من Drive',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('حفظ / استعادة من Google Drive',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
-            onTap: () {
-              Navigator.pop(ctx);
-              _showBackupDialog(context, fromDrive: true);
-            },
-          ),
-          const SizedBox(height: 10),
-        ]),
       ),
     );
   }
@@ -1528,8 +1462,8 @@ class _HomeScreenState extends State<HomeScreen>
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             title: const Row(children: [
               Icon(Icons.check_circle, color: AppColors.green),
               SizedBox(width: 8),
@@ -1756,7 +1690,10 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
               Navigator.pop(context);
-              _showBackupOptionsSheet(context);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const BackupOptionsScreen()));
             },
           ),
           const Spacer(),
@@ -2294,7 +2231,135 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// ==================== AutoBackupScreen ====================
+// ====================================================
+// 5. صفحة خيارات النسخ الاحتياطي (الجديدة)
+// ====================================================
+class BackupOptionsScreen extends StatelessWidget {
+  const BackupOptionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: GradientAppBar(
+        title: const Text('النسخ الاحتياطي والاستعادة'),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: ListView(children: [
+        const SizedBox(height: 10),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.gold.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.schedule, color: AppColors.goldDark),
+          ),
+          title: const Text('خيارات حفظ البيانات',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AutoBackupScreen()));
+          },
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.green.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.smartphone, color: AppColors.green),
+          ),
+          title: const Text('النسخ الاحتياطي من الهاتف',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ / استعادة من الجهاز',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () {
+            _showBackupDialog(context);
+          },
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.drive.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.cloud, color: AppColors.drive),
+          ),
+          title: const Text('النسخ الاحتياطي من Drive',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ / استعادة من Google Drive',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () {
+            _showBackupDialog(context, fromDrive: true);
+          },
+        ),
+      ]),
+    );
+  }
+
+  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Row(children: [
+          Icon(fromDrive ? Icons.cloud : Icons.backup,
+              color: fromDrive ? AppColors.drive : AppColors.gold),
+          const SizedBox(width: 8),
+          Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
+        ]),
+        content: Text(fromDrive
+            ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
+            : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.download, color: AppColors.green),
+            label: const Text('استعادة نسخة',
+                style: TextStyle(color: AppColors.green)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              bool success = await provider.importBackup();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(success
+                      ? 'تمت استعادة البيانات بنجاح'
+                      : 'تعذر استعادة الملف'),
+                  backgroundColor: success ? AppColors.green : AppColors.red,
+                ));
+              }
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
+            icon: const Icon(Icons.upload),
+            label: const Text('حفظ نسخة'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              provider.exportBackup();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ====================================================
+// 6. صفحة خيارات حفظ البيانات
+// ====================================================
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
 
@@ -2305,8 +2370,10 @@ class AutoBackupScreen extends StatefulWidget {
 class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _enabled = false;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
-  String _folderPath = '', _lastBackup = '';
+  String _folderPath = '';
+  String _lastBackup = '';
   int _backupCount = 0;
+
   bool _driveEnabled = false;
   TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
   String _driveLastBackup = '';
@@ -2771,117 +2838,130 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           ),
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFFFF8E1), shape: BoxShape.circle),
-            child: const Icon(Icons.folder, color: Color(0xFFFFA000), size: 26),
-          ),
-          title: const Text('مجلد حفظ البيانات',
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFF8E1), shape: BoxShape.circle),
+              child:
+                  const Icon(Icons.folder, color: Color(0xFFFFA000), size: 26),
+            ),
+            title: const Text('مجلد حفظ البيانات',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text(
+              _folderPath.isEmpty ? 'لم يتم تحديد مجلد' : '$_folderPath/',
               style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text(
-            _folderPath.isEmpty ? 'لم يتم تحديد مجلد' : '$_folderPath/',
-            style: TextStyle(
-                fontSize: 13,
-                color: _folderPath.isEmpty
-                    ? AppColors.red
-                    : AppColors.textMuted),
+                  fontSize: 13,
+                  color: _folderPath.isEmpty
+                      ? AppColors.red
+                      : AppColors.textMuted),
+            ),
+            onTap: () async {
+              if (_folderPath.isEmpty) {
+                await _pickFolder();
+              } else {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    title: const Text('مجلد حفظ البيانات'),
+                    content: SelectableText(_folderPath,
+                        style: const TextStyle(fontSize: 13)),
+                    actions: [
+                      TextButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _pickFolder();
+                          },
+                          child: const Text('تغيير المجلد')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.gold),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('حسناً'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
           ),
-          onTap: () async {
-            if (_folderPath.isEmpty) {
-              await _pickFolder();
-            } else {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  title: const Text('مجلد حفظ البيانات'),
-                  content: SelectableText(_folderPath,
-                      style: const TextStyle(fontSize: 13)),
-                  actions: [
-                    TextButton(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _pickFolder();
-                        },
-                        child: const Text('تغيير المجلد')),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.gold),
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('حسناً'),
-                    ),
-                  ],
-                ),
-              );
-            }
-          },
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFE3F2FD), shape: BoxShape.circle),
-            child: const Icon(Icons.access_time,
-                color: Color(0xFF1976D2), size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+              child: const Icon(Icons.access_time,
+                  color: Color(0xFF1976D2), size: 26),
+            ),
+            title: const Text('وقت حفظ البيانات',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text(
+              '${_selectedTime.hour.toString().padLeft(2, '0')}:'
+              '${_selectedTime.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            onTap: _pickTime,
           ),
-          title: const Text('وقت حفظ البيانات',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text(
-            '${_selectedTime.hour.toString().padLeft(2, '0')}:'
-            '${_selectedTime.minute.toString().padLeft(2, '0')}',
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          onTap: _pickTime,
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFF3E5F5), shape: BoxShape.circle),
-            child: const Icon(Icons.history,
-                color: Color(0xFF7B1FA2), size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF3E5F5), shape: BoxShape.circle),
+              child: const Icon(Icons.history,
+                  color: Color(0xFF7B1FA2), size: 26),
+            ),
+            title: const Text('آخر نسخة محلية',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text(_formatDate(_lastBackup),
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted)),
           ),
-          title: const Text('آخر نسخة محلية',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text(_formatDate(_lastBackup),
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textMuted)),
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFE8F5E9), shape: BoxShape.circle),
-            child: const Icon(Icons.folder_copy,
-                color: Color(0xFF2E7D32), size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE8F5E9), shape: BoxShape.circle),
+              child: const Icon(Icons.folder_copy,
+                  color: Color(0xFF2E7D32), size: 26),
+            ),
+            title: const Text('عدد النسخ المحلية',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text('$_backupCount ملف',
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted)),
           ),
-          title: const Text('عدد النسخ المحلية',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text('$_backupCount ملف',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textMuted)),
         ),
         const SizedBox(height: 20),
         Container(
@@ -2924,8 +3004,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               _signedIn ? (_userEmail ?? '') : 'اضغط لتسجيل الدخول',
               style: TextStyle(
                   fontSize: 13,
-                  color:
-                      _signedIn ? AppColors.green : AppColors.textMuted),
+                  color: _signedIn ? AppColors.green : AppColors.textMuted),
             ),
             trailing: _signedIn
                 ? IconButton(
@@ -2957,74 +3036,80 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark)),
             subtitle: Text(
-              _signedIn
-                  ? 'رفع نسخة يومياً (بشرط تغير البيانات)'
-                  : 'سجّل الدخول أولاً',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textMuted),
+              _signedIn ? 'رفع نسخة يومياً (بشرط تغير البيانات)' : 'سجّل الدخول أولاً',
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
           ),
         ),
         const Divider(height: 1),
-        ListTile(
-          enabled: _signedIn,
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFE3F2FD), shape: BoxShape.circle),
-            child: const Icon(Icons.schedule,
-                color: AppColors.drive, size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            enabled: _signedIn,
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+              child: const Icon(Icons.schedule,
+                  color: AppColors.drive, size: 26),
+            ),
+            title: const Text('وقت النسخ على Drive',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text(
+              '${_driveTime.hour.toString().padLeft(2, '0')}:'
+              '${_driveTime.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            onTap: _signedIn ? _pickDriveTime : null,
           ),
-          title: const Text('وقت النسخ على Drive',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text(
-            '${_driveTime.hour.toString().padLeft(2, '0')}:'
-            '${_driveTime.minute.toString().padLeft(2, '0')}',
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          onTap: _signedIn ? _pickDriveTime : null,
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFF3E5F5), shape: BoxShape.circle),
-            child: const Icon(Icons.history,
-                color: Color(0xFF7B1FA2), size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF3E5F5), shape: BoxShape.circle),
+              child: const Icon(Icons.history,
+                  color: Color(0xFF7B1FA2), size: 26),
+            ),
+            title: const Text('آخر نسخة على Drive',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text(_formatDate(_driveLastBackup),
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted)),
           ),
-          title: const Text('آخر نسخة على Drive',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text(_formatDate(_driveLastBackup),
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textMuted)),
         ),
         const Divider(height: 1),
-        ListTile(
-          leading: Container(
-            width: 45,
-            height: 45,
-            decoration: const BoxDecoration(
-                color: Color(0xFFE8F5E9), shape: BoxShape.circle),
-            child: const Icon(Icons.cloud_done,
-                color: Color(0xFF2E7D32), size: 26),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE8F5E9), shape: BoxShape.circle),
+              child: const Icon(Icons.cloud_done,
+                  color: Color(0xFF2E7D32), size: 26),
+            ),
+            title: const Text('عدد النسخ على Drive',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: Text('$_driveBackupCount / 5 ملف',
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted)),
           ),
-          title: const Text('عدد النسخ على Drive',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark)),
-          subtitle: Text('$_driveBackupCount / 5 ملف',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textMuted)),
         ),
         const SizedBox(height: 20),
         if (_enabled && _folderPath.isNotEmpty)
@@ -3089,7 +3174,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 }
 
-// ==================== CustomerDetailsScreen ====================
+// ====================================================
+// 7. شاشة تفاصيل الحساب
+// ====================================================
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
   const CustomerDetailsScreen({super.key, required this.customer});
@@ -3124,54 +3211,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         return {'date': parts[0], 'time': parts.sublist(1).join(' ')};
       }
       return {'date': rawDateTime, 'time': ''};
-    }
-  }
-
-  Future<void> _pickImageSource(BuildContext context, {bool isEdit = false, Map<String, dynamic>? tx}) async {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: const Text('اختر مصدر الصورة', textAlign: TextAlign.center),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            TextButton.icon(
-              icon: const Icon(Icons.camera_alt, size: 32, color: AppColors.primary),
-              label: const Text('الكاميرا'),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final img = await ImagePicker().pickImage(
-                    source: ImageSource.camera, imageQuality: 60);
-                if (img != null) {
-                  final bytes = await img.readAsBytes();
-                  _handleImagePicked(base64Encode(bytes), isEdit, tx);
-                }
-              },
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.photo_library, size: 32, color: AppColors.primary),
-              label: const Text('الهاتف'),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final img = await ImagePicker().pickImage(
-                    source: ImageSource.gallery, imageQuality: 60);
-                if (img != null) {
-                  final bytes = await img.readAsBytes();
-                  _handleImagePicked(base64Encode(bytes), isEdit, tx);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _handleImagePicked(String base64Image, bool isEdit, Map<String, dynamic>? tx) {
-    if (isEdit && tx != null) {
-      final provider = Provider.of<AppAccountProvider>(context, listen: false);
-      _updateTransactionImage(provider, int.parse(tx['id'].toString()), base64Image);
     }
   }
 
@@ -3232,7 +3271,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة تعديل العملية (مطابقة لنافذة الإضافة) ==========
+  // ✅ نافذة تعديل العملية (مطابقة لنافذة الإضافة)
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
     final amountCtrl = TextEditingController(text: (tx['amount'] as num).toString());
     final detailsCtrl = TextEditingController(text: tx['details']?.toString() ?? '');
@@ -3243,7 +3282,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       selectedDate = DateTime.now();
     }
     String? selectedImageBase64 = tx['image_data']?.toString();
-    String selectedType = tx['type'].toString();
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
@@ -3254,21 +3292,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
           titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-          title: Row(
-            children: [
-              IconButton(
+          title: Row(children: [
+            IconButton(
                 icon: const Icon(Icons.close, size: 22),
                 onPressed: () => Navigator.pop(ctx),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-              const Spacer(),
-              const Text('تعديل العملية',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              const Icon(Icons.edit, color: AppColors.primary),
-            ],
-          ),
+                constraints: const BoxConstraints()),
+            const Spacer(),
+            const Text('تعديل العملية',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 6),
+            const Icon(Icons.edit, color: AppColors.primary),
+          ]),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -3384,7 +3419,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         : GestureDetector(
                             onTap: () => _showImageOptionsSheet(
                                 context,
-                                Provider.of<AppAccountProvider>(context, listen: false),
+                                Provider.of<AppAccountProvider>(context,
+                                    listen: false),
                                 tx),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(6),
@@ -3473,7 +3509,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة إضافة عملية جديدة ==========
+  // ✅ نافذة إضافة عملية جديدة
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -3489,21 +3525,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
           titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-          title: Row(
-            children: [
-              IconButton(
+          title: Row(children: [
+            IconButton(
                 icon: const Icon(Icons.close, size: 22),
                 onPressed: () => Navigator.pop(ctx),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-              const Spacer(),
-              const Text('إضافة عملية جديدة',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              const Icon(Icons.add_circle_outline, color: AppColors.primary),
-            ],
-          ),
+                constraints: const BoxConstraints()),
+            const Spacer(),
+            const Text('إضافة عملية جديدة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 6),
+            const Icon(Icons.add_circle_outline, color: AppColors.primary),
+          ]),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -3632,7 +3665,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     child: ElevatedButton(
                       onPressed: () {
                         final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
+                        if (amount == null || amount <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('الرجاء إدخال المبلغ'),
+                                backgroundColor: AppColors.red),
+                          );
+                          return;
+                        }
                         final now = DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
@@ -3665,7 +3705,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     child: ElevatedButton(
                       onPressed: () {
                         final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
+                        if (amount == null || amount <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('الرجاء إدخال المبلغ'),
+                                backgroundColor: AppColors.red),
+                          );
+                          return;
+                        }
                         final now = DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
@@ -3702,7 +3749,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة عرض تفاصيل العملية ==========
   void _showTransactionDetailsDialog(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> tx) {
     final bool isGive = tx['type'] == 'give';
@@ -3788,7 +3834,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== Bottom Sheet خيارات الصورة ==========
   void _showImageOptionsSheet(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> tx) {
     final int txId = int.parse(tx['id'].toString());
@@ -4001,8 +4046,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         return InkWell(
                           onTap: () => _showTransactionDetailsDialog(
                               context, provider, tx),
-                          onLongPress: () =>
-                              _showTransactionOptionsModal(context, provider, tx),
+                          onLongPress: () => _showTransactionOptionsModal(
+                              context, provider, tx),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 vertical: 10, horizontal: 4),
@@ -4342,7 +4387,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 }
 
-// ==================== CategoriesScreen ====================
+// ====================================================
+// 8. شاشة إدارة التصنيفات
+// ====================================================
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
 
@@ -4571,7 +4618,9 @@ class CategoriesScreen extends StatelessWidget {
   }
 }
 
-// ==================== CurrenciesScreen ====================
+// ====================================================
+// 9. شاشة إدارة العملات
+// ====================================================
 class CurrenciesScreen extends StatelessWidget {
   const CurrenciesScreen({super.key});
 
