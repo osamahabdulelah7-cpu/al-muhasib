@@ -840,6 +840,40 @@ class AppAccountProvider extends ChangeNotifier {
     }
   }
 
+  // ✅ دالة لجلب التفاصيل الفريدة (للاقتراحات)
+  Future<List<String>> getDistinctDetails({String query = ''}) async {
+    try {
+      final db = await AppDBHelper.instance.database;
+      List<Map<String, dynamic>> result;
+      if (query.trim().isEmpty) {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL AND TRIM(details) != ''
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 50
+        ''');
+      } else {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL AND TRIM(details) != '' 
+            AND details LIKE ?
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 30
+        ''', ['$query%']);
+      }
+      return result
+          .map((row) => (row['details'] ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> importFromExcel(File excelFile,
       {int? categoryId}) async {
     final fileName = excelFile.path.toLowerCase();
@@ -3287,6 +3321,63 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ========== قائمة الاقتراحات (Widget) ==========
+  Widget _buildSuggestionsList({
+    required List<String> suggestions,
+    required TextEditingController controller,
+    required VoidCallback onSelected,
+  }) {
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      constraints: const BoxConstraints(maxHeight: 200),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: suggestions.length > 5 ? 5 : suggestions.length,
+        itemBuilder: (ctx, i) {
+          return InkWell(
+            onTap: () {
+              controller.text = suggestions[i];
+              controller.selection = TextSelection.fromPosition(
+                  TextPosition(offset: controller.text.length));
+              onSelected();
+            },
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(children: [
+                Icon(Icons.history,
+                    size: 18, color: AppColors.primary.withOpacity(0.6)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    suggestions[i],
+                    style: const TextStyle(
+                        fontSize: 14, color: AppColors.textDark),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ========== نافذة تعديل العملية ==========
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
     double amt = (tx['amount'] as num).toDouble();
     String amtStr = amt == amt.roundToDouble()
@@ -3306,6 +3397,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     String? selectedImageBase64 = tx['image_data']?.toString();
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
+
+    List<String> suggestions = [];
+    bool showSuggestions = false;
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
       context: context,
@@ -3379,86 +3474,135 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ]),
                 const SizedBox(height: 15),
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(
-                    child: TextField(
-                      controller: detailsCtrl,
-                      textAlign: TextAlign.right,
-                      decoration: const InputDecoration(
-                          labelText: 'التفاصيل / البيان',
-                          border: UnderlineInputBorder()),
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Expanded(
+                      child: TextField(
+                        controller: detailsCtrl,
+                        textAlign: TextAlign.right,
+                        decoration: const InputDecoration(
+                            labelText: 'التفاصيل / البيان',
+                            border: UnderlineInputBorder()),
+                        onChanged: (val) async {
+                          if (val.length >= 2) {
+                            final allDetails = await provider
+                                .getDistinctDetails(); // كل التفاصيل
+                            final prefixMatches = allDetails
+                                .where((d) =>
+                                    d.startsWith(val) && d != val)
+                                .toList();
+                            final containsMatches = allDetails
+                                .where((d) =>
+                                    d.contains(val) &&
+                                    !d.startsWith(val) &&
+                                    d != val)
+                                .toList();
+                            final combined = [
+                              ...prefixMatches,
+                              ...containsMatches
+                            ];
+                            combined.sort((a, b) => a.compareTo(b));
+                            setDialogState(() {
+                              suggestions = combined;
+                              showSuggestions = combined.isNotEmpty;
+                            });
+                          } else {
+                            setDialogState(() {
+                              suggestions = [];
+                              showSuggestions = false;
+                            });
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (imageCtx) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          title: const Text('اختر مصدر الصورة'),
-                          content: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              TextButton.icon(
-                                icon: const Icon(Icons.camera_alt,
-                                    size: 32, color: AppColors.primary),
-                                label: const Text('الكاميرا'),
-                                onPressed: () async {
-                                  Navigator.pop(imageCtx);
-                                  final img = await ImagePicker().pickImage(
-                                      source: ImageSource.camera,
-                                      imageQuality: 60);
-                                  if (img != null) {
-                                    final bytes = await img.readAsBytes();
-                                    setDialogState(() => selectedImageBase64 =
-                                        base64Encode(bytes));
-                                  }
-                                },
-                              ),
-                              TextButton.icon(
-                                icon: const Icon(Icons.photo_library,
-                                    size: 32, color: AppColors.primary),
-                                label: const Text('الهاتف'),
-                                onPressed: () async {
-                                  Navigator.pop(imageCtx);
-                                  final img = await ImagePicker().pickImage(
-                                      source: ImageSource.gallery,
-                                      imageQuality: 60);
-                                  if (img != null) {
-                                    final bytes = await img.readAsBytes();
-                                    setDialogState(() => selectedImageBase64 =
-                                        base64Encode(bytes));
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                    child: selectedImageBase64 == null
-                        ? const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(Icons.camera_alt,
-                                color: Colors.grey, size: 28))
-                        : GestureDetector(
-                            onTap: () => _showImageOptionsSheet(
-                                context,
-                                Provider.of<AppAccountProvider>(context,
-                                    listen: false),
-                                tx),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.memory(
-                                  base64Decode(selectedImageBase64!),
-                                  width: 45,
-                                  height: 45,
-                                  fit: BoxFit.cover),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (imageCtx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            title: const Text('اختر مصدر الصورة'),
+                            content: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton.icon(
+                                  icon: const Icon(Icons.camera_alt,
+                                      size: 32, color: AppColors.primary),
+                                  label: const Text('الكاميرا'),
+                                  onPressed: () async {
+                                    Navigator.pop(imageCtx);
+                                    final img =
+                                        await ImagePicker().pickImage(
+                                            source: ImageSource.camera,
+                                            imageQuality: 60);
+                                    if (img != null) {
+                                      final bytes =
+                                          await img.readAsBytes();
+                                      setDialogState(() =>
+                                          selectedImageBase64 =
+                                              base64Encode(bytes));
+                                    }
+                                  },
+                                ),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.photo_library,
+                                      size: 32, color: AppColors.primary),
+                                  label: const Text('الهاتف'),
+                                  onPressed: () async {
+                                    Navigator.pop(imageCtx);
+                                    final img =
+                                        await ImagePicker().pickImage(
+                                            source: ImageSource.gallery,
+                                            imageQuality: 60);
+                                    if (img != null) {
+                                      final bytes =
+                                          await img.readAsBytes();
+                                      setDialogState(() =>
+                                          selectedImageBase64 =
+                                              base64Encode(bytes));
+                                    }
+                                  },
+                                ),
+                              ],
                             ),
                           ),
-                  ),
+                        );
+                      },
+                      child: selectedImageBase64 == null
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.camera_alt,
+                                  color: Colors.grey, size: 28))
+                          : GestureDetector(
+                              onTap: () => _showImageOptionsSheet(
+                                  context,
+                                  provider,
+                                  tx),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.memory(
+                                    base64Decode(selectedImageBase64!),
+                                    width: 45,
+                                    height: 45,
+                                    fit: BoxFit.cover),
+                              ),
+                            ),
+                    ),
+                  ]),
+                  if (showSuggestions)
+                    _buildSuggestionsList(
+                      suggestions: suggestions,
+                      controller: detailsCtrl,
+                      onSelected: () {
+                        setDialogState(() {
+                          suggestions = [];
+                          showSuggestions = false;
+                        });
+                      },
+                    ),
                 ]),
                 const SizedBox(height: 20),
                 Row(children: [
@@ -3471,8 +3615,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        Provider.of<AppAccountProvider>(context, listen: false)
-                            .updateTransaction(
+                        provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
                           amount,
@@ -3504,8 +3647,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        Provider.of<AppAccountProvider>(context, listen: false)
-                            .updateTransaction(
+                        provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
                           amount,
@@ -3536,6 +3678,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ========== نافذة إضافة عملية جديدة ==========
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -3543,6 +3686,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     String? selectedImageBase64;
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
+
+    List<String> suggestions = [];
+    bool showSuggestions = false;
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
       context: context,
@@ -3611,79 +3758,129 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ]),
                 const SizedBox(height: 15),
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(
-                    child: TextField(
-                      controller: detailsCtrl,
-                      textAlign: TextAlign.right,
-                      decoration: const InputDecoration(
-                          labelText: 'التفاصيل / البيان',
-                          border: UnderlineInputBorder()),
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Expanded(
+                      child: TextField(
+                        controller: detailsCtrl,
+                        textAlign: TextAlign.right,
+                        decoration: const InputDecoration(
+                            labelText: 'التفاصيل / البيان',
+                            border: UnderlineInputBorder()),
+                        onChanged: (val) async {
+                          if (val.length >= 2) {
+                            final allDetails = await provider
+                                .getDistinctDetails(); // كل التفاصيل
+                            final prefixMatches = allDetails
+                                .where((d) =>
+                                    d.startsWith(val) && d != val)
+                                .toList();
+                            final containsMatches = allDetails
+                                .where((d) =>
+                                    d.contains(val) &&
+                                    !d.startsWith(val) &&
+                                    d != val)
+                                .toList();
+                            final combined = [
+                              ...prefixMatches,
+                              ...containsMatches
+                            ];
+                            combined.sort((a, b) => a.compareTo(b));
+                            setDialogState(() {
+                              suggestions = combined;
+                              showSuggestions = combined.isNotEmpty;
+                            });
+                          } else {
+                            setDialogState(() {
+                              suggestions = [];
+                              showSuggestions = false;
+                            });
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (imageCtx) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          title: const Text('اختر مصدر الصورة'),
-                          content: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              TextButton.icon(
-                                icon: const Icon(Icons.camera_alt,
-                                    size: 32, color: AppColors.primary),
-                                label: const Text('الكاميرا'),
-                                onPressed: () async {
-                                  Navigator.pop(imageCtx);
-                                  final img = await ImagePicker().pickImage(
-                                      source: ImageSource.camera,
-                                      imageQuality: 60);
-                                  if (img != null) {
-                                    final bytes = await img.readAsBytes();
-                                    setDialogState(() => selectedImageBase64 =
-                                        base64Encode(bytes));
-                                  }
-                                },
-                              ),
-                              TextButton.icon(
-                                icon: const Icon(Icons.photo_library,
-                                    size: 32, color: AppColors.primary),
-                                label: const Text('الهاتف'),
-                                onPressed: () async {
-                                  Navigator.pop(imageCtx);
-                                  final img = await ImagePicker().pickImage(
-                                      source: ImageSource.gallery,
-                                      imageQuality: 60);
-                                  if (img != null) {
-                                    final bytes = await img.readAsBytes();
-                                    setDialogState(() => selectedImageBase64 =
-                                        base64Encode(bytes));
-                                  }
-                                },
-                              ),
-                            ],
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (imageCtx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            title: const Text('اختر مصدر الصورة'),
+                            content: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton.icon(
+                                  icon: const Icon(Icons.camera_alt,
+                                      size: 32, color: AppColors.primary),
+                                  label: const Text('الكاميرا'),
+                                  onPressed: () async {
+                                    Navigator.pop(imageCtx);
+                                    final img =
+                                        await ImagePicker().pickImage(
+                                            source: ImageSource.camera,
+                                            imageQuality: 60);
+                                    if (img != null) {
+                                      final bytes =
+                                          await img.readAsBytes();
+                                      setDialogState(() =>
+                                          selectedImageBase64 =
+                                              base64Encode(bytes));
+                                    }
+                                  },
+                                ),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.photo_library,
+                                      size: 32, color: AppColors.primary),
+                                  label: const Text('الهاتف'),
+                                  onPressed: () async {
+                                    Navigator.pop(imageCtx);
+                                    final img =
+                                        await ImagePicker().pickImage(
+                                            source: ImageSource.gallery,
+                                            imageQuality: 60);
+                                    if (img != null) {
+                                      final bytes =
+                                          await img.readAsBytes();
+                                      setDialogState(() =>
+                                          selectedImageBase64 =
+                                              base64Encode(bytes));
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    child: selectedImageBase64 == null
-                        ? const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(Icons.camera_alt,
-                                color: Colors.grey, size: 28))
-                        : ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: Image.memory(
-                                base64Decode(selectedImageBase64!),
-                                width: 45,
-                                height: 45,
-                                fit: BoxFit.cover),
-                          ),
-                  ),
+                        );
+                      },
+                      child: selectedImageBase64 == null
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.camera_alt,
+                                  color: Colors.grey, size: 28))
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.memory(
+                                  base64Decode(selectedImageBase64!),
+                                  width: 45,
+                                  height: 45,
+                                  fit: BoxFit.cover),
+                            ),
+                    ),
+                  ]),
+                  if (showSuggestions)
+                    _buildSuggestionsList(
+                      suggestions: suggestions,
+                      controller: detailsCtrl,
+                      onSelected: () {
+                        setDialogState(() {
+                          suggestions = [];
+                          showSuggestions = false;
+                        });
+                      },
+                    ),
                 ]),
                 const SizedBox(height: 20),
                 Row(children: [
@@ -3696,8 +3893,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        Provider.of<AppAccountProvider>(context, listen: false)
-                            .addTransaction(
+                        provider.addTransaction(
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'take',
@@ -3729,8 +3925,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        Provider.of<AppAccountProvider>(context, listen: false)
-                            .addTransaction(
+                        provider.addTransaction(
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'give',
@@ -4245,6 +4440,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final lightRed = PdfColor.fromHex("#FFCDD2");
       final black = PdfColors.black;
 
+      // ✅ قلب منطق الرصيد: "عليه" يزيد، "له" ينقص
       final List<pw.TableRow> dataRows = [];
       double newFinalBal = 0;
       double newTotalGive = 0;
@@ -4271,13 +4467,22 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             : formatNumber(newFinalBal);
 
         dataRows.add(pw.TableRow(children: [
-          _pdfCell(dateOnly, font, 10, black),
-          _pdfCell((tx['details'] ?? '').toString(), font, 10, black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), font, 10, black),
-          _pdfCell(isGive ? formatNumber(amt) : '-', font, 10, black),
-          _pdfCell(balStr, font, 10, black),
+          _pdfCell(dateOnly, font, 12, black),
+          _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
+          _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
+          _pdfCell(balStr, font, 12, black),
         ]));
       }
+
+      // ✅ المنطق الجديد: إذا كان "عليه" أكبر → الرصيد "عليه"، وإذا "له" أكبر → الرصيد "له"
+      final bool isOnHim = newTotalTake >= newTotalGive;
+      final String balanceText = isOnHim
+          ? 'الرصيد الإجمالي - عليه'
+          : 'الرصيد الإجمالي - له';
+      final double balanceValue =
+          (newTotalTake - newTotalGive).abs();
+      final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
 
       pdf.addPage(pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -4325,54 +4530,46 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               4: const pw.FlexColumnWidth(1.8),
             },
             children: [
+              // ✅ رأس الجدول يتكرر في كل صفحة
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: headerBg),
                 children: [
-                  _pdfCell('التاريخ', font, 12, black),
-                  _pdfCell('التفاصيل', font, 12, black),
-                  _pdfCell('عليه', font, 12, black),
-                  _pdfCell('له', font, 12, black),
-                  _pdfCell('الرصيد', font, 12, black),
+                  _pdfCell('التاريخ', font, 14, black),
+                  _pdfCell('التفاصيل', font, 14, black),
+                  _pdfCell('عليه', font, 14, black),
+                  _pdfCell('له', font, 14, black),
+                  _pdfCell('الرصيد', font, 14, black),
                 ],
               ),
               ...dataRows,
+              // ✅ صف الإجماليات
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: totalBg),
                 children: [
-                  _pdfCell('', font, 12, black),
-                  _pdfCell('إجمالي العمليات', font, 12, black),
-                  _pdfCell(formatNumber(newTotalTake), font, 12, redTotal),
-                  _pdfCell(formatNumber(newTotalGive), font, 12, greenTotal),
-                  _pdfCell('', font, 12, black),
+                  _pdfCell('', font, 14, black),
+                  _pdfCell('إجمالي العمليات', font, 14, black),
+                  _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
+                  _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
+                  _pdfCell('', font, 14, black),
                 ],
               ),
+              // ✅ صف الرصيد الإجمالي (بالمنطق الجديد)
               pw.TableRow(
-                decoration: pw.BoxDecoration(
-                    color: newFinalBal >= 0 ? lightGreen : lightRed),
+                decoration: pw.BoxDecoration(color: balanceRowColor),
                 children: [
-                  _pdfCell('', font, 12, black),
+                  _pdfCell('', font, 14, black),
+                  _pdfCell(balanceText, font, 14, black),
                   _pdfCell(
-                      newFinalBal >= 0
-                          ? 'الرصيد الإجمالي - له'
-                          : 'الرصيد الإجمالي - عليه',
+                      isOnHim ? formatNumber(balanceValue) : '',
                       font,
-                      12,
+                      14,
                       black),
                   _pdfCell(
-                      newFinalBal < 0
-                          ? formatNumber(newFinalBal.abs())
-                          : '',
+                      !isOnHim ? formatNumber(balanceValue) : '',
                       font,
-                      12,
+                      14,
                       black),
-                  _pdfCell(
-                      newFinalBal >= 0
-                          ? formatNumber(newFinalBal.abs())
-                          : '',
-                      font,
-                      12,
-                      black),
-                  _pdfCell('', font, 12, black),
+                  _pdfCell('', font, 14, black),
                 ],
               ),
             ],
@@ -4434,6 +4631,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     } catch (_) {}
   }
 }
+
 // ==================== CategoriesScreen ====================
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
