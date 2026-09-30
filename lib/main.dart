@@ -61,16 +61,13 @@ class AppColors {
   static const Color textMuted = Color(0xFF6B7280);
 }
 
-// ====================================================
-// ✅ خدمة Google Drive
-// ====================================================
+// ==================== Google Drive Service ====================
 class GoogleDriveService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['https://www.googleapis.com/auth/drive.appdata'],
   );
   static GoogleSignInAccount? _currentUser;
   static drive.DriveApi? _driveApi;
-
   static bool get isSignedIn => _currentUser != null;
   static String? get userEmail => _currentUser?.email;
 
@@ -110,10 +107,8 @@ class GoogleDriveService {
     if (_driveApi == null) return 'الرجاء تسجيل الدخول أولاً';
     try {
       final now = DateTime.now();
-      final fileName = 'al_muhasib_'
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_'
-          '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_'
-          '${now.second.toString().padLeft(2, '0')}.db';
+      final fileName =
+          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}.db';
       final fileContent = await dbFile.readAsBytes();
       final driveFile = drive.File()
         ..name = fileName
@@ -191,9 +186,7 @@ class GoogleAuthClient extends http.BaseClient {
   }
 }
 
-// ====================================================
-// ✅ خدمة النسخ الاحتياطي
-// ====================================================
+// ==================== AutoBackupService ====================
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
   static const String _prefHour = 'auto_backup_hour';
@@ -321,7 +314,9 @@ class AutoBackupService {
           settings['hour'] as int, settings['minute'] as int);
       DateTime? lastBackup;
       final lastBackupStr = settings['lastBackup'] as String;
-      if (lastBackupStr.isNotEmpty) lastBackup = DateTime.tryParse(lastBackupStr);
+      if (lastBackupStr.isNotEmpty) {
+        lastBackup = DateTime.tryParse(lastBackupStr);
+      }
       bool shouldBackup = lastBackup == null ||
           (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
       if (!shouldBackup) return null;
@@ -344,7 +339,9 @@ class AutoBackupService {
           settings['driveHour'] as int, settings['driveMinute'] as int);
       DateTime? lastBackup;
       final lastBackupStr = settings['driveLastBackup'] as String;
-      if (lastBackupStr.isNotEmpty) lastBackup = DateTime.tryParse(lastBackupStr);
+      if (lastBackupStr.isNotEmpty) {
+        lastBackup = DateTime.tryParse(lastBackupStr);
+      }
       bool shouldBackup = lastBackup == null ||
           (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
       if (!shouldBackup) return null;
@@ -387,9 +384,8 @@ class AutoBackupService {
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
       final now = DateTime.now();
-      final fileName = 'al_muhasib_'
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_'
-          '${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}.db';
+      final fileName =
+          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}.db';
       await dbFile.copy(p.join(folderPath, fileName));
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
@@ -408,7 +404,9 @@ class AutoBackupService {
   }
 
   static Future<String?> runDriveBackupNow() async {
-    if (!GoogleDriveService.isSignedIn) return 'الرجاء تسجيل الدخول إلى Google';
+    if (!GoogleDriveService.isSignedIn) {
+      return 'الرجاء تسجيل الدخول إلى Google';
+    }
     try {
       final dbFile = await _getDatabaseFile();
       final error = await GoogleDriveService.uploadBackup(dbFile);
@@ -489,9 +487,7 @@ void main() async {
   });
 }
 
-// ====================================================
-// 1. قاعدة البيانات
-// ====================================================
+// ==================== AppDBHelper ====================
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
   static Database? _db;
@@ -597,9 +593,7 @@ class AppDBHelper {
   }
 }
 
-// ====================================================
-// 2. إدارة البيانات
-// ====================================================
+// ==================== AppAccountProvider ====================
 class AppAccountProvider extends ChangeNotifier {
   List<Map<String, dynamic>> customers = [];
   List<Map<String, dynamic>> categories = [];
@@ -812,8 +806,7 @@ class AppAccountProvider extends ChangeNotifier {
     try {
       final dbPath = await getDatabasesPath();
       final path = p.join(dbPath, 'al_muhasib_final_v6.db');
-      final file = File(path);
-      if (await file.exists()) {
+      if (await File(path).exists()) {
         await Share.shareXFiles([XFile(path)],
             text: 'نسخة احتياطية - تطبيق المحاسب');
       }
@@ -826,8 +819,8 @@ class AppAccountProvider extends ChangeNotifier {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       if (result != null && result.files.single.path != null) {
-        File selectedFile = File(result.files.single.path!);
-        await AppDBHelper.instance.restoreDatabase(selectedFile);
+        await AppDBHelper.instance
+            .restoreDatabase(File(result.files.single.path!));
         await loadInitialData();
         return true;
       }
@@ -843,7 +836,6 @@ class AppAccountProvider extends ChangeNotifier {
       await loadInitialData();
       return true;
     } catch (e) {
-      debugPrint('خطأ أثناء الاستعادة: $e');
       return false;
     }
   }
@@ -1084,9 +1076,7 @@ class AppAccountProvider extends ChangeNotifier {
   }
 }
 
-// ====================================================
-// 3. التطبيق الرئيسي
-// ====================================================
+// ==================== AlMuhasibApp ====================
 class AlMuhasibApp extends StatelessWidget {
   const AlMuhasibApp({super.key});
 
@@ -1117,7 +1107,9 @@ class AlMuhasibApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-              color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.bold),
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
           backgroundColor: Colors.white,
@@ -1127,8 +1119,8 @@ class AlMuhasibApp extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -1189,10 +1181,7 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
 }
-
-// ====================================================
-// 4. الشاشة الرئيسية
-// ====================================================
+// ==================== HomeScreen ====================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -1300,7 +1289,92 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _showSearchDialog() {}
+  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Row(children: [
+          Icon(fromDrive ? Icons.cloud : Icons.backup,
+              color: fromDrive ? AppColors.drive : AppColors.gold),
+          const SizedBox(width: 8),
+          Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
+        ]),
+        content: Text(fromDrive
+            ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
+            : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.download, color: AppColors.green),
+            label: const Text('استعادة نسخة',
+                style: TextStyle(color: AppColors.green)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              bool success = await provider.importBackup();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(success
+                      ? 'تمت استعادة البيانات بنجاح'
+                      : 'تعذر استعادة الملف'),
+                  backgroundColor: success ? AppColors.green : AppColors.red,
+                ));
+              }
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
+            icon: const Icon(Icons.upload),
+            label: const Text('حفظ نسخة'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              provider.exportBackup();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSearchDialog() {
+    final searchCtrl = TextEditingController(text: searchQuery);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Row(children: [
+          Icon(Icons.search, color: AppColors.primary),
+          SizedBox(width: 8),
+          Text('البحث عن حساب'),
+        ]),
+        content: TextField(
+          controller: searchCtrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'اسم الحساب',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onChanged: (val) => setState(() => searchQuery = val),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () {
+                setState(() => searchQuery = '');
+                Navigator.pop(ctx);
+              },
+              child:
+                  const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('تم'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _importFromExcel(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
@@ -2186,9 +2260,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// ====================================================
-// 5. صفحة خيارات النسخ الاحتياطي
-// ====================================================
+// ==================== BackupOptionsScreen ====================
 class BackupOptionsScreen extends StatelessWidget {
   const BackupOptionsScreen({super.key});
 
@@ -2216,10 +2288,8 @@ class BackupOptionsScreen extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const AutoBackupScreen())),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
         ),
         const SizedBox(height: 8),
         ListTile(
@@ -2305,10 +2375,7 @@ class BackupOptionsScreen extends StatelessWidget {
     );
   }
 }
-
-// ====================================================
-// 6. صفحة خيارات حفظ البيانات
-// ====================================================
+// ==================== AutoBackupScreen ====================
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
 
@@ -2319,10 +2386,8 @@ class AutoBackupScreen extends StatefulWidget {
 class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _enabled = false;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
-  String _folderPath = '';
-  String _lastBackup = '';
+  String _folderPath = '', _lastBackup = '';
   int _backupCount = 0;
-
   bool _driveEnabled = false;
   TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
   String _driveLastBackup = '';
@@ -2953,7 +3018,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               _signedIn ? (_userEmail ?? '') : 'اضغط لتسجيل الدخول',
               style: TextStyle(
                   fontSize: 13,
-                  color: _signedIn ? AppColors.green : AppColors.textMuted),
+                  color:
+                      _signedIn ? AppColors.green : AppColors.textMuted),
             ),
             trailing: _signedIn
                 ? IconButton(
@@ -2985,8 +3051,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark)),
             subtitle: Text(
-              _signedIn ? 'رفع نسخة يومياً (بشرط تغير البيانات)' : 'سجّل الدخول أولاً',
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              _signedIn
+                  ? 'رفع نسخة يومياً (بشرط تغير البيانات)'
+                  : 'سجّل الدخول أولاً',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textMuted),
             ),
           ),
         ),
@@ -3123,9 +3192,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 }
 
-// ====================================================
-// 7. شاشة تفاصيل الحساب
-// ====================================================
+// ==================== CustomerDetailsScreen ====================
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
   const CustomerDetailsScreen({super.key, required this.customer});
@@ -3226,7 +3293,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ? amt.toInt().toString()
         : amt.toString();
     final amountCtrl = TextEditingController(text: amtStr);
-    final detailsCtrl = TextEditingController(text: tx['details']?.toString() ?? '');
+    amountCtrl.selection = TextSelection(
+        baseOffset: 0, extentOffset: amountCtrl.text.length);
+    final detailsCtrl =
+        TextEditingController(text: tx['details']?.toString() ?? '');
     DateTime selectedDate;
     try {
       selectedDate = DateTime.parse(tx['date'].toString().substring(0, 10));
@@ -3236,9 +3306,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     String? selectedImageBase64 = tx['image_data']?.toString();
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
-
-    amountCtrl.selection = TextSelection(
-        baseOffset: 0, extentOffset: amountCtrl.text.length);
 
     showDialog(
       context: context,
@@ -3624,14 +3691,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     child: ElevatedButton(
                       onPressed: () {
                         final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('الرجاء إدخال المبلغ'),
-                                backgroundColor: AppColors.red),
-                          );
-                          return;
-                        }
+                        if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
@@ -3664,14 +3724,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     child: ElevatedButton(
                       onPressed: () {
                         final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('الرجاء إدخال المبلغ'),
-                                backgroundColor: AppColors.red),
-                          );
-                          return;
-                        }
+                        if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
@@ -4005,8 +4058,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         return InkWell(
                           onTap: () => _showTransactionDetailsDialog(
                               context, provider, tx),
-                          onLongPress: () => _showTransactionOptionsModal(
-                              context, provider, tx),
+                          onLongPress: () =>
+                              _showTransactionOptionsModal(context, provider, tx),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 vertical: 10, horizontal: 4),
@@ -4177,7 +4230,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
 
     try {
-      final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
       final font = pw.Font.ttf(fontData);
 
       final pdf = pw.Document(
@@ -4193,10 +4246,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final black = PdfColors.black;
 
       final List<pw.TableRow> dataRows = [];
+      double newFinalBal = 0;
+      double newTotalGive = 0;
+      double newTotalTake = 0;
       for (var tx in txs) {
         final bool isGive = tx['type'] == 'give';
         final double amt = (tx['amount'] as num).toDouble();
-        final double runBal = (tx['running_balance'] as num).toDouble();
+        if (isGive) {
+          newFinalBal -= amt;
+          newTotalGive += amt;
+        } else {
+          newFinalBal += amt;
+          newTotalTake += amt;
+        }
         String dateOnly = tx['date'].toString();
         try {
           final dt = DateTime.parse(tx['date'].toString());
@@ -4204,9 +4266,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
 
-        final String balStr = runBal < 0
-            ? '-${formatNumber(runBal.abs())}'
-            : formatNumber(runBal);
+        final String balStr = newFinalBal < 0
+            ? '-${formatNumber(newFinalBal.abs())}'
+            : formatNumber(newFinalBal);
 
         dataRows.add(pw.TableRow(children: [
           _pdfCell(dateOnly, font, 10, black),
@@ -4242,8 +4304,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   pw.Text('تطبيق المحاسب',
                       style: pw.TextStyle(
                           font: font, fontSize: 10, color: black)),
-                  pw.Text(
-                      '${ctx.pageNumber} / ${ctx.pagesCount}',
+                  pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
                       style: pw.TextStyle(
                           font: font, fontSize: 10, color: black)),
                   pw.Text('المهندس : اسامه الاضرعي',
@@ -4267,11 +4328,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: headerBg),
                 children: [
-                  _pdfCell('التاريخ', font, 12, darkBlue),
-                  _pdfCell('التفاصيل', font, 12, darkBlue),
-                  _pdfCell('عليه', font, 12, darkBlue),
-                  _pdfCell('له', font, 12, darkBlue),
-                  _pdfCell('الرصيد', font, 12, darkBlue),
+                  _pdfCell('التاريخ', font, 12, black),
+                  _pdfCell('التفاصيل', font, 12, black),
+                  _pdfCell('عليه', font, 12, black),
+                  _pdfCell('له', font, 12, black),
+                  _pdfCell('الرصيد', font, 12, black),
                 ],
               ),
               ...dataRows,
@@ -4280,30 +4341,34 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 children: [
                   _pdfCell('', font, 12, black),
                   _pdfCell('إجمالي العمليات', font, 12, black),
-                  _pdfCell(formatNumber(totalTake), font, 12, redTotal),
-                  _pdfCell(formatNumber(totalGive), font, 12, greenTotal),
+                  _pdfCell(formatNumber(newTotalTake), font, 12, redTotal),
+                  _pdfCell(formatNumber(newTotalGive), font, 12, greenTotal),
                   _pdfCell('', font, 12, black),
                 ],
               ),
               pw.TableRow(
                 decoration: pw.BoxDecoration(
-                    color: finalBal >= 0 ? lightGreen : lightRed),
+                    color: newFinalBal >= 0 ? lightGreen : lightRed),
                 children: [
                   _pdfCell('', font, 12, black),
                   _pdfCell(
-                      finalBal >= 0
+                      newFinalBal >= 0
                           ? 'الرصيد الإجمالي - له'
                           : 'الرصيد الإجمالي - عليه',
                       font,
                       12,
                       black),
                   _pdfCell(
-                      finalBal < 0 ? formatNumber(finalBal.abs()) : '',
+                      newFinalBal < 0
+                          ? formatNumber(newFinalBal.abs())
+                          : '',
                       font,
                       12,
                       black),
                   _pdfCell(
-                      finalBal >= 0 ? formatNumber(finalBal.abs()) : '',
+                      newFinalBal >= 0
+                          ? formatNumber(newFinalBal.abs())
+                          : '',
                       font,
                       12,
                       black),
@@ -4340,7 +4405,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       padding: const pw.EdgeInsets.all(5),
       child: pw.Text(text,
           style: pw.TextStyle(
-              font: font, fontSize: size, color: color, fontWeight: pw.FontWeight.bold),
+              font: font,
+              fontSize: size,
+              color: color,
+              fontWeight: pw.FontWeight.bold),
           textAlign: pw.TextAlign.center),
     );
   }
@@ -4366,10 +4434,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     } catch (_) {}
   }
 }
-
-// ====================================================
-// 8. شاشة إدارة التصنيفات
-// ====================================================
+// ==================== CategoriesScreen ====================
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
 
@@ -4598,9 +4663,7 @@ class CategoriesScreen extends StatelessWidget {
   }
 }
 
-// ====================================================
-// 9. شاشة إدارة العملات
-// ====================================================
+// ==================== CurrenciesScreen ====================
 class CurrenciesScreen extends StatelessWidget {
   const CurrenciesScreen({super.key});
 
