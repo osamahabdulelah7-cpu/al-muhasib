@@ -1203,6 +1203,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   String searchQuery = '';
+  bool isSearching = false;
+  TextEditingController? searchController;
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -1210,6 +1212,23 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAutoBackup());
+  }
+
+  void _startSearch() {
+    setState(() {
+      isSearching = true;
+      searchController = TextEditingController();
+      searchQuery = '';
+    });
+  }
+
+  void _stopSearch() {
+    setState(() {
+      isSearching = false;
+      searchController?.dispose();
+      searchController = null;
+      searchQuery = '';
+    });
   }
 
   Future<void> _checkAutoBackup() async {
@@ -1281,92 +1300,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
-    final provider = Provider.of<AppAccountProvider>(context, listen: false);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: Row(children: [
-          Icon(fromDrive ? Icons.cloud : Icons.backup,
-              color: fromDrive ? AppColors.drive : AppColors.gold),
-          const SizedBox(width: 8),
-          Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
-        ]),
-        content: Text(fromDrive
-            ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
-            : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
-        actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.download, color: AppColors.green),
-            label: const Text('استعادة نسخة',
-                style: TextStyle(color: AppColors.green)),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              bool success = await provider.importBackup();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(success
-                      ? 'تمت استعادة البيانات بنجاح'
-                      : 'تعذر استعادة الملف'),
-                  backgroundColor: success ? AppColors.green : AppColors.red,
-                ));
-              }
-            },
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
-            icon: const Icon(Icons.upload),
-            label: const Text('حفظ نسخة'),
-            onPressed: () {
-              Navigator.pop(ctx);
-              provider.exportBackup();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSearchDialog() {
-    final searchCtrl = TextEditingController(text: searchQuery);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: const Row(children: [
-          Icon(Icons.search, color: AppColors.primary),
-          SizedBox(width: 8),
-          Text('البحث عن حساب'),
-        ]),
-        content: TextField(
-          controller: searchCtrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'اسم الحساب',
-            prefixIcon: const Icon(Icons.search),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          onChanged: (val) => setState(() => searchQuery = val),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () {
-                setState(() => searchQuery = '');
-                Navigator.pop(ctx);
-              },
-              child:
-                  const Text('إلغاء', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('تم'),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showSearchDialog() {}
 
   Future<void> _importFromExcel(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
@@ -1557,21 +1491,54 @@ class _HomeScreenState extends State<HomeScreen>
                       onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                     ),
                     const Spacer(),
-                    Row(children: const [
-                      Icon(Icons.menu_book, color: Colors.black, size: 24),
-                      SizedBox(width: 8),
-                      Text('المحاسب',
-                          style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold)),
-                    ]),
+                    if (!isSearching) ...[
+                      Row(children: const [
+                        Icon(Icons.menu_book, color: Colors.black, size: 24),
+                        SizedBox(width: 8),
+                        Text('المحاسب',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold)),
+                      ]),
+                    ] else
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TextField(
+                            controller: searchController,
+                            autofocus: true,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(color: Colors.black),
+                            decoration: const InputDecoration(
+                              hintText: 'ابحث في هذا التصنيف...',
+                              hintStyle: TextStyle(color: Colors.black54),
+                              border: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Colors.black)),
+                              focusedBorder: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Colors.black)),
+                              isDense: true,
+                            ),
+                            onChanged: (val) =>
+                                setState(() => searchQuery = val),
+                          ),
+                        ),
+                      ),
                     const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.search,
-                          color: Colors.black, size: 26),
-                      onPressed: _showSearchDialog,
-                    ),
+                    if (!isSearching)
+                      IconButton(
+                        icon: const Icon(Icons.search,
+                            color: Colors.black, size: 26),
+                        onPressed: _startSearch,
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.close,
+                            color: Colors.black, size: 26),
+                        onPressed: _stopSearch,
+                      ),
                     const SizedBox(width: 4),
                   ]),
                 ),
@@ -1839,19 +1806,17 @@ class _HomeScreenState extends State<HomeScreen>
     final String custName = (customer['name'] ?? 'حساب').toString();
     final double bal = provider.customerBalances[cId] ?? 0.0;
 
-    Color mainColor, circleColor, pillBg;
+    Color sideColor;
+    Color circleColor;
     if (bal > 0) {
-      mainColor = AppColors.greenDark;
+      sideColor = const Color(0xFF81C784);
       circleColor = AppColors.greenLight;
-      pillBg = AppColors.green;
     } else if (bal < 0) {
-      mainColor = AppColors.redDark;
+      sideColor = AppColors.redDark;
       circleColor = AppColors.redLight;
-      pillBg = AppColors.red;
     } else {
-      mainColor = AppColors.greenDark;
+      sideColor = const Color(0xFF81C784);
       circleColor = AppColors.greenLight;
-      pillBg = AppColors.green;
     }
 
     return Container(
@@ -1888,7 +1853,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: Container(
                 width: 5,
                 decoration: BoxDecoration(
-                    color: mainColor,
+                    color: sideColor,
                     borderRadius: const BorderRadius.only(
                         topRight: Radius.circular(8),
                         bottomRight: Radius.circular(8))),
@@ -1906,7 +1871,7 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                           color: circleColor, shape: BoxShape.circle),
                       alignment: Alignment.center,
-                      child: Icon(Icons.person, color: mainColor, size: 24),
+                      child: Icon(Icons.person, color: sideColor, size: 24),
                     ),
                   ),
                 ),
@@ -1929,27 +1894,16 @@ class _HomeScreenState extends State<HomeScreen>
                 SizedBox(
                   height: 70,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: pillBg,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text(formatNumber(bal.abs()),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15)),
+                    child: Text(
+                      formatNumber(bal.abs()),
+                      style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                SizedBox(
-                  height: 70,
-                  child: Center(
-                      child: Icon(Icons.arrow_back_ios,
-                          size: 14, color: AppColors.greyArrow)),
-                ),
+                const SizedBox(width: 10),
               ]),
             ),
           ]),
@@ -1961,6 +1915,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _tabController?.dispose();
+    searchController?.dispose();
     super.dispose();
   }
 
@@ -2232,7 +2187,7 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ====================================================
-// 5. صفحة خيارات النسخ الاحتياطي (الجديدة)
+// 5. صفحة خيارات النسخ الاحتياطي
 // ====================================================
 class BackupOptionsScreen extends StatelessWidget {
   const BackupOptionsScreen({super.key});
@@ -2261,12 +2216,10 @@ class BackupOptionsScreen extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const AutoBackupScreen()));
-          },
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AutoBackupScreen())),
         ),
         const SizedBox(height: 8),
         ListTile(
@@ -2282,9 +2235,7 @@ class BackupOptionsScreen extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text('حفظ / استعادة من الجهاز',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () {
-            _showBackupDialog(context);
-          },
+          onTap: () => _showBackupDialog(context),
         ),
         const SizedBox(height: 8),
         ListTile(
@@ -2300,9 +2251,7 @@ class BackupOptionsScreen extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text('حفظ / استعادة من Google Drive',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () {
-            _showBackupDialog(context, fromDrive: true);
-          },
+          onTap: () => _showBackupDialog(context, fromDrive: true),
         ),
       ]),
     );
@@ -3271,9 +3220,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ نافذة تعديل العملية (مطابقة لنافذة الإضافة)
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
-    final amountCtrl = TextEditingController(text: (tx['amount'] as num).toString());
+    double amt = (tx['amount'] as num).toDouble();
+    String amtStr = amt == amt.roundToDouble()
+        ? amt.toInt().toString()
+        : amt.toString();
+    final amountCtrl = TextEditingController(text: amtStr);
     final detailsCtrl = TextEditingController(text: tx['details']?.toString() ?? '');
     DateTime selectedDate;
     try {
@@ -3284,6 +3236,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     String? selectedImageBase64 = tx['image_data']?.toString();
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
+
+    amountCtrl.selection = TextSelection(
+        baseOffset: 0, extentOffset: amountCtrl.text.length);
 
     showDialog(
       context: context,
@@ -3315,6 +3270,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       controller: amountCtrl,
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.right,
+                      onTap: () {
+                        amountCtrl.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: amountCtrl.text.length);
+                      },
                       decoration: const InputDecoration(
                           labelText: 'المبلغ',
                           border: UnderlineInputBorder()),
@@ -3509,7 +3469,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ✅ نافذة إضافة عملية جديدة
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -4195,7 +4154,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ============ PDF (تصميم جديد) ============
+  // ============ PDF ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     if (mounted) {
@@ -4225,11 +4184,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           theme: pw.ThemeData.withFont(base: font, bold: font));
 
       final darkBlue = PdfColor.fromHex("#1E3A5F");
-      final greenText = PdfColor.fromHex("#1B5E20");
-      final redText = PdfColor.fromHex("#B71C1C");
+      final greenTotal = PdfColor.fromHex("#1B5E20");
+      final redTotal = PdfColor.fromHex("#B71C1C");
       final headerBg = PdfColor.fromHex("#CCCCCC");
+      final totalBg = PdfColor.fromHex("#E0E0E0");
       final lightGreen = PdfColor.fromHex("#C8E6C9");
       final lightRed = PdfColor.fromHex("#FFCDD2");
+      final black = PdfColors.black;
 
       final List<pw.TableRow> dataRows = [];
       for (var tx in txs) {
@@ -4243,36 +4204,56 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
 
+        final String balStr = runBal < 0
+            ? '-${formatNumber(runBal.abs())}'
+            : formatNumber(runBal);
+
         dataRows.add(pw.TableRow(children: [
-          _pdfCell(dateOnly, font, 11, darkBlue),
-          _pdfCell((tx['details'] ?? '').toString(), font, 11, darkBlue),
-          _pdfCell(isGive ? '-' : formatNumber(amt), font, 11, redText),
-          _pdfCell(isGive ? formatNumber(amt) : '-', font, 11, greenText),
-          _pdfCell(formatNumber(runBal.abs()), font, 11,
-              runBal >= 0 ? greenText : redText),
+          _pdfCell(dateOnly, font, 10, black),
+          _pdfCell((tx['details'] ?? '').toString(), font, 10, black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), font, 10, black),
+          _pdfCell(isGive ? formatNumber(amt) : '-', font, 10, black),
+          _pdfCell(balStr, font, 10, black),
         ]));
       }
 
       pdf.addPage(pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         textDirection: pw.TextDirection.rtl,
-        margin: const pw.EdgeInsets.all(20),
+        margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+        header: (pw.Context ctx) => pw.Container(
+          margin: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Center(
+            child: pw.Text(
+              'كشف حساب : ${widget.customer['name']}',
+              style: pw.TextStyle(
+                  font: font, fontSize: 18, color: darkBlue),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+        ),
+        footer: (pw.Context ctx) => pw.Container(
+          margin: const pw.EdgeInsets.only(top: 10),
+          child: pw.Column(children: [
+            pw.Divider(color: black),
+            pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('تطبيق المحاسب',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                  pw.Text(
+                      '${ctx.pageNumber} / ${ctx.pagesCount}',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                  pw.Text('المهندس : اسامه الاضرعي',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                ]),
+          ]),
+        ),
         build: (pw.Context context) => [
-          pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text('كشف حساب',
-                    style: pw.TextStyle(
-                        font: font, fontSize: 18, color: darkBlue)),
-                pw.Text('التاريخ: ${DateTime.now().toString().split(' ')[0]}',
-                    style: pw.TextStyle(
-                        font: font, fontSize: 12, color: darkBlue)),
-              ]),
-          pw.SizedBox(height: 15),
-          pw.Text('الحساب: ${widget.customer['name']}',
-              style:
-                  pw.TextStyle(font: font, fontSize: 14, color: darkBlue)),
-          pw.SizedBox(height: 15),
+          pw.SizedBox(height: 5),
           pw.Table(
             border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
             columnWidths: {
@@ -4295,40 +4276,38 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
               ...dataRows,
               pw.TableRow(
-                decoration: pw.BoxDecoration(color: PdfColors.white),
+                decoration: pw.BoxDecoration(color: totalBg),
                 children: [
-                  _pdfCell('', font, 12, darkBlue),
-                  _pdfCell('إجمالي العمليات', font, 12, darkBlue),
-                  _pdfCell(formatNumber(totalTake), font, 12, redText),
-                  _pdfCell(formatNumber(totalGive), font, 12, greenText),
-                  _pdfCell('', font, 12, darkBlue),
+                  _pdfCell('', font, 12, black),
+                  _pdfCell('إجمالي العمليات', font, 12, black),
+                  _pdfCell(formatNumber(totalTake), font, 12, redTotal),
+                  _pdfCell(formatNumber(totalGive), font, 12, greenTotal),
+                  _pdfCell('', font, 12, black),
                 ],
               ),
               pw.TableRow(
                 decoration: pw.BoxDecoration(
                     color: finalBal >= 0 ? lightGreen : lightRed),
                 children: [
-                  _pdfCell('', font, 12, darkBlue),
+                  _pdfCell('', font, 12, black),
                   _pdfCell(
                       finalBal >= 0
                           ? 'الرصيد الإجمالي - له'
                           : 'الرصيد الإجمالي - عليه',
                       font,
                       12,
-                      darkBlue),
-                  _pdfCell('', font, 12, darkBlue),
+                      black),
                   _pdfCell(
-                      finalBal >= 0
-                          ? formatNumber(finalBal.abs())
-                          : '0',
+                      finalBal < 0 ? formatNumber(finalBal.abs()) : '',
                       font,
                       12,
-                      darkBlue),
+                      black),
                   _pdfCell(
-                      finalBal < 0 ? formatNumber(finalBal.abs()) : '0',
+                      finalBal >= 0 ? formatNumber(finalBal.abs()) : '',
                       font,
                       12,
-                      darkBlue),
+                      black),
+                  _pdfCell('', font, 12, black),
                 ],
               ),
             ],
@@ -4360,7 +4339,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(5),
       child: pw.Text(text,
-          style: pw.TextStyle(font: font, fontSize: size, color: color),
+          style: pw.TextStyle(
+              font: font, fontSize: size, color: color, fontWeight: pw.FontWeight.bold),
           textAlign: pw.TextAlign.center),
     );
   }
