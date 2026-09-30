@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,6 +22,7 @@ import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/auth_io.dart' as auth;
+import 'package:image_picker/image_picker.dart';
 
 // ====================================================
 // ✅ دالة تنسيق الأرقام
@@ -36,7 +38,7 @@ String formatNumber(double value) {
 }
 
 // ====================================================
-// ✅ الألوان المعدلة
+// ✅ الألوان
 // ====================================================
 class AppColors {
   static const Color primary = Color(0xFF1E3A5F);
@@ -60,23 +62,13 @@ class AppColors {
   static const Color textDarkest = Color(0xFF0D1F3F);
   static const Color whatsapp = Color(0xFF25D366);
   static const Color drive = Color(0xFF4285F4);
-  
-  // ✅ الألوان الجديدة المطلوبة
-  static const Color background = Color(0xFFE0E0E0); // خلفية رصاصية
-  static const Color solidBlue = Color(0xFF7EB8E8); // أزرق ثابت
-  static const Color cardWhite = Colors.white; // البطاقات بيضاء
+
+  static const Color background = Color(0xFFE0E0E0);
+  static const Color solidBlue = Color(0xFF7EB8E8);
 
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
   static const Color summaryBar = Color(0xFF7EB8E8);
-
-  // تم إلغاء التدرجات واستبدالها بألوان ثابتة
-  static const LinearGradient appBarGradient = LinearGradient(
-    colors: [solidBlue, solidBlue],
-  );
-  static const LinearGradient summaryGradient = LinearGradient(
-    colors: [solidBlue, solidBlue],
-  );
 }
 
 // ====================================================
@@ -659,7 +651,7 @@ void main() async {
 }
 
 // ----------------------------------------------------
-// 1. قاعدة البيانات
+// 1. قاعدة البيانات (مع image_data)
 // ----------------------------------------------------
 class AppDBHelper {
   static final AppDBHelper instance = AppDBHelper._init();
@@ -678,7 +670,7 @@ class AppDBHelper {
     final path = p.join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -719,7 +711,8 @@ class AppDBHelper {
         amount REAL NOT NULL,
         type TEXT NOT NULL,
         details TEXT,
-        date TEXT NOT NULL
+        date TEXT NOT NULL,
+        image_data TEXT
       )
     ''');
 
@@ -769,6 +762,10 @@ class AppDBHelper {
         );
       }
     }
+
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN image_data TEXT');
+    }
   }
 
   Future<void> restoreDatabase(File newDbFile) async {
@@ -780,7 +777,7 @@ class AppDBHelper {
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
 
     await newDbFile.copy(path);
-    _db = await openDatabase(path, version: 3, onCreate: _createDB,
+    _db = await openDatabase(path, version: 4, onCreate: _createDB,
         onUpgrade: _upgradeDB);
   }
 }
@@ -1013,7 +1010,7 @@ class AppAccountProvider extends ChangeNotifier {
   }
 
   Future<void> addTransaction(int customerId, double amount, String type,
-      String details, String date) async {
+      String details, String date, {String? imageData}) async {
     final db = await AppDBHelper.instance.database;
     await db.insert('transactions', {
       'customer_id': customerId,
@@ -1021,6 +1018,7 @@ class AppAccountProvider extends ChangeNotifier {
       'type': type,
       'details': details,
       'date': date,
+      'image_data': imageData,
     });
     await db.update(
       'customers',
@@ -1033,7 +1031,7 @@ class AppAccountProvider extends ChangeNotifier {
   }
 
   Future<void> updateTransaction(int id, int customerId, double amount,
-      String type, String details) async {
+      String type, String details, {String? imageData}) async {
     final db = await AppDBHelper.instance.database;
     await db.update(
       'transactions',
@@ -1041,6 +1039,7 @@ class AppAccountProvider extends ChangeNotifier {
         'amount': amount,
         'type': type,
         'details': details,
+        if (imageData != null) 'image_data': imageData,
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -1478,7 +1477,7 @@ class AlMuhasibApp extends StatelessWidget {
 }
 
 // ----------------------------------------------------
-// ✅ AppBar بتدرج أزرق فاتح
+// ✅ AppBar
 // ----------------------------------------------------
 class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? title;
@@ -3977,7 +3976,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 }
 
 // ----------------------------------------------------
-// 6. شاشة تفاصيل الحساب
+// 6. شاشة تفاصيل الحساب (مع دعم الصور)
 // ----------------------------------------------------
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -4167,10 +4166,193 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ✅ نافذة عرض تفاصيل العملية مع الصورة
+  void _showTransactionDetailsDialog(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> tx) {
+    final bool isGive = tx['type'] == 'give';
+    final double amt = (tx['amount'] as num).toDouble();
+    final String details = tx['details']?.toString() ?? '';
+    final String dateStr = tx['date'].toString();
+    final String? imageData = tx['image_data']?.toString();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.all(16),
+        title: Row(
+          children: [
+            Icon(isGive ? Icons.arrow_downward : Icons.arrow_upward,
+                color: isGive ? AppColors.green : AppColors.red),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(widget.customer['name'].toString(),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _detailRow('المبلغ :', formatNumber(amt)),
+              const Divider(),
+              _detailRow('التاريخ :', dateStr.split(' ')[0]),
+              const Divider(),
+              _detailRow('التفاصيل :', details.isEmpty ? '-' : details),
+              if (imageData != null && imageData.isNotEmpty) ...[
+                const Divider(),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () => _showImageOptionsSheet(ctx, provider, tx),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      base64Decode(imageData),
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showEditTransactionDialog(context, tx);
+            },
+            child: const Text('تعديل',
+                style: TextStyle(color: AppColors.goldDark, fontSize: 15)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.green),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('موافق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(value,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15),
+                textAlign: TextAlign.right),
+          ),
+          const SizedBox(width: 8),
+          Text(label,
+              style: const TextStyle(color: Colors.grey, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+  void _showImageOptionsSheet(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> tx) {
+    final int txId = int.parse(tx['id'].toString());
+    final String? imageData = tx['image_data']?.toString();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (imageData != null && imageData.isNotEmpty) ...[
+              ListTile(
+                leading: const Icon(Icons.visibility, color: AppColors.green),
+                title: const Text('فتح الصورة'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showFullImage(context, imageData);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: AppColors.red),
+                title: const Text('حذف الصورة'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _updateTransactionImage(provider, txId, null);
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: AppColors.primary),
+              title: const Text('الكاميرا'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final img = await ImagePicker().pickImage(
+                    source: ImageSource.camera, imageQuality: 60);
+                if (img != null) {
+                  final bytes = await img.readAsBytes();
+                  await _updateTransactionImage(
+                      provider, txId, base64Encode(bytes));
+                  if (context.mounted) Navigator.pop(context);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: AppColors.primary),
+              title: const Text('الهاتف'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final img = await ImagePicker().pickImage(
+                    source: ImageSource.gallery, imageQuality: 60);
+                if (img != null) {
+                  final bytes = await img.readAsBytes();
+                  await _updateTransactionImage(
+                      provider, txId, base64Encode(bytes));
+                  if (context.mounted) Navigator.pop(context);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, String base64Data) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: InteractiveViewer(
+          child: Image.memory(base64Decode(base64Data)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateTransactionImage(
+      AppAccountProvider provider, int txId, String? imageData) async {
+    final db = await AppDBHelper.instance.database;
+    await db.update('transactions', {'image_data': imageData},
+        where: 'id = ?', whereArgs: [txId]);
+    await provider
+        .loadTransactions(int.parse(widget.customer['id'].toString()));
+  }
+
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
+    String? selectedImageBase64;
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
@@ -4267,11 +4449,32 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.camera_alt, color: Colors.grey),
-                        onPressed: () {
-                          // TODO: فتح الكاميرا أو الملفات
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () async {
+                          final img = await ImagePicker().pickImage(
+                              source: ImageSource.gallery, imageQuality: 60);
+                          if (img != null) {
+                            final bytes = await img.readAsBytes();
+                            setDialogState(() => selectedImageBase64 =
+                                base64Encode(bytes));
+                          }
                         },
+                        child: selectedImageBase64 == null
+                            ? const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(Icons.camera_alt,
+                                    color: Colors.grey, size: 28),
+                              )
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.memory(
+                                  base64Decode(selectedImageBase64!),
+                                  width: 45,
+                                  height: 45,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                       ),
                     ],
                   ),
@@ -4308,6 +4511,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               'take',
                               detailsCtrl.text,
                               dateStr,
+                              imageData: selectedImageBase64,
                             );
                             Navigator.pop(ctx);
                           },
@@ -4357,6 +4561,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               'give',
                               detailsCtrl.text,
                               dateStr,
+                              imageData: selectedImageBase64,
                             );
                             Navigator.pop(ctx);
                           },
@@ -4532,6 +4737,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                 : AppColors.red;
 
                             return InkWell(
+                              onTap: () => _showTransactionDetailsDialog(
+                                  context, provider, tx),
                               onLongPress: () {
                                 _showTransactionOptionsModal(
                                     context, provider, tx);
