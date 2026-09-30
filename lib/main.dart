@@ -4404,198 +4404,197 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   // ============ PDF ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
-      double totalTake, double finalBal) async {
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                CircularProgressIndicator(color: AppColors.gold),
-                SizedBox(height: 15),
-                Text('جاري إنتاج PDF...'),
-              ]),
-            ),
+    double totalTake, double finalBal) async {
+  if (mounted) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              CircularProgressIndicator(color: AppColors.gold),
+              SizedBox(height: 15),
+              Text('جاري إنتاج PDF...'),
+            ]),
           ),
         ),
-      );
-    }
-
-    try {
-      final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
-      final font = pw.Font.ttf(fontData);
-
-      final pdf = pw.Document(
-          theme: pw.ThemeData.withFont(base: font, bold: font));
-
-      final darkBlue = PdfColor.fromHex("#1E3A5F");
-      final greenTotal = PdfColor.fromHex("#1B5E20");
-      final redTotal = PdfColor.fromHex("#B71C1C");
-      final headerBg = PdfColor.fromHex("#CCCCCC");
-      final totalBg = PdfColor.fromHex("#E0E0E0");
-      final lightGreen = PdfColor.fromHex("#C8E6C9");
-      final lightRed = PdfColor.fromHex("#FFCDD2");
-      final black = PdfColors.black;
-
-      // ✅ قلب منطق الرصيد: "عليه" يزيد، "له" ينقص
-      final List<pw.TableRow> dataRows = [];
-      double newFinalBal = 0;
-      double newTotalGive = 0;
-      double newTotalTake = 0;
-      for (var tx in txs) {
-        final bool isGive = tx['type'] == 'give';
-        final double amt = (tx['amount'] as num).toDouble();
-        if (isGive) {
-          newFinalBal -= amt;
-          newTotalGive += amt;
-        } else {
-          newFinalBal += amt;
-          newTotalTake += amt;
-        }
-        String dateOnly = tx['date'].toString();
-        try {
-          final dt = DateTime.parse(tx['date'].toString());
-          dateOnly =
-              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-        } catch (_) {}
-
-        final String balStr = newFinalBal < 0
-            ? '-${formatNumber(newFinalBal.abs())}'
-            : formatNumber(newFinalBal);
-
-        dataRows.add(pw.TableRow(children: [
-          _pdfCell(dateOnly, font, 12, black),
-          _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
-          _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
-          _pdfCell(balStr, font, 12, black),
-        ]));
-      }
-
-      // ✅ المنطق الجديد: إذا كان "عليه" أكبر → الرصيد "عليه"، وإذا "له" أكبر → الرصيد "له"
-      final bool isOnHim = newTotalTake >= newTotalGive;
-      final String balanceText = isOnHim
-          ? 'الرصيد الإجمالي - عليه'
-          : 'الرصيد الإجمالي - له';
-      final double balanceValue =
-          (newTotalTake - newTotalGive).abs();
-      final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
-
-      pdf.addPage(pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        textDirection: pw.TextDirection.rtl,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
-        header: (pw.Context ctx) => pw.Container(
-          margin: const pw.EdgeInsets.only(bottom: 10),
-          child: pw.Center(
-            child: pw.Text(
-              'كشف حساب : ${widget.customer['name']}',
-              style: pw.TextStyle(
-                  font: font, fontSize: 18, color: darkBlue),
-              textAlign: pw.TextAlign.center,
-            ),
-          ),
-        ),
-        footer: (pw.Context ctx) => pw.Container(
-          margin: const pw.EdgeInsets.only(top: 10),
-          child: pw.Column(children: [
-            pw.Divider(color: black),
-            pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('تطبيق المحاسب',
-                      style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
-                  pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
-                      style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
-                  pw.Text('المهندس : اسامه الاضرعي',
-                      style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
-                ]),
-          ]),
-        ),
-        build: (pw.Context context) => [
-          pw.SizedBox(height: 5),
-          pw.Table(
-            border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(2.2),
-              1: const pw.FlexColumnWidth(3.5),
-              2: const pw.FlexColumnWidth(1.8),
-              3: const pw.FlexColumnWidth(1.8),
-              4: const pw.FlexColumnWidth(1.8),
-            },
-            children: [
-              // ✅ رأس الجدول يتكرر في كل صفحة
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: headerBg),
-                children: [
-                  _pdfCell('التاريخ', font, 14, black),
-                  _pdfCell('التفاصيل', font, 14, black),
-                  _pdfCell('عليه', font, 14, black),
-                  _pdfCell('له', font, 14, black),
-                  _pdfCell('الرصيد', font, 14, black),
-                ],
-              ),
-              ...dataRows,
-              // ✅ صف الإجماليات
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: totalBg),
-                children: [
-                  _pdfCell('', font, 14, black),
-                  _pdfCell('إجمالي العمليات', font, 14, black),
-                  _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
-                  _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
-                  _pdfCell('', font, 14, black),
-                ],
-              ),
-              // ✅ صف الرصيد الإجمالي (بالمنطق الجديد)
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: balanceRowColor),
-                children: [
-                  _pdfCell('', font, 14, black),
-                  _pdfCell(balanceText, font, 14, black),
-                  _pdfCell(
-                      isOnHim ? formatNumber(balanceValue) : '',
-                      font,
-                      14,
-                      black),
-                  _pdfCell(
-                      !isOnHim ? formatNumber(balanceValue) : '',
-                      font,
-                      14,
-                      black),
-                  _pdfCell('', font, 14, black),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ));
-
-      final bytes = await pdf.save();
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      final tempDir = await getTemporaryDirectory();
-      final fileName =
-          'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(bytes);
-      await OpenFile.open(file.path);
-    } catch (e, st) {
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      debugPrint('PDF Error: $e\n$st');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('تعذر إنتاج PDF: $e'),
-            backgroundColor: AppColors.red));
-      }
-    }
+      ),
+    );
   }
 
+  try {
+    final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
+    final font = pw.Font.ttf(fontData);
+
+    final pdf = pw.Document(
+        theme: pw.ThemeData.withFont(base: font, bold: font));
+
+    final darkBlue = PdfColor.fromHex("#1E3A5F");
+    final greenTotal = PdfColor.fromHex("#1B5E20");
+    final redTotal = PdfColor.fromHex("#B71C1C");
+    final headerBg = PdfColor.fromHex("#CCCCCC");
+    final totalBg = PdfColor.fromHex("#E0E0E0");
+    final lightGreen = PdfColor.fromHex("#C8E6C9");
+    final lightRed = PdfColor.fromHex("#FFCDD2");
+    final black = PdfColors.black;
+
+    final List<pw.TableRow> dataRows = [];
+    double newFinalBal = 0;
+    double newTotalGive = 0;
+    double newTotalTake = 0;
+    for (var tx in txs) {
+      final bool isGive = tx['type'] == 'give';
+      final double amt = (tx['amount'] as num).toDouble();
+      if (isGive) {
+        newFinalBal -= amt;
+        newTotalGive += amt;
+      } else {
+        newFinalBal += amt;
+        newTotalTake += amt;
+      }
+      String dateOnly = tx['date'].toString();
+      try {
+        final dt = DateTime.parse(tx['date'].toString());
+        dateOnly =
+            '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      } catch (_) {}
+
+      final String balStr = newFinalBal < 0
+          ? '-${formatNumber(newFinalBal.abs())}'
+          : formatNumber(newFinalBal);
+
+      // ✅ تم عكس الترتيب: الرصيد → له → عليه → التفاصيل → التاريخ
+      dataRows.add(pw.TableRow(children: [
+        _pdfCell(balStr, font, 12, black),
+        _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
+        _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
+        _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
+        _pdfCell(dateOnly, font, 12, black),
+      ]));
+    }
+
+    final bool isOnHim = newTotalTake >= newTotalGive;
+    final String balanceText = isOnHim
+        ? 'الرصيد الإجمالي - عليه'
+        : 'الرصيد الإجمالي - له';
+    final double balanceValue =
+        (newTotalTake - newTotalGive).abs();
+    final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
+
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      textDirection: pw.TextDirection.rtl,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+      header: (pw.Context ctx) => pw.Container(
+        margin: const pw.EdgeInsets.only(bottom: 10),
+        child: pw.Center(
+          child: pw.Text(
+            'كشف حساب : ${widget.customer['name']}',
+            style: pw.TextStyle(
+                font: font, fontSize: 18, color: darkBlue),
+            textAlign: pw.TextAlign.center,
+          ),
+        ),
+      ),
+      footer: (pw.Context ctx) => pw.Container(
+        margin: const pw.EdgeInsets.only(top: 10),
+        child: pw.Column(children: [
+          pw.Divider(color: black),
+          pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('تطبيق المحاسب',
+                    style: pw.TextStyle(
+                        font: font, fontSize: 10, color: black)),
+                pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
+                    style: pw.TextStyle(
+                        font: font, fontSize: 10, color: black)),
+                pw.Text('المهندس : اسامه الاضرعي',
+                    style: pw.TextStyle(
+                        font: font, fontSize: 10, color: black)),
+              ]),
+        ]),
+      ),
+      build: (pw.Context context) => [
+        pw.SizedBox(height: 5),
+        pw.Table(
+          border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
+          // ✅ تم عكس columnWidths ليتوافق مع الترتيب الجديد
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1.8), // الرصيد
+            1: const pw.FlexColumnWidth(1.8), // له
+            2: const pw.FlexColumnWidth(1.8), // عليه
+            3: const pw.FlexColumnWidth(3.5), // التفاصيل
+            4: const pw.FlexColumnWidth(2.2), // التاريخ
+          },
+          children: [
+            // ✅ تم عكس رأس الجدول
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: headerBg),
+              children: [
+                _pdfCell('الرصيد', font, 14, black),
+                _pdfCell('له', font, 14, black),
+                _pdfCell('عليه', font, 14, black),
+                _pdfCell('التفاصيل', font, 14, black),
+                _pdfCell('التاريخ', font, 14, black),
+              ],
+            ),
+            ...dataRows,
+            // ✅ تم عكس صف الإجماليات
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: totalBg),
+              children: [
+                _pdfCell('', font, 14, black),
+                _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
+                _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
+                _pdfCell('إجمالي العمليات', font, 14, black),
+                _pdfCell('', font, 14, black),
+              ],
+            ),
+            // ✅ تم عكس صف الرصيد الإجمالي
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: balanceRowColor),
+              children: [
+                _pdfCell('', font, 14, black),
+                _pdfCell(
+                    !isOnHim ? formatNumber(balanceValue) : '',
+                    font,
+                    14,
+                    black),
+                _pdfCell(
+                    isOnHim ? formatNumber(balanceValue) : '',
+                    font,
+                    14,
+                    black),
+                _pdfCell(balanceText, font, 14, black),
+                _pdfCell('', font, 14, black),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ));
+
+    final bytes = await pdf.save();
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    final tempDir = await getTemporaryDirectory();
+    final fileName =
+        'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final file = File('${tempDir.path}/$fileName');
+    await file.writeAsBytes(bytes);
+    await OpenFile.open(file.path);
+  } catch (e, st) {
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    debugPrint('PDF Error: $e\n$st');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('تعذر إنتاج PDF: $e'),
+          backgroundColor: AppColors.red));
+    }
+  }
+}
   pw.Widget _pdfCell(
       String text, pw.Font font, double size, PdfColor color) {
     return pw.Padding(
