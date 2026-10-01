@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -59,6 +60,67 @@ class AppColors {
   static const Color solidBlue = Color(0xFF7EB8E8);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
+}
+
+// ====================================================
+// ✅ خدمة البيانات الشخصية
+// ====================================================
+class PersonalDataService {
+  static const String _prefNameAr = 'personal_name_ar';
+  static const String _prefNameEn = 'personal_name_en';
+  static const String _prefTitleAr = 'personal_title_ar';
+  static const String _prefTitleEn = 'personal_title_en';
+  static const String _prefPhone = 'personal_phone';
+  static const String _prefEmail = 'personal_email';
+  static const String _prefLogoShape = 'personal_logo_shape';
+
+  static Future<Map<String, dynamic>> getData() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'nameAr': prefs.getString(_prefNameAr) ?? '',
+      'nameEn': prefs.getString(_prefNameEn) ?? '',
+      'titleAr': prefs.getString(_prefTitleAr) ?? '',
+      'titleEn': prefs.getString(_prefTitleEn) ?? '',
+      'phone': prefs.getString(_prefPhone) ?? '',
+      'email': prefs.getString(_prefEmail) ?? '',
+      'logoShape': prefs.getString(_prefLogoShape) ?? 'circle',
+    };
+  }
+
+  static Future<void> saveData({
+    String? nameAr,
+    String? nameEn,
+    String? titleAr,
+    String? titleEn,
+    String? phone,
+    String? email,
+    String? logoShape,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (nameAr != null) await prefs.setString(_prefNameAr, nameAr);
+    if (nameEn != null) await prefs.setString(_prefNameEn, nameEn);
+    if (titleAr != null) await prefs.setString(_prefTitleAr, titleAr);
+    if (titleEn != null) await prefs.setString(_prefTitleEn, titleEn);
+    if (phone != null) await prefs.setString(_prefPhone, phone);
+    if (email != null) await prefs.setString(_prefEmail, email);
+    if (logoShape != null) await prefs.setString(_prefLogoShape, logoShape);
+  }
+
+  static Future<String?> getLogoBase64() async {
+    final db = await AppDBHelper.instance.database;
+    final result =
+        await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    if (result.isNotEmpty) return result.first['logo_data'] as String?;
+    return null;
+  }
+
+  static Future<void> saveLogoBase64(String? base64) async {
+    final db = await AppDBHelper.instance.database;
+    await db.delete('personal_logo');
+    if (base64 != null) {
+      await db.insert('personal_logo', {'logo_data': base64});
+    }
+  }
 }
 
 // ==================== Google Drive Service ====================
@@ -502,7 +564,7 @@ class AppDBHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     return await openDatabase(p.join(dbPath, filePath),
-        version: 4, onCreate: _createDB, onUpgrade: _upgradeDB);
+        version: 5, onCreate: _createDB, onUpgrade: _upgradeDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -539,6 +601,12 @@ class AppDBHelper {
         details TEXT,
         date TEXT NOT NULL,
         image_data TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE personal_logo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        logo_data TEXT
       )
     ''');
     await db.insert('categories', {'name': 'عام', 'sort_order': 1});
@@ -578,6 +646,14 @@ class AppDBHelper {
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE transactions ADD COLUMN image_data TEXT');
     }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE personal_logo (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          logo_data TEXT
+        )
+      ''');
+    }
   }
 
   Future<void> restoreDatabase(File newDbFile) async {
@@ -589,7 +665,7 @@ class AppDBHelper {
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
     await newDbFile.copy(path);
     _db = await openDatabase(path,
-        version: 4, onCreate: _createDB, onUpgrade: _upgradeDB);
+        version: 5, onCreate: _createDB, onUpgrade: _upgradeDB);
   }
 }
 
@@ -840,7 +916,6 @@ class AppAccountProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ دالة لجلب التفاصيل الفريدة (للاقتراحات)
   Future<List<String>> getDistinctDetails({String query = ''}) async {
     try {
       final db = await AppDBHelper.instance.database;
@@ -1109,7 +1184,6 @@ class AppAccountProvider extends ChangeNotifier {
     return DateTime.now().toString().split('.')[0];
   }
 }
-
 // ==================== AlMuhasibApp ====================
 class AlMuhasibApp extends StatelessWidget {
   const AlMuhasibApp({super.key});
@@ -1215,6 +1289,259 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
 }
+
+// ==================== PersonalDataScreen ====================
+class PersonalDataScreen extends StatefulWidget {
+  const PersonalDataScreen({super.key});
+
+  @override
+  State<PersonalDataScreen> createState() => _PersonalDataScreenState();
+}
+
+class _PersonalDataScreenState extends State<PersonalDataScreen> {
+  final nameArCtrl = TextEditingController();
+  final nameEnCtrl = TextEditingController();
+  final titleArCtrl = TextEditingController();
+  final titleEnCtrl = TextEditingController();
+  final phoneCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
+
+  String? _logoBase64;
+  String _logoShape = 'circle';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final data = await PersonalDataService.getData();
+    final logo = await PersonalDataService.getLogoBase64();
+    if (!mounted) return;
+    setState(() {
+      nameArCtrl.text = data['nameAr'];
+      nameEnCtrl.text = data['nameEn'];
+      titleArCtrl.text = data['titleAr'];
+      titleEnCtrl.text = data['titleEn'];
+      phoneCtrl.text = data['phone'];
+      emailCtrl.text = data['email'];
+      _logoShape = data['logoShape'];
+      _logoBase64 = logo;
+      _loading = false;
+    });
+  }
+
+  Future<void> _pickLogo() async {
+    final img = await ImagePicker().pickImage(
+        source: ImageSource.gallery, imageQuality: 80);
+    if (img == null) return;
+    final bytes = await img.readAsBytes();
+    final base64Data = base64Encode(bytes);
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Text('شكل الشعار'),
+        content: const Text('هل تريد الشعار دائرياً أم مربعاً؟'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await PersonalDataService.saveLogoBase64(base64Data);
+              await PersonalDataService.saveData(logoShape: 'circle');
+              setState(() {
+                _logoBase64 = base64Data;
+                _logoShape = 'circle';
+              });
+            },
+            child: const Text('دائري'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await PersonalDataService.saveLogoBase64(base64Data);
+              await PersonalDataService.saveData(logoShape: 'square');
+              setState(() {
+                _logoBase64 = base64Data;
+                _logoShape = 'square';
+              });
+            },
+            child: const Text('مربع'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteLogo() async {
+    await PersonalDataService.saveLogoBase64(null);
+    setState(() => _logoBase64 = null);
+  }
+
+  Future<void> _save() async {
+    await PersonalDataService.saveData(
+      nameAr: nameArCtrl.text.trim(),
+      nameEn: nameEnCtrl.text.trim(),
+      titleAr: titleArCtrl.text.trim(),
+      titleEn: titleEnCtrl.text.trim(),
+      phone: phoneCtrl.text.trim(),
+      email: emailCtrl.text.trim(),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('✅ تم حفظ البيانات'),
+        backgroundColor: AppColors.green,
+      ));
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return Scaffold(
+      appBar: GradientAppBar(
+        title: const Text('البيانات الشخصية'),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: _logoBase64 != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                        _logoShape == 'circle' ? 100 : 12),
+                    child: Image.memory(
+                      base64Decode(_logoBase64!),
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/icon.png',
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _pickLogo,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary),
+                icon: const Icon(Icons.image),
+                label: const Text('تغيير الشعار'),
+              ),
+              const SizedBox(width: 10),
+              if (_logoBase64 != null)
+                ElevatedButton.icon(
+                  onPressed: _deleteLogo,
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.red),
+                  icon: const Icon(Icons.delete),
+                  label: const Text('حذف الشعار'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Center(
+            child: Text(
+              'البيانات التي تظهر في ترويسة التقارير',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary),
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: nameArCtrl,
+            decoration: const InputDecoration(
+              labelText: 'الاسم (عربي)',
+              prefixIcon: Icon(Icons.person),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: nameEnCtrl,
+            decoration: const InputDecoration(
+              labelText: 'الاسم (إنجليزي)',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: titleArCtrl,
+            decoration: const InputDecoration(
+              labelText: 'العنوان (عربي)',
+              prefixIcon: Icon(Icons.title),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: titleEnCtrl,
+            decoration: const InputDecoration(
+              labelText: 'العنوان (إنجليزي)',
+              prefixIcon: Icon(Icons.title_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'رقم الهاتف',
+              prefixIcon: Icon(Icons.phone),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'البريد الإلكتروني',
+              prefixIcon: Icon(Icons.email),
+            ),
+          ),
+          const SizedBox(height: 30),
+          ElevatedButton.icon(
+            onPressed: _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              minimumSize: const Size(double.infinity, 55),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.save),
+            label: const Text('حفظ',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
 // ==================== HomeScreen ====================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1365,45 +1692,6 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.pop(ctx);
               provider.exportBackup();
             },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSearchDialog() {
-    final searchCtrl = TextEditingController(text: searchQuery);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: const Row(children: [
-          Icon(Icons.search, color: AppColors.primary),
-          SizedBox(width: 8),
-          Text('البحث عن حساب'),
-        ]),
-        content: TextField(
-          controller: searchCtrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'اسم الحساب',
-            prefixIcon: const Icon(Icons.search),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          onChanged: (val) => setState(() => searchQuery = val),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () {
-                setState(() => searchQuery = '');
-                Navigator.pop(ctx);
-              },
-              child:
-                  const Text('إلغاء', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('تم'),
           ),
         ],
       ),
@@ -1736,6 +2024,24 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.person, color: Colors.purple),
+            ),
+            title: const Text('البيانات الشخصية',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const PersonalDataScreen()));
+            },
           ),
           const Divider(height: 20, indent: 20, endIndent: 20),
           ListTile(
@@ -2409,6 +2715,7 @@ class BackupOptionsScreen extends StatelessWidget {
     );
   }
 }
+
 // ==================== AutoBackupScreen ====================
 class AutoBackupScreen extends StatefulWidget {
   const AutoBackupScreen({super.key});
@@ -3225,7 +3532,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     );
   }
 }
-
 // ==================== CustomerDetailsScreen ====================
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -3321,7 +3627,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== قائمة الاقتراحات (Widget) ==========
+  // ========== قائمة الاقتراحات ==========
   Widget _buildSuggestionsList({
     required List<String> suggestions,
     required TextEditingController controller,
@@ -4404,197 +4710,278 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   // ============ PDF ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
-    double totalTake, double finalBal) async {
-  if (mounted) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              CircularProgressIndicator(color: AppColors.gold),
-              SizedBox(height: 15),
-              Text('جاري إنتاج PDF...'),
-            ]),
+      double totalTake, double finalBal) async {
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                CircularProgressIndicator(color: AppColors.gold),
+                SizedBox(height: 15),
+                Text('جاري إنتاج PDF...'),
+              ]),
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  try {
-    final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
-    final font = pw.Font.ttf(fontData);
-
-    final pdf = pw.Document(
-        theme: pw.ThemeData.withFont(base: font, bold: font));
-
-    final darkBlue = PdfColor.fromHex("#1E3A5F");
-    final greenTotal = PdfColor.fromHex("#1B5E20");
-    final redTotal = PdfColor.fromHex("#B71C1C");
-    final headerBg = PdfColor.fromHex("#CCCCCC");
-    final totalBg = PdfColor.fromHex("#E0E0E0");
-    final lightGreen = PdfColor.fromHex("#C8E6C9");
-    final lightRed = PdfColor.fromHex("#FFCDD2");
-    final black = PdfColors.black;
-
-    final List<pw.TableRow> dataRows = [];
-    double newFinalBal = 0;
-    double newTotalGive = 0;
-    double newTotalTake = 0;
-    for (var tx in txs) {
-      final bool isGive = tx['type'] == 'give';
-      final double amt = (tx['amount'] as num).toDouble();
-      if (isGive) {
-        newFinalBal -= amt;
-        newTotalGive += amt;
-      } else {
-        newFinalBal += amt;
-        newTotalTake += amt;
-      }
-      String dateOnly = tx['date'].toString();
-      try {
-        final dt = DateTime.parse(tx['date'].toString());
-        dateOnly =
-            '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-      } catch (_) {}
-
-      final String balStr = newFinalBal < 0
-          ? '-${formatNumber(newFinalBal.abs())}'
-          : formatNumber(newFinalBal);
-
-      // ✅ تم عكس الترتيب: الرصيد → له → عليه → التفاصيل → التاريخ
-      dataRows.add(pw.TableRow(children: [
-        _pdfCell(balStr, font, 12, black),
-        _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
-        _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
-        _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
-        _pdfCell(dateOnly, font, 12, black),
-      ]));
+      );
     }
 
-    final bool isOnHim = newTotalTake >= newTotalGive;
-    final String balanceText = isOnHim
-        ? 'الرصيد الإجمالي - عليه'
-        : 'الرصيد الإجمالي - له';
-    final double balanceValue =
-        (newTotalTake - newTotalGive).abs();
-    final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
+    try {
+      final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
+      final font = pw.Font.ttf(fontData);
 
-    pdf.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      textDirection: pw.TextDirection.rtl,
-      margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
-      header: (pw.Context ctx) => pw.Container(
-        margin: const pw.EdgeInsets.only(bottom: 10),
-        child: pw.Center(
-          child: pw.Text(
-            'كشف حساب : ${widget.customer['name']}',
-            style: pw.TextStyle(
-                font: font, fontSize: 18, color: darkBlue),
-            textAlign: pw.TextAlign.center,
-          ),
-        ),
-      ),
-      footer: (pw.Context ctx) => pw.Container(
-        margin: const pw.EdgeInsets.only(top: 10),
-        child: pw.Column(children: [
-          pw.Divider(color: black),
-          pw.Row(
+      final personalData = await PersonalDataService.getData();
+      final logoBase64 = await PersonalDataService.getLogoBase64();
+      final logoShape = personalData['logoShape'] as String;
+
+      Uint8List? logoBytes;
+      if (logoBase64 != null && logoBase64.isNotEmpty) {
+        logoBytes = base64Decode(logoBase64);
+      } else {
+        try {
+          final data = await rootBundle.load('assets/icon.png');
+          logoBytes = data.buffer.asUint8List();
+        } catch (_) {}
+      }
+
+      final pdf = pw.Document(
+          theme: pw.ThemeData.withFont(base: font, bold: font));
+
+      final darkBlue = PdfColor.fromHex("#1E3A5F");
+      final greenTotal = PdfColor.fromHex("#1B5E20");
+      final redTotal = PdfColor.fromHex("#B71C1C");
+      final headerBg = PdfColor.fromHex("#CCCCCC");
+      final totalBg = PdfColor.fromHex("#E0E0E0");
+      final lightGreen = PdfColor.fromHex("#C8E6C9");
+      final lightRed = PdfColor.fromHex("#FFCDD2");
+      final black = PdfColors.black;
+
+      final List<pw.TableRow> dataRows = [];
+      double newFinalBal = 0;
+      double newTotalGive = 0;
+      double newTotalTake = 0;
+      for (var tx in txs) {
+        final bool isGive = tx['type'] == 'give';
+        final double amt = (tx['amount'] as num).toDouble();
+        if (isGive) {
+          newFinalBal -= amt;
+          newTotalGive += amt;
+        } else {
+          newFinalBal += amt;
+          newTotalTake += amt;
+        }
+        String dateOnly = tx['date'].toString().split(' ').first;
+        try {
+          final dt = DateTime.parse(tx['date'].toString());
+          dateOnly =
+              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+        } catch (_) {}
+
+        final String balStr = newFinalBal < 0
+            ? '-${formatNumber(newFinalBal.abs())}'
+            : formatNumber(newFinalBal);
+
+        // ✅ الترتيب: الرصيد → له → عليه → التفاصيل → التاريخ
+        dataRows.add(pw.TableRow(children: [
+          _pdfCell(balStr, font, 12, black),
+          _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
+          _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
+          _pdfCell(dateOnly, font, 12, black),
+        ]));
+      }
+
+      final bool isOnHim = newTotalTake >= newTotalGive;
+      final String balanceText = isOnHim
+          ? 'الرصيد الإجمالي - عليه'
+          : 'الرصيد الإجمالي - له';
+      final double balanceValue = (newTotalTake - newTotalGive).abs();
+      final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
+
+      // ✅ الأكليشة (Header) في كل صفحة
+      pw.Widget buildHeader() {
+        return pw.Container(
+          padding: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Column(children: [
+            if (logoBytes != null)
+              pw.Center(
+                child: pw.Container(
+                  width: 150,
+                  height: 150,
+                  child: pw.ClipRRect(
+                    horizontalRadius: logoShape == 'circle' ? 75 : 8,
+                    verticalRadius: logoShape == 'circle' ? 75 : 8,
+                    child: pw.Image(pw.MemoryImage(logoBytes),
+                        fit: pw.BoxFit.cover),
+                  ),
+                ),
+              ),
+            pw.SizedBox(height: 8),
+            pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('تطبيق المحاسب',
-                    style: pw.TextStyle(
-                        font: font, fontSize: 10, color: black)),
-                pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
-                    style: pw.TextStyle(
-                        font: font, fontSize: 10, color: black)),
-                pw.Text('المهندس : اسامه الاضرعي',
-                    style: pw.TextStyle(
-                        font: font, fontSize: 10, color: black)),
-              ]),
-        ]),
-      ),
-      build: (pw.Context context) => [
-        pw.SizedBox(height: 5),
-        pw.Table(
-          border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
-          // ✅ تم عكس columnWidths ليتوافق مع الترتيب الجديد
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1.8), // الرصيد
-            1: const pw.FlexColumnWidth(1.8), // له
-            2: const pw.FlexColumnWidth(1.8), // عليه
-            3: const pw.FlexColumnWidth(3.5), // التفاصيل
-            4: const pw.FlexColumnWidth(2.2), // التاريخ
-          },
-          children: [
-            // ✅ تم عكس رأس الجدول
-            pw.TableRow(
-              decoration: pw.BoxDecoration(color: headerBg),
-              children: [
-                _pdfCell('الرصيد', font, 14, black),
-                _pdfCell('له', font, 14, black),
-                _pdfCell('عليه', font, 14, black),
-                _pdfCell('التفاصيل', font, 14, black),
-                _pdfCell('التاريخ', font, 14, black),
+                pw.Text(
+                  personalData['nameEn'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 11, color: darkBlue),
+                ),
+                pw.Text(
+                  personalData['nameAr'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 13, color: darkBlue),
+                ),
               ],
             ),
-            ...dataRows,
-            // ✅ تم عكس صف الإجماليات
-            pw.TableRow(
-              decoration: pw.BoxDecoration(color: totalBg),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                _pdfCell('', font, 14, black),
-                _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
-                _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
-                _pdfCell('إجمالي العمليات', font, 14, black),
-                _pdfCell('', font, 14, black),
+                pw.Text(
+                  personalData['titleEn'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 10, color: black),
+                ),
+                pw.Text(
+                  personalData['titleAr'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 11, color: black),
+                ),
               ],
             ),
-            // ✅ تم عكس صف الرصيد الإجمالي
-            pw.TableRow(
-              decoration: pw.BoxDecoration(color: balanceRowColor),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                _pdfCell('', font, 14, black),
-                _pdfCell(
-                    !isOnHim ? formatNumber(balanceValue) : '',
-                    font,
-                    14,
-                    black),
-                _pdfCell(
-                    isOnHim ? formatNumber(balanceValue) : '',
-                    font,
-                    14,
-                    black),
-                _pdfCell(balanceText, font, 14, black),
-                _pdfCell('', font, 14, black),
+                pw.Text(
+                  personalData['email'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 10, color: black),
+                ),
+                pw.Text(
+                  personalData['phone'] ?? '',
+                  style: pw.TextStyle(
+                      font: font, fontSize: 10, color: black),
+                ),
               ],
             ),
-          ],
-        ),
-      ],
-    ));
+            pw.SizedBox(height: 8),
+            pw.Divider(color: darkBlue, thickness: 1.5),
+            pw.SizedBox(height: 5),
+            pw.Center(
+              child: pw.Text(
+                'كشف حساب : ${widget.customer['name']}',
+                style: pw.TextStyle(
+                    font: font, fontSize: 16, color: darkBlue),
+                textAlign: pw.TextAlign.center,
+              ),
+            ),
+          ]),
+        );
+      }
 
-    final bytes = await pdf.save();
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    final tempDir = await getTemporaryDirectory();
-    final fileName =
-        'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final file = File('${tempDir.path}/$fileName');
-    await file.writeAsBytes(bytes);
-    await OpenFile.open(file.path);
-  } catch (e, st) {
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    debugPrint('PDF Error: $e\n$st');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('تعذر إنتاج PDF: $e'),
-          backgroundColor: AppColors.red));
+      pdf.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        textDirection: pw.TextDirection.rtl,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+        header: (pw.Context ctx) => buildHeader(),
+        footer: (pw.Context ctx) => pw.Container(
+          margin: const pw.EdgeInsets.only(top: 10),
+          child: pw.Column(children: [
+            pw.Divider(color: black),
+            pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('تطبيق المحاسب',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                  pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                  pw.Text('المهندس : اسامه الاضرعي',
+                      style: pw.TextStyle(
+                          font: font, fontSize: 10, color: black)),
+                ]),
+          ]),
+        ),
+        build: (pw.Context context) => [
+          pw.SizedBox(height: 5),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(1.8),
+              1: const pw.FlexColumnWidth(1.8),
+              2: const pw.FlexColumnWidth(1.8),
+              3: const pw.FlexColumnWidth(3.5),
+              4: const pw.FlexColumnWidth(2.2),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: headerBg),
+                children: [
+                  _pdfCell('الرصيد', font, 14, black),
+                  _pdfCell('له', font, 14, black),
+                  _pdfCell('عليه', font, 14, black),
+                  _pdfCell('التفاصيل', font, 14, black),
+                  _pdfCell('التاريخ', font, 14, black),
+                ],
+              ),
+              ...dataRows,
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: totalBg),
+                children: [
+                  _pdfCell('', font, 14, black),
+                  _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
+                  _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
+                  _pdfCell('إجمالي العمليات', font, 14, black),
+                  _pdfCell('', font, 14, black),
+                ],
+              ),
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: balanceRowColor),
+                children: [
+                  _pdfCell('', font, 14, black),
+                  _pdfCell(
+                      !isOnHim ? formatNumber(balanceValue) : '',
+                      font,
+                      14,
+                      black),
+                  _pdfCell(
+                      isOnHim ? formatNumber(balanceValue) : '',
+                      font,
+                      14,
+                      black),
+                  _pdfCell(balanceText, font, 14, black),
+                  _pdfCell('', font, 14, black),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ));
+
+      final bytes = await pdf.save();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      final tempDir = await getTemporaryDirectory();
+      final fileName =
+          'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+      await OpenFile.open(file.path);
+    } catch (e, st) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      debugPrint('PDF Error: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('تعذر إنتاج PDF: $e'),
+            backgroundColor: AppColors.red));
+      }
     }
   }
-}
+
   pw.Widget _pdfCell(
       String text, pw.Font font, double size, PdfColor color) {
     return pw.Padding(
