@@ -25,22 +25,6 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Download Icon
-        run: |
-          mkdir -p assets/fonts
-          
-          echo "📥 تحميل الشعار..."
-          curl -fL "https://api.iconify.design/mdi/alpha-m-circle.svg?color=%23FFB300&width=512&height=512" \
-            -o assets/icon.svg
-          
-          echo "📥 تحويل SVG إلى PNG..."
-          sudo apt-get install -y librsvg2-bin
-          rsvg-convert -w 1024 -h 1024 assets/icon.svg -o assets/icon.png
-          
-          echo "=== التحقق ==="
-          ls -lh assets/
-          file assets/icon.png
-
       - name: Install Dependencies
         run: flutter pub get
 
