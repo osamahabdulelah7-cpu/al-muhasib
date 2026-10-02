@@ -24,6 +24,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:image_picker/image_picker.dart';
+import 'package:workmanager/workmanager.dart';
 
 // ====================================================
 // ✅ دالة تنسيق الأرقام
@@ -60,6 +61,35 @@ class AppColors {
   static const Color solidBlue = Color(0xFF7EB8E8);
   static const Color textDark = Color(0xFF1F2937);
   static const Color textMuted = Color(0xFF6B7280);
+}
+
+// ====================================================
+// ✅ دالة معالجة المهام في الخلفية (Workmanager)
+// ====================================================
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      // تهيئة قاعدة البيانات (مطلوبة للنسخ الاحتياطي)
+      await AppDBHelper.instance.database;
+
+      // نسخ محلي
+      final localError = await AutoBackupService.performScheduledBackup();
+      debugPrint('✅ نسخ محلي مجدول: $localError');
+
+      // نسخ على Drive (إذا كان المستخدم مسجلاً)
+      if (GoogleDriveService.isSignedIn) {
+        final driveError = await AutoBackupService.performScheduledDriveBackup();
+        debugPrint('✅ نسخ Drive مجدول: $driveError');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('❌ خطأ في المهمة الخلفية: $e');
+      return false;
+    }
+  });
 }
 
 // ====================================================
@@ -261,7 +291,10 @@ class AutoBackupService {
   static const String _prefDriveMinute = 'drive_backup_minute';
   static const String _prefDriveLastBackup = 'drive_backup_last_time';
   static const String _prefDriveLastDbModified = 'drive_backup_last_db_modified';
+  static const int _maxLocalBackups = 5;
   static const int _maxDriveBackups = 5;
+  static const String _workManagerTaskName = 'al_muhasib_daily_backup';
+  static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
 
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -365,6 +398,76 @@ class AutoBackupService {
     }
   }
 
+  // ============ جدولة المهمة اليومية ============
+  static Future<void> scheduleDailyBackup() async {
+    final settings = await getSettings();
+    final hour = settings['hour'] as int;
+    final minute = settings['minute'] as int;
+
+    // حساب الوقت المتبقي حتى موعد النسخ
+    final now = DateTime.now();
+    var target = DateTime(now.year, now.month, now.day, hour, minute);
+    if (target.isBefore(now)) {
+      target = target.add(const Duration(days: 1));
+    }
+    final delay = target.difference(now);
+
+    await Workmanager().registerOneOffTask(
+      _workManagerUniqueName,
+      _workManagerTaskName,
+      initialDelay: delay,
+      constraints: Constraints(
+        networkType: NetworkType.notRequired,
+      ),
+    );
+    debugPrint('✅ تم جدولة المهمة اليومية بعد: ${delay.inHours} ساعة');
+  }
+
+  static Future<void> cancelDailyBackup() async {
+    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    debugPrint('✅ تم إلغاء المهمة اليومية');
+  }
+
+  // ============ النسخ المجدول (من Workmanager) ============
+  static Future<String?> performScheduledBackup() async {
+    final settings = await getSettings();
+    if (settings['enabled'] != true) return null;
+    final folderPath = settings['folderPath'] as String;
+    if (folderPath.isEmpty) return null;
+    if (!await _hasDataChanged()) return null;
+
+    final result = await performBackup(folderPath);
+    // بعد النسخة، أعد جدولة المهمة لليوم التالي
+    await scheduleDailyBackup();
+    return result;
+  }
+
+  static Future<String?> performScheduledDriveBackup() async {
+    final settings = await getSettings();
+    if (settings['driveEnabled'] != true) return null;
+    if (!GoogleDriveService.isSignedIn) return null;
+    if (!await _hasDataChangedForDrive()) return null;
+
+    try {
+      final dbFile = await _getDatabaseFile();
+      final error = await GoogleDriveService.uploadBackup(dbFile);
+      if (error == null) {
+        final now = DateTime.now();
+        final lastModified = (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+            driveLastBackup: now.toIso8601String(),
+            driveLastDbModified: lastModified);
+        await _cleanOldDriveBackups();
+        return null;
+      } else {
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  // ============ النسخ اليدوي / عند فتح التطبيق ============
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
@@ -425,6 +528,7 @@ class AutoBackupService {
     }
   }
 
+  // ============ حذف النسخ القديمة ============
   static Future<void> _cleanOldDriveBackups() async {
     try {
       final backups = await GoogleDriveService.listBackups();
@@ -435,10 +539,32 @@ class AutoBackupService {
         await GoogleDriveService.deleteBackup(backups[i]['id'] as String);
       }
     } catch (e) {
-      debugPrint('⚠️ خطأ في حذف النسخ القديمة: $e');
+      debugPrint('⚠️ خطأ في حذف النسخ القديمة على Drive: $e');
     }
   }
 
+  static Future<void> _cleanOldLocalBackups(String folderPath) async {
+    try {
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) return;
+      final files = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
+          .toList();
+      if (files.length <= _maxLocalBackups) return;
+      files.sort((a, b) => a.path.compareTo(b.path)); // الأقدم أولاً
+      for (int i = 0; i < files.length - _maxLocalBackups; i++) {
+        try {
+          await files[i].delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('⚠️ خطأ في حذف النسخ المحلية القديمة: $e');
+    }
+  }
+
+  // ============ النسخ الفعلي ============
   static Future<String?> performBackup(String folderPath) async {
     try {
       final dbFile = await _getDatabaseFile();
@@ -452,6 +578,7 @@ class AutoBackupService {
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
           lastBackup: now.toIso8601String(), lastDbModified: lastModified);
+      await _cleanOldLocalBackups(folderPath);
       return null;
     } catch (e) {
       return '$e';
@@ -523,6 +650,9 @@ void main() async {
     statusBarBrightness: Brightness.light,
   ));
 
+  // ✅ تهيئة Workmanager
+  await Workmanager().initialize(callbackDispatcher);
+
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
   };
@@ -540,9 +670,16 @@ void main() async {
         child: const AlMuhasibApp(),
       ),
     );
+
+    // ✅ فحص النسخ الاحتياطي عند فتح التطبيق
     Future.delayed(const Duration(seconds: 2), () async {
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
+      // إعادة جدولة المهمة اليومية عند فتح التطبيق
+      final settings = await AutoBackupService.getSettings();
+      if (settings['enabled'] == true) {
+        await AutoBackupService.scheduleDailyBackup();
+      }
     });
   }, (error, stack) {
     debugPrint('ZoneError: $error\n$stack');
@@ -916,6 +1053,7 @@ class AppAccountProvider extends ChangeNotifier {
     }
   }
 
+  // ✅ دالة الاقتراحات المعدلة (تحتوي على النص، وليس تبدأ به فقط)
   Future<List<String>> getDistinctDetails({String query = ''}) async {
     try {
       final db = await AppDBHelper.instance.database;
@@ -937,8 +1075,8 @@ class AppAccountProvider extends ChangeNotifier {
             AND details LIKE ?
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
-          LIMIT 30
-        ''', ['$query%']);
+          LIMIT 50
+        ''', ['%$query%']);
       }
       return result
           .map((row) => (row['details'] ?? '').toString())
@@ -2824,6 +2962,13 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
     await AutoBackupService.saveSettings(enabled: value);
     setState(() => _enabled = value);
+
+    // ✅ جدولة/إلغاء المهمة اليومية
+    if (value) {
+      await AutoBackupService.scheduleDailyBackup();
+    } else {
+      await AutoBackupService.cancelDailyBackup();
+    }
   }
 
   Future<bool> _pickFolder() async {
@@ -2856,6 +3001,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       await AutoBackupService.saveSettings(
           hour: picked.hour, minute: picked.minute);
       setState(() => _selectedTime = picked);
+      // إعادة جدولة المهمة بالوقت الجديد
+      if (_enabled) {
+        await AutoBackupService.scheduleDailyBackup();
+      }
     }
   }
 
@@ -3313,7 +3462,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark)),
-            subtitle: Text('$_backupCount ملف',
+            subtitle: Text('$_backupCount / 5 ملف',
                 style: const TextStyle(
                     fontSize: 13, color: AppColors.textMuted)),
           ),
@@ -3635,7 +3784,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }) {
     if (suggestions.isEmpty) return const SizedBox.shrink();
     return Container(
-      margin: const EdgeInsets.only(top: 4),
+      margin: const EdgeInsets.only(top: 2),
       constraints: const BoxConstraints(maxHeight: 200),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -3683,7 +3832,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة تعديل العملية ==========
+  // ========== نافذة تعديل العملية (مع الاقتراحات) ==========
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
     double amt = (tx['amount'] as num).toDouble();
     String amtStr = amt == amt.roundToDouble()
@@ -3791,8 +3940,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             border: UnderlineInputBorder()),
                         onChanged: (val) async {
                           if (val.length >= 2) {
-                            final allDetails = await provider
-                                .getDistinctDetails(); // كل التفاصيل
+                            final allDetails =
+                                await provider.getDistinctDetails();
                             final prefixMatches = allDetails
                                 .where((d) =>
                                     d.startsWith(val) && d != val)
@@ -3807,7 +3956,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               ...prefixMatches,
                               ...containsMatches
                             ];
-                            combined.sort((a, b) => a.compareTo(b));
                             setDialogState(() {
                               suggestions = combined;
                               showSuggestions = combined.isNotEmpty;
@@ -3884,9 +4032,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   color: Colors.grey, size: 28))
                           : GestureDetector(
                               onTap: () => _showImageOptionsSheet(
-                                  context,
-                                  provider,
-                                  tx),
+                                  context, provider, tx),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
                                 child: Image.memory(
@@ -3898,6 +4044,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ),
                     ),
                   ]),
+                  // ✅ قائمة الاقتراحات فوق الأزرار مباشرة
                   if (showSuggestions)
                     _buildSuggestionsList(
                       suggestions: suggestions,
@@ -3984,7 +4131,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة إضافة عملية جديدة ==========
+  // ========== نافذة إضافة عملية جديدة (مع الاقتراحات) ==========
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -4075,8 +4222,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             border: UnderlineInputBorder()),
                         onChanged: (val) async {
                           if (val.length >= 2) {
-                            final allDetails = await provider
-                                .getDistinctDetails(); // كل التفاصيل
+                            final allDetails =
+                                await provider.getDistinctDetails();
                             final prefixMatches = allDetails
                                 .where((d) =>
                                     d.startsWith(val) && d != val)
@@ -4091,7 +4238,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               ...prefixMatches,
                               ...containsMatches
                             ];
-                            combined.sort((a, b) => a.compareTo(b));
                             setDialogState(() {
                               suggestions = combined;
                               showSuggestions = combined.isNotEmpty;
@@ -4176,6 +4322,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ),
                     ),
                   ]),
+                  // ✅ قائمة الاقتراحات فوق الأزرار مباشرة
                   if (showSuggestions)
                     _buildSuggestionsList(
                       suggestions: suggestions,
@@ -4804,45 +4951,44 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
       // ✅ بناء الأكليشة (Header) — تتكرر في كل صفحة
       pw.Widget buildHeader() {
-        // بناء الأعمدة للبيانات (يمين - وسط - يسار)
         final leftItems = <pw.Widget>[];
         final rightItems = <pw.Widget>[];
 
-        // العربي على اليسار (معكوس من الحالي)
+        // العربي على اليمين (معكوس من الحالي)
         if ((personalData['nameAr'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
+          rightItems.add(pw.Text(
             personalData['nameAr'],
             style: pw.TextStyle(font: font, fontSize: 10, color: black),
           ));
         }
         if ((personalData['titleAr'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
+          rightItems.add(pw.Text(
             personalData['titleAr'],
             style: pw.TextStyle(font: font, fontSize: 9, color: black),
           ));
         }
         if ((personalData['phone'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
+          rightItems.add(pw.Text(
             personalData['phone'],
             style: pw.TextStyle(font: font, fontSize: 9, color: black),
           ));
         }
 
-        // الإنجليزي على اليمين
+        // الإنجليزي على اليسار
         if ((personalData['nameEn'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
+          leftItems.add(pw.Text(
             personalData['nameEn'],
             style: pw.TextStyle(font: font, fontSize: 10, color: black),
           ));
         }
         if ((personalData['titleEn'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
+          leftItems.add(pw.Text(
             personalData['titleEn'],
             style: pw.TextStyle(font: font, fontSize: 9, color: black),
           ));
         }
         if ((personalData['email'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
+          leftItems.add(pw.Text(
             personalData['email'],
             style: pw.TextStyle(font: font, fontSize: 9, color: black),
           ));
@@ -4854,11 +5000,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // اليسار: العربي
+                // اليمين: العربي (ملتصق بالحافة اليمنى)
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: leftItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: rightItems,
                   ),
                 ),
                 // الوسط: الشعار
@@ -4881,11 +5027,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         : pw.SizedBox(),
                   ),
                 ),
-                // اليمين: الإنجليزي
+                // اليسار: الإنجليزي (ملتصق بالحافة اليسرى)
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: rightItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: leftItems,
                   ),
                 ),
               ],
@@ -5362,4 +5508,3 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
-
