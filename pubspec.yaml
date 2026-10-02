@@ -40,6 +40,9 @@ dependencies:
   # ✅ حزمة الصور
   image_picker: ^1.0.7
 
+  # ✅ حزمة المهام الخلفية
+  workmanager: ^0.5.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -51,6 +54,7 @@ flutter:
 
   assets:
     - assets/fonts/
+    - assets/icon.png
 
   fonts:
     - family: Cairo
