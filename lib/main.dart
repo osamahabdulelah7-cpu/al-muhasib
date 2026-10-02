@@ -981,6 +981,7 @@ class AppAccountProvider extends ChangeNotifier {
       'date': date,
       'image_data': imageData,
     });
+    // ✅ تحديث last_activity بالتاريخ الفعلي (مع الوقت) لضمان الارتفاع للأعلى
     await db.update('customers', {'last_activity': date},
         where: 'id = ?', whereArgs: [customerId]);
     await loadTransactions(customerId);
@@ -1001,9 +1002,7 @@ class AppAccountProvider extends ChangeNotifier {
         },
         where: 'id = ?',
         whereArgs: [id]);
-    final now = DateTime.now().toString().split('.')[0];
-    await db.update('customers', {'last_activity': now},
-        where: 'id = ?', whereArgs: [customerId]);
+    // ✅ لا نقوم بتحديث last_activity هنا، ليبقى الحساب في مكانه
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -3681,6 +3680,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     );
   }
 }
+
 // ==================== CustomerDetailsScreen ====================
 class CustomerDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> customer;
