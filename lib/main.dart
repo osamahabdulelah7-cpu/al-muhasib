@@ -4802,82 +4802,128 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final double balanceValue = (newTotalTake - newTotalGive).abs();
       final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
 
-      // ✅ الأكليشة (Header) في كل صفحة
+      // ✅ بناء الأكليشة (Header) — تتكرر في كل صفحة
       pw.Widget buildHeader() {
+        // بناء الأعمدة للبيانات (يمين - وسط - يسار)
+        final leftItems = <pw.Widget>[];
+        final rightItems = <pw.Widget>[];
+
+        // العربي على اليسار (معكوس من الحالي)
+        if ((personalData['nameAr'] ?? '').isNotEmpty) {
+          leftItems.add(pw.Text(
+            personalData['nameAr'],
+            style: pw.TextStyle(font: font, fontSize: 10, color: black),
+          ));
+        }
+        if ((personalData['titleAr'] ?? '').isNotEmpty) {
+          leftItems.add(pw.Text(
+            personalData['titleAr'],
+            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+          ));
+        }
+        if ((personalData['phone'] ?? '').isNotEmpty) {
+          leftItems.add(pw.Text(
+            personalData['phone'],
+            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+          ));
+        }
+
+        // الإنجليزي على اليمين
+        if ((personalData['nameEn'] ?? '').isNotEmpty) {
+          rightItems.add(pw.Text(
+            personalData['nameEn'],
+            style: pw.TextStyle(font: font, fontSize: 10, color: black),
+          ));
+        }
+        if ((personalData['titleEn'] ?? '').isNotEmpty) {
+          rightItems.add(pw.Text(
+            personalData['titleEn'],
+            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+          ));
+        }
+        if ((personalData['email'] ?? '').isNotEmpty) {
+          rightItems.add(pw.Text(
+            personalData['email'],
+            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+          ));
+        }
+
         return pw.Container(
-          padding: const pw.EdgeInsets.only(bottom: 10),
+          padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Column(children: [
-            if (logoBytes != null)
-              pw.Center(
-                child: pw.Container(
-                  width: 150,
-                  height: 150,
-                  child: pw.ClipRRect(
-                    horizontalRadius: logoShape == 'circle' ? 75 : 8,
-                    verticalRadius: logoShape == 'circle' ? 75 : 8,
-                    child: pw.Image(pw.MemoryImage(logoBytes),
-                        fit: pw.BoxFit.cover),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                // اليسار: العربي
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: leftItems,
                   ),
                 ),
-              ),
-            pw.SizedBox(height: 8),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  personalData['nameEn'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 11, color: darkBlue),
+                // الوسط: الشعار
+                pw.SizedBox(
+                  width: 60,
+                  child: pw.Center(
+                    child: logoBytes != null
+                        ? pw.Container(
+                            width: 50,
+                            height: 50,
+                            child: pw.ClipRRect(
+                              horizontalRadius:
+                                  logoShape == 'circle' ? 25 : 4,
+                              verticalRadius:
+                                  logoShape == 'circle' ? 25 : 4,
+                              child: pw.Image(pw.MemoryImage(logoBytes),
+                                  fit: pw.BoxFit.cover),
+                            ),
+                          )
+                        : pw.SizedBox(),
+                  ),
                 ),
-                pw.Text(
-                  personalData['nameAr'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 13, color: darkBlue),
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 4),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  personalData['titleEn'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 10, color: black),
-                ),
-                pw.Text(
-                  personalData['titleAr'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 11, color: black),
+                // اليمين: الإنجليزي
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: rightItems,
+                  ),
                 ),
               ],
             ),
-            pw.SizedBox(height: 4),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  personalData['email'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 10, color: black),
-                ),
-                pw.Text(
-                  personalData['phone'] ?? '',
-                  style: pw.TextStyle(
-                      font: font, fontSize: 10, color: black),
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 8),
+            pw.SizedBox(height: 6),
             pw.Divider(color: darkBlue, thickness: 1.5),
-            pw.SizedBox(height: 5),
+            pw.SizedBox(height: 4),
             pw.Center(
               child: pw.Text(
                 'كشف حساب : ${widget.customer['name']}',
                 style: pw.TextStyle(
-                    font: font, fontSize: 16, color: darkBlue),
+                    font: font, fontSize: 14, color: darkBlue),
                 textAlign: pw.TextAlign.center,
               ),
+            ),
+            pw.SizedBox(height: 6),
+            // ✅ رأس الجدول (يتكرر في كل صفحة)
+            pw.Table(
+              border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.8),
+                1: const pw.FlexColumnWidth(1.8),
+                2: const pw.FlexColumnWidth(1.8),
+                3: const pw.FlexColumnWidth(3.5),
+                4: const pw.FlexColumnWidth(2.2),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(color: headerBg),
+                  children: [
+                    _pdfCell('الرصيد', font, 12, black),
+                    _pdfCell('له', font, 12, black),
+                    _pdfCell('عليه', font, 12, black),
+                    _pdfCell('التفاصيل', font, 12, black),
+                    _pdfCell('التاريخ', font, 12, black),
+                  ],
+                ),
+              ],
             ),
           ]),
         );
@@ -4919,16 +4965,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               4: const pw.FlexColumnWidth(2.2),
             },
             children: [
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: headerBg),
-                children: [
-                  _pdfCell('الرصيد', font, 14, black),
-                  _pdfCell('له', font, 14, black),
-                  _pdfCell('عليه', font, 14, black),
-                  _pdfCell('التفاصيل', font, 14, black),
-                  _pdfCell('التاريخ', font, 14, black),
-                ],
-              ),
               ...dataRows,
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: totalBg),
@@ -5326,3 +5362,4 @@ class CurrenciesScreen extends StatelessWidget {
     );
   }
 }
+
