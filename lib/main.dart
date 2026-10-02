@@ -417,7 +417,7 @@ class AutoBackupService {
       _workManagerTaskName,
       initialDelay: delay,
       constraints: Constraints(
-        networkType: NetworkType.notRequired,
+        networkType: NetworkType.not_required,
       ),
     );
     debugPrint('✅ تم جدولة المهمة اليومية بعد: ${delay.inHours} ساعة');
