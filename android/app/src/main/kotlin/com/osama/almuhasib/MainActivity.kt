@@ -1,4 +1,4 @@
-package com.example.al_muhasib
+package com.osama.almuhasib
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
