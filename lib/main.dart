@@ -40,6 +40,23 @@ String formatNumber(double value) {
 }
 
 // ====================================================
+// ✅ دالة تنظيف ملفات PDF المؤقتة
+// ====================================================
+Future<void> cleanTempPdfFiles() async {
+  try {
+    final tempDir = await getTemporaryDirectory();
+    final files = tempDir.listSync();
+    for (var file in files) {
+      if (file is File && file.path.endsWith('.pdf')) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// ====================================================
 // ✅ الألوان
 // ====================================================
 class AppColors {
@@ -642,6 +659,9 @@ void main() async {
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
   };
+
+  // ✅ تنظيف ملفات PDF المؤقتة عند فتح التطبيق
+  await cleanTempPdfFiles();
 
   runZonedGuarded(() async {
     final provider = AppAccountProvider();
@@ -2054,7 +2074,6 @@ class _HomeScreenState extends State<HomeScreen>
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ✅ شعار التطبيق من البيانات الشخصية
                   Container(
                     width: 90,
                     height: 90,
@@ -3740,58 +3759,62 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== قائمة الاقتراحات (تظهر في الأعلى) ==========
-  Widget _buildSuggestionsList({
+  // ========== نافذة الاقتراحات المستقلة ==========
+  void _showSuggestionsDialog({
+    required BuildContext parentContext,
     required List<String> suggestions,
     required TextEditingController controller,
     required VoidCallback onSelected,
   }) {
-    if (suggestions.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      constraints: const BoxConstraints(maxHeight: 200),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: ListView.builder(
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-        itemCount: suggestions.length,
-        itemBuilder: (ctx, i) {
-          return InkWell(
-            onTap: () {
-              controller.text = suggestions[i];
-              controller.selection = TextSelection.fromPosition(
-                  TextPosition(offset: controller.text.length));
-              onSelected();
-            },
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(children: [
-                Icon(Icons.history,
-                    size: 18, color: AppColors.primary.withOpacity(0.6)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    suggestions[i],
-                    style: const TextStyle(
-                        fontSize: 14, color: AppColors.textDark),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+    if (suggestions.isEmpty) return;
+    showDialog(
+      context: parentContext,
+      barrierDismissible: true,
+      builder: (suggestionCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.all(0),
+        title: const Row(children: [
+          Icon(Icons.history, color: AppColors.primary),
+          SizedBox(width: 8),
+          Text('الاقتراحات', style: TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+        content: Container(
+          width: double.maxFinite,
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: ListView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            itemCount: suggestions.length,
+            itemBuilder: (ctx, i) {
+              return InkWell(
+                onTap: () {
+                  controller.text = suggestions[i];
+                  controller.selection = TextSelection.fromPosition(
+                      TextPosition(offset: controller.text.length));
+                  Navigator.pop(suggestionCtx);
+                  onSelected();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  child: Row(children: [
+                    Icon(Icons.history,
+                        size: 18, color: AppColors.primary.withOpacity(0.6)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        suggestions[i],
+                        style: const TextStyle(
+                            fontSize: 14, color: AppColors.textDark),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ]),
                 ),
-              ]),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -3818,281 +3841,261 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
     List<String> suggestions = [];
-    bool showSuggestions = false;
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => GestureDetector(
-          onTap: () {
-            if (showSuggestions) {
-              setDialogState(() => showSuggestions = false);
-            }
-          },
-          child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-            title: Row(children: [
-              IconButton(
-                  icon: const Icon(Icons.close, size: 22),
-                  onPressed: () => Navigator.pop(ctx),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints()),
-              const Spacer(),
-              const Text('تعديل العملية',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              const Icon(Icons.edit, color: AppColors.primary),
-            ]),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  // ✅ قائمة الاقتراحات في الأعلى (فوق المبلغ والتاريخ)
-                  if (showSuggestions)
-                    _buildSuggestionsList(
-                      suggestions: suggestions,
-                      controller: detailsCtrl,
-                      onSelected: () {
-                        setDialogState(() {
-                          suggestions = [];
-                          showSuggestions = false;
-                        });
-                      },
-                    ),
-                  Row(children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.right,
-                        onTap: () {
-                          amountCtrl.selection = TextSelection(
-                              baseOffset: 0,
-                              extentOffset: amountCtrl.text.length);
-                        },
-                        decoration: const InputDecoration(
-                            labelText: 'المبلغ',
-                            border: UnderlineInputBorder()),
-                      ),
-                    ),
-                    const SizedBox(width: 15),
-                    Expanded(
-                      flex: 2,
-                      child: InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                          );
-                          if (picked != null) {
-                            setDialogState(() {
-                              selectedDate = picked;
-                              dateCtrl.text =
-                                  '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
-                            });
-                          }
-                        },
-                        child: AbsorbPointer(
-                          child: TextField(
-                            controller: dateCtrl,
-                            textAlign: TextAlign.right,
-                            decoration: const InputDecoration(
-                                labelText: 'التاريخ',
-                                border: UnderlineInputBorder()),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 15),
-                  Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Expanded(
-                      child: TextField(
-                        controller: detailsCtrl,
-                        textAlign: TextAlign.right,
-                        decoration: const InputDecoration(
-                            labelText: 'التفاصيل / البيان',
-                            border: UnderlineInputBorder()),
-                        onChanged: (val) async {
-                          if (val.length >= 2) {
-                            final allDetails =
-                                await provider.getDistinctDetails();
-                            final prefixMatches = allDetails
-                                .where((d) =>
-                                    d.startsWith(val) && d != val)
-                                .toList();
-                            final containsMatches = allDetails
-                                .where((d) =>
-                                    d.contains(val) &&
-                                    !d.startsWith(val) &&
-                                    d != val)
-                                .toList();
-                            final combined = [
-                              ...prefixMatches,
-                              ...containsMatches
-                            ];
-                            setDialogState(() {
-                              suggestions = combined;
-                              showSuggestions = combined.isNotEmpty;
-                            });
-                          } else {
-                            setDialogState(() {
-                              suggestions = [];
-                              showSuggestions = false;
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          title: Row(children: [
+            IconButton(
+                icon: const Icon(Icons.close, size: 22),
+                onPressed: () => Navigator.pop(ctx),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints()),
+            const Spacer(),
+            const Text('تعديل العملية',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 6),
+            const Icon(Icons.edit, color: AppColors.primary),
+          ]),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
                       onTap: () {
-                        showDialog(
+                        amountCtrl.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: amountCtrl.text.length);
+                      },
+                      decoration: const InputDecoration(
+                          labelText: 'المبلغ',
+                          border: UnderlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    flex: 2,
+                    child: InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
                           context: context,
-                          builder: (imageCtx) => AlertDialog(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                            title: const Text('اختر مصدر الصورة'),
-                            content: Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceEvenly,
-                              children: [
-                                TextButton.icon(
-                                  icon: const Icon(Icons.camera_alt,
-                                      size: 32, color: AppColors.primary),
-                                  label: const Text('الكاميرا'),
-                                  onPressed: () async {
-                                    Navigator.pop(imageCtx);
-                                    final img =
-                                        await ImagePicker().pickImage(
-                                            source: ImageSource.camera,
-                                            imageQuality: 60);
-                                    if (img != null) {
-                                      final bytes =
-                                          await img.readAsBytes();
-                                      setDialogState(() =>
-                                          selectedImageBase64 =
-                                              base64Encode(bytes));
-                                    }
-                                  },
-                                ),
-                                TextButton.icon(
-                                  icon: const Icon(Icons.photo_library,
-                                      size: 32, color: AppColors.primary),
-                                  label: const Text('الهاتف'),
-                                  onPressed: () async {
-                                    Navigator.pop(imageCtx);
-                                    final img =
-                                        await ImagePicker().pickImage(
-                                            source: ImageSource.gallery,
-                                            imageQuality: 60);
-                                    if (img != null) {
-                                      final bytes =
-                                          await img.readAsBytes();
-                                      setDialogState(() =>
-                                          selectedImageBase64 =
-                                              base64Encode(bytes));
-                                    }
-                                  },
-                                ),
-                              ],
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            selectedDate = picked;
+                            dateCtrl.text =
+                                '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
+                          });
+                        }
+                      },
+                      child: AbsorbPointer(
+                        child: TextField(
+                          controller: dateCtrl,
+                          textAlign: TextAlign.right,
+                          decoration: const InputDecoration(
+                              labelText: 'التاريخ',
+                              border: UnderlineInputBorder()),
+                        ),
+                      ),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 15),
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(
+                    child: TextField(
+                      controller: detailsCtrl,
+                      textAlign: TextAlign.right,
+                      decoration: const InputDecoration(
+                          labelText: 'التفاصيل / البيان',
+                          border: UnderlineInputBorder()),
+                      onChanged: (val) async {
+                        if (val.length >= 2) {
+                          final allDetails =
+                              await provider.getDistinctDetails();
+                          final prefixMatches = allDetails
+                              .where((d) => d.startsWith(val) && d != val)
+                              .toList();
+                          final containsMatches = allDetails
+                              .where((d) =>
+                                  d.contains(val) &&
+                                  !d.startsWith(val) &&
+                                  d != val)
+                              .toList();
+                          final combined = [
+                            ...prefixMatches,
+                            ...containsMatches
+                          ];
+                          if (combined.isNotEmpty && context.mounted) {
+                            _showSuggestionsDialog(
+                              parentContext: context,
+                              suggestions: combined,
+                              controller: detailsCtrl,
+                              onSelected: () {
+                                setDialogState(() {});
+                              },
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (imageCtx) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          title: const Text('اختر مصدر الصورة'),
+                          content: Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceEvenly,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.camera_alt,
+                                    size: 32, color: AppColors.primary),
+                                label: const Text('الكاميرا'),
+                                onPressed: () async {
+                                  Navigator.pop(imageCtx);
+                                  final img =
+                                      await ImagePicker().pickImage(
+                                          source: ImageSource.camera,
+                                          imageQuality: 60);
+                                  if (img != null) {
+                                    final bytes =
+                                        await img.readAsBytes();
+                                    setDialogState(() =>
+                                        selectedImageBase64 =
+                                            base64Encode(bytes));
+                                  }
+                                },
+                              ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.photo_library,
+                                    size: 32, color: AppColors.primary),
+                                label: const Text('الهاتف'),
+                                onPressed: () async {
+                                  Navigator.pop(imageCtx);
+                                  final img =
+                                      await ImagePicker().pickImage(
+                                          source: ImageSource.gallery,
+                                          imageQuality: 60);
+                                  if (img != null) {
+                                    final bytes =
+                                        await img.readAsBytes();
+                                    setDialogState(() =>
+                                        selectedImageBase64 =
+                                            base64Encode(bytes));
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: selectedImageBase64 == null
+                        ? const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.camera_alt,
+                                color: Colors.grey, size: 28))
+                        : GestureDetector(
+                            onTap: () => _showImageOptionsSheet(
+                                context, provider, tx),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.memory(
+                                  base64Decode(selectedImageBase64!),
+                                  width: 45,
+                                  height: 45,
+                                  fit: BoxFit.cover),
                             ),
                           ),
-                        );
-                      },
-                      child: selectedImageBase64 == null
-                          ? const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.camera_alt,
-                                  color: Colors.grey, size: 28))
-                          : GestureDetector(
-                              onTap: () => _showImageOptionsSheet(
-                                  context, provider, tx),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.memory(
-                                    base64Decode(selectedImageBase64!),
-                                    width: 45,
-                                    height: 45,
-                                    fit: BoxFit.cover),
-                              ),
-                            ),
-                    ),
-                  ]),
-                  const SizedBox(height: 20),
-                  Row(children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount = double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) return;
-                          final now = DateTime.now();
-                          final dateStr =
-                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                          provider.updateTransaction(
-                            int.parse(tx['id'].toString()),
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'take',
-                            detailsCtrl.text,
-                            imageData: selectedImageBase64,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.red,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
-                        ),
-                        child: const Text('عليه',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount = double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) return;
-                          final now = DateTime.now();
-                          final dateStr =
-                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                          provider.updateTransaction(
-                            int.parse(tx['id'].toString()),
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'give',
-                            detailsCtrl.text,
-                            imageData: selectedImageBase64,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
-                        ),
-                        child: const Text('له',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ]),
+                  ),
                 ]),
-              ),
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final amount = double.tryParse(amountCtrl.text);
+                        if (amount == null || amount <= 0) return;
+                        final now = DateTime.now();
+                        final dateStr =
+                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                        provider.updateTransaction(
+                          int.parse(tx['id'].toString()),
+                          int.parse(widget.customer['id'].toString()),
+                          amount,
+                          'take',
+                          detailsCtrl.text,
+                          imageData: selectedImageBase64,
+                        );
+                        Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: const Text('عليه',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final amount = double.tryParse(amountCtrl.text);
+                        if (amount == null || amount <= 0) return;
+                        final now = DateTime.now();
+                        final dateStr =
+                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                        provider.updateTransaction(
+                          int.parse(tx['id'].toString()),
+                          int.parse(widget.customer['id'].toString()),
+                          amount,
+                          'give',
+                          detailsCtrl.text,
+                          imageData: selectedImageBase64,
+                        );
+                        Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: const Text('له',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ]),
+              ]),
             ),
           ),
         ),
@@ -4110,272 +4113,252 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
     List<String> suggestions = [];
-    bool showSuggestions = false;
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => GestureDetector(
-          onTap: () {
-            if (showSuggestions) {
-              setDialogState(() => showSuggestions = false);
-            }
-          },
-          child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-            title: Row(children: [
-              IconButton(
-                  icon: const Icon(Icons.close, size: 22),
-                  onPressed: () => Navigator.pop(ctx),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints()),
-              const Spacer(),
-              const Text('إضافة عملية جديدة',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              const Icon(Icons.add_circle_outline, color: AppColors.primary),
-            ]),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  // ✅ قائمة الاقتراحات في الأعلى (فوق المبلغ والتاريخ)
-                  if (showSuggestions)
-                    _buildSuggestionsList(
-                      suggestions: suggestions,
-                      controller: detailsCtrl,
-                      onSelected: () {
-                        setDialogState(() {
-                          suggestions = [];
-                          showSuggestions = false;
-                        });
-                      },
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          title: Row(children: [
+            IconButton(
+                icon: const Icon(Icons.close, size: 22),
+                onPressed: () => Navigator.pop(ctx),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints()),
+            const Spacer(),
+            const Text('إضافة عملية جديدة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 6),
+            const Icon(Icons.add_circle_outline, color: AppColors.primary),
+          ]),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      decoration: const InputDecoration(
+                          labelText: 'المبلغ',
+                          border: UnderlineInputBorder()),
                     ),
-                  Row(children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.right,
-                        decoration: const InputDecoration(
-                            labelText: 'المبلغ',
-                            border: UnderlineInputBorder()),
-                      ),
-                    ),
-                    const SizedBox(width: 15),
-                    Expanded(
-                      flex: 2,
-                      child: InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                          );
-                          if (picked != null) {
-                            setDialogState(() {
-                              selectedDate = picked;
-                              dateCtrl.text =
-                                  '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
-                            });
-                          }
-                        },
-                        child: AbsorbPointer(
-                          child: TextField(
-                            controller: dateCtrl,
-                            textAlign: TextAlign.right,
-                            decoration: const InputDecoration(
-                                labelText: 'التاريخ',
-                                border: UnderlineInputBorder()),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 15),
-                  Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Expanded(
-                      child: TextField(
-                        controller: detailsCtrl,
-                        textAlign: TextAlign.right,
-                        decoration: const InputDecoration(
-                            labelText: 'التفاصيل / البيان',
-                            border: UnderlineInputBorder()),
-                        onChanged: (val) async {
-                          if (val.length >= 2) {
-                            final allDetails =
-                                await provider.getDistinctDetails();
-                            final prefixMatches = allDetails
-                                .where((d) =>
-                                    d.startsWith(val) && d != val)
-                                .toList();
-                            final containsMatches = allDetails
-                                .where((d) =>
-                                    d.contains(val) &&
-                                    !d.startsWith(val) &&
-                                    d != val)
-                                .toList();
-                            final combined = [
-                              ...prefixMatches,
-                              ...containsMatches
-                            ];
-                            setDialogState(() {
-                              suggestions = combined;
-                              showSuggestions = combined.isNotEmpty;
-                            });
-                          } else {
-                            setDialogState(() {
-                              suggestions = [];
-                              showSuggestions = false;
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () {
-                        showDialog(
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    flex: 2,
+                    child: InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
                           context: context,
-                          builder: (imageCtx) => AlertDialog(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                            title: const Text('اختر مصدر الصورة'),
-                            content: Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceEvenly,
-                              children: [
-                                TextButton.icon(
-                                  icon: const Icon(Icons.camera_alt,
-                                      size: 32, color: AppColors.primary),
-                                  label: const Text('الكاميرا'),
-                                  onPressed: () async {
-                                    Navigator.pop(imageCtx);
-                                    final img =
-                                        await ImagePicker().pickImage(
-                                            source: ImageSource.camera,
-                                            imageQuality: 60);
-                                    if (img != null) {
-                                      final bytes =
-                                          await img.readAsBytes();
-                                      setDialogState(() =>
-                                          selectedImageBase64 =
-                                              base64Encode(bytes));
-                                    }
-                                  },
-                                ),
-                                TextButton.icon(
-                                  icon: const Icon(Icons.photo_library,
-                                      size: 32, color: AppColors.primary),
-                                  label: const Text('الهاتف'),
-                                  onPressed: () async {
-                                    Navigator.pop(imageCtx);
-                                    final img =
-                                        await ImagePicker().pickImage(
-                                            source: ImageSource.gallery,
-                                            imageQuality: 60);
-                                    if (img != null) {
-                                      final bytes =
-                                          await img.readAsBytes();
-                                      setDialogState(() =>
-                                          selectedImageBase64 =
-                                              base64Encode(bytes));
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
                         );
+                        if (picked != null) {
+                          setDialogState(() {
+                            selectedDate = picked;
+                            dateCtrl.text =
+                                '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
+                          });
+                        }
                       },
-                      child: selectedImageBase64 == null
-                          ? const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.camera_alt,
-                                  color: Colors.grey, size: 28))
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.memory(
-                                  base64Decode(selectedImageBase64!),
-                                  width: 45,
-                                  height: 45,
-                                  fit: BoxFit.cover),
-                            ),
-                    ),
-                  ]),
-                  const SizedBox(height: 20),
-                  Row(children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount = double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) return;
-                          final now = DateTime.now();
-                          final dateStr =
-                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                          provider.addTransaction(
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'take',
-                            detailsCtrl.text,
-                            dateStr,
-                            imageData: selectedImageBase64,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.red,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
+                      child: AbsorbPointer(
+                        child: TextField(
+                          controller: dateCtrl,
+                          textAlign: TextAlign.right,
+                          decoration: const InputDecoration(
+                              labelText: 'التاريخ',
+                              border: UnderlineInputBorder()),
                         ),
-                        child: const Text('عليه',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final amount = double.tryParse(amountCtrl.text);
-                          if (amount == null || amount <= 0) return;
-                          final now = DateTime.now();
-                          final dateStr =
-                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                          provider.addTransaction(
-                            int.parse(widget.customer['id'].toString()),
-                            amount,
-                            'give',
-                            detailsCtrl.text,
-                            dateStr,
-                            imageData: selectedImageBase64,
-                          );
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
-                        ),
-                        child: const Text('له',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ]),
+                  ),
                 ]),
-              ),
+                const SizedBox(height: 15),
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(
+                    child: TextField(
+                      controller: detailsCtrl,
+                      textAlign: TextAlign.right,
+                      decoration: const InputDecoration(
+                          labelText: 'التفاصيل / البيان',
+                          border: UnderlineInputBorder()),
+                      onChanged: (val) async {
+                        if (val.length >= 2) {
+                          final allDetails =
+                              await provider.getDistinctDetails();
+                          final prefixMatches = allDetails
+                              .where((d) => d.startsWith(val) && d != val)
+                              .toList();
+                          final containsMatches = allDetails
+                              .where((d) =>
+                                  d.contains(val) &&
+                                  !d.startsWith(val) &&
+                                  d != val)
+                              .toList();
+                          final combined = [
+                            ...prefixMatches,
+                            ...containsMatches
+                          ];
+                          if (combined.isNotEmpty && context.mounted) {
+                            _showSuggestionsDialog(
+                              parentContext: context,
+                              suggestions: combined,
+                              controller: detailsCtrl,
+                              onSelected: () {
+                                setDialogState(() {});
+                              },
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (imageCtx) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          title: const Text('اختر مصدر الصورة'),
+                          content: Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceEvenly,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.camera_alt,
+                                    size: 32, color: AppColors.primary),
+                                label: const Text('الكاميرا'),
+                                onPressed: () async {
+                                  Navigator.pop(imageCtx);
+                                  final img =
+                                      await ImagePicker().pickImage(
+                                          source: ImageSource.camera,
+                                          imageQuality: 60);
+                                  if (img != null) {
+                                    final bytes =
+                                        await img.readAsBytes();
+                                    setDialogState(() =>
+                                        selectedImageBase64 =
+                                            base64Encode(bytes));
+                                  }
+                                },
+                              ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.photo_library,
+                                    size: 32, color: AppColors.primary),
+                                label: const Text('الهاتف'),
+                                onPressed: () async {
+                                  Navigator.pop(imageCtx);
+                                  final img =
+                                      await ImagePicker().pickImage(
+                                          source: ImageSource.gallery,
+                                          imageQuality: 60);
+                                  if (img != null) {
+                                    final bytes =
+                                        await img.readAsBytes();
+                                    setDialogState(() =>
+                                        selectedImageBase64 =
+                                            base64Encode(bytes));
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: selectedImageBase64 == null
+                        ? const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.camera_alt,
+                                color: Colors.grey, size: 28))
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(
+                                base64Decode(selectedImageBase64!),
+                                width: 45,
+                                height: 45,
+                                fit: BoxFit.cover),
+                          ),
+                  ),
+                ]),
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final amount = double.tryParse(amountCtrl.text);
+                        if (amount == null || amount <= 0) return;
+                        final now = DateTime.now();
+                        final dateStr =
+                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                        provider.addTransaction(
+                          int.parse(widget.customer['id'].toString()),
+                          amount,
+                          'take',
+                          detailsCtrl.text,
+                          dateStr,
+                          imageData: selectedImageBase64,
+                        );
+                        Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: const Text('عليه',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final amount = double.tryParse(amountCtrl.text);
+                        if (amount == null || amount <= 0) return;
+                        final now = DateTime.now();
+                        final dateStr =
+                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                        provider.addTransaction(
+                          int.parse(widget.customer['id'].toString()),
+                          amount,
+                          'give',
+                          detailsCtrl.text,
+                          dateStr,
+                          imageData: selectedImageBase64,
+                        );
+                        Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: const Text('له',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ]),
+              ]),
             ),
           ),
         ),
@@ -4829,7 +4812,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ============ PDF محسّن ============
+  // ============ PDF محسّن مع حذف تلقائي ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     if (mounted) {
@@ -4852,7 +4835,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
 
     try {
-      // ✅ استخدام خط أخف للبيانات لتسريع الإنتاج
       final fontDataRegular =
           await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
       final fontRegular = pw.Font.ttf(fontDataRegular);
@@ -4887,7 +4869,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final lightRed = PdfColor.fromHex("#FFCDD2");
       final black = PdfColors.black;
 
-      // ✅ بناء الصفوف مسبقاً بكفاءة
       final List<pw.TableRow> dataRows = [];
       double newFinalBal = 0;
       double newTotalGive = 0;
@@ -5126,6 +5107,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(bytes);
       await OpenFile.open(file.path);
+      // ✅ حذف الملف بعد 5 ثوانٍ من فتحه
+      Future.delayed(const Duration(seconds: 5), () async {
+        try {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {}
+      });
     } catch (e, st) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       debugPrint('PDF Error: $e\n$st');
