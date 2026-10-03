@@ -31,17 +31,14 @@ jobs:
       - name: Generate App Icons
         run: dart run flutter_launcher_icons
 
-      - name: Build Release APK
-        run: flutter build apk --release --no-tree-shake-icons
-
       # ============================================
-      # ✅ استخراج Keystore الثابت من Secrets
+      # ✅ استخراج Keystore من Secrets ووضعه في المكان الصحيح
       # ============================================
       - name: Decode Keystore from Secrets
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
           echo "✅ تم استخراج Keystore"
-          ls -lh release.keystore
+          ls -lh android/app/release.keystore
 
       # ============================================
       # ✅ عرض SHA-1 للتأكد من ثباته
@@ -53,36 +50,38 @@ jobs:
           echo "========================================"
 
           keytool -list -v \
-            -keystore release.keystore \
+            -keystore android/app/release.keystore \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
             -alias ${{ secrets.KEY_ALIAS }} | grep "SHA1:"
 
           echo "========================================"
 
       # ============================================
-      # ✅ توقيع APK بالـ Keystore الثابت
+      # ✅ بناء AAB (Google Play)
       # ============================================
-      - name: Sign APK with Stable Keystore
-        run: |
-          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
-
-          $BUILD_TOOLS_PATH/zipalign -v 4 \
-            build/app/outputs/flutter-apk/app-release.apk \
-            build/app/outputs/flutter-apk/app-release-aligned.apk
-
-          $BUILD_TOOLS_PATH/apksigner sign \
-            --ks release.keystore \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --out build/app/outputs/flutter-apk/app-release-signed.apk \
-            build/app/outputs/flutter-apk/app-release-aligned.apk
+      - name: Build Release AAB
+        run: flutter build appbundle --release --no-tree-shake-icons
 
       # ============================================
-      # ✅ رفع APK النهائي
+      # ✅ بناء APK (للتثبيت المباشر)
+      # ============================================
+      - name: Build Release APK
+        run: flutter build apk --release --no-tree-shake-icons
+
+      # ============================================
+      # ✅ رفع AAB
+      # ============================================
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4.3.6
+        with:
+          name: Al-Mohaseb-AAB
+          path: build/app/outputs/bundle/release/app-release.aab
+
+      # ============================================
+      # ✅ رفع APK
       # ============================================
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4.3.6
         with:
           name: Al-Mohaseb-APK
-          path: build/app/outputs/flutter-apk/app-release-signed.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
