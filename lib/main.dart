@@ -71,19 +71,13 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
     try {
-      // تهيئة قاعدة البيانات (مطلوبة للنسخ الاحتياطي)
       await AppDBHelper.instance.database;
-
-      // نسخ محلي
       final localError = await AutoBackupService.performScheduledBackup();
       debugPrint('✅ نسخ محلي مجدول: $localError');
-
-      // نسخ على Drive (إذا كان المستخدم مسجلاً)
       if (GoogleDriveService.isSignedIn) {
         final driveError = await AutoBackupService.performScheduledDriveBackup();
         debugPrint('✅ نسخ Drive مجدول: $driveError');
       }
-
       return true;
     } catch (e) {
       debugPrint('❌ خطأ في المهمة الخلفية: $e');
@@ -398,13 +392,11 @@ class AutoBackupService {
     }
   }
 
-  // ============ جدولة المهمة اليومية ============
   static Future<void> scheduleDailyBackup() async {
     final settings = await getSettings();
     final hour = settings['hour'] as int;
     final minute = settings['minute'] as int;
 
-    // حساب الوقت المتبقي حتى موعد النسخ
     final now = DateTime.now();
     var target = DateTime(now.year, now.month, now.day, hour, minute);
     if (target.isBefore(now)) {
@@ -428,7 +420,6 @@ class AutoBackupService {
     debugPrint('✅ تم إلغاء المهمة اليومية');
   }
 
-  // ============ النسخ المجدول (من Workmanager) ============
   static Future<String?> performScheduledBackup() async {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
@@ -437,7 +428,6 @@ class AutoBackupService {
     if (!await _hasDataChanged()) return null;
 
     final result = await performBackup(folderPath);
-    // بعد النسخة، أعد جدولة المهمة لليوم التالي
     await scheduleDailyBackup();
     return result;
   }
@@ -467,7 +457,6 @@ class AutoBackupService {
     }
   }
 
-  // ============ النسخ اليدوي / عند فتح التطبيق ============
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
@@ -528,7 +517,6 @@ class AutoBackupService {
     }
   }
 
-  // ============ حذف النسخ القديمة ============
   static Future<void> _cleanOldDriveBackups() async {
     try {
       final backups = await GoogleDriveService.listBackups();
@@ -553,7 +541,7 @@ class AutoBackupService {
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
           .toList();
       if (files.length <= _maxLocalBackups) return;
-      files.sort((a, b) => a.path.compareTo(b.path)); // الأقدم أولاً
+      files.sort((a, b) => a.path.compareTo(b.path));
       for (int i = 0; i < files.length - _maxLocalBackups; i++) {
         try {
           await files[i].delete();
@@ -564,7 +552,6 @@ class AutoBackupService {
     }
   }
 
-  // ============ النسخ الفعلي ============
   static Future<String?> performBackup(String folderPath) async {
     try {
       final dbFile = await _getDatabaseFile();
@@ -650,7 +637,6 @@ void main() async {
     statusBarBrightness: Brightness.light,
   ));
 
-  // ✅ تهيئة Workmanager
   await Workmanager().initialize(callbackDispatcher);
 
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -671,11 +657,9 @@ void main() async {
       ),
     );
 
-    // ✅ فحص النسخ الاحتياطي عند فتح التطبيق
     Future.delayed(const Duration(seconds: 2), () async {
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
-      // إعادة جدولة المهمة اليومية عند فتح التطبيق
       final settings = await AutoBackupService.getSettings();
       if (settings['enabled'] == true) {
         await AutoBackupService.scheduleDailyBackup();
@@ -981,7 +965,6 @@ class AppAccountProvider extends ChangeNotifier {
       'date': date,
       'image_data': imageData,
     });
-    // ✅ تحديث last_activity بالتاريخ الفعلي (مع الوقت) لضمان الارتفاع للأعلى
     await db.update('customers', {'last_activity': date},
         where: 'id = ?', whereArgs: [customerId]);
     await loadTransactions(customerId);
@@ -1002,7 +985,6 @@ class AppAccountProvider extends ChangeNotifier {
         },
         where: 'id = ?',
         whereArgs: [id]);
-    // ✅ لا نقوم بتحديث last_activity هنا، ليبقى الحساب في مكانه
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -1052,7 +1034,6 @@ class AppAccountProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ دالة الاقتراحات المعدلة (تحتوي على النص، وليس تبدأ به فقط)
   Future<List<String>> getDistinctDetails({String query = ''}) async {
     try {
       final db = await AppDBHelper.instance.database;
@@ -1064,7 +1045,7 @@ class AppAccountProvider extends ChangeNotifier {
           WHERE details IS NOT NULL AND TRIM(details) != ''
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
-          LIMIT 50
+          LIMIT 100
         ''');
       } else {
         result = await db.rawQuery('''
@@ -1074,7 +1055,7 @@ class AppAccountProvider extends ChangeNotifier {
             AND details LIKE ?
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
-          LIMIT 50
+          LIMIT 100
         ''', ['%$query%']);
       }
       return result
@@ -1694,11 +1675,26 @@ class _HomeScreenState extends State<HomeScreen>
   TextEditingController? searchController;
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? _drawerLogoBase64;
+  String _drawerLogoShape = 'circle';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAutoBackup());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAutoBackup();
+      _loadDrawerLogo();
+    });
+  }
+
+  Future<void> _loadDrawerLogo() async {
+    final logo = await PersonalDataService.getLogoBase64();
+    final data = await PersonalDataService.getData();
+    if (!mounted) return;
+    setState(() {
+      _drawerLogoBase64 = logo;
+      _drawerLogoShape = data['logoShape'] as String;
+    });
   }
 
   void _startSearch() {
@@ -1785,54 +1781,6 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (e) {
       debugPrint('❌ خطأ في فحص Drive: $e');
     }
-  }
-
-  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
-    final provider = Provider.of<AppAccountProvider>(context, listen: false);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: Row(children: [
-          Icon(fromDrive ? Icons.cloud : Icons.backup,
-              color: fromDrive ? AppColors.drive : AppColors.gold),
-          const SizedBox(width: 8),
-          Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
-        ]),
-        content: Text(fromDrive
-            ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
-            : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
-        actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.download, color: AppColors.green),
-            label: const Text('استعادة نسخة',
-                style: TextStyle(color: AppColors.green)),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              bool success = await provider.importBackup();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(success
-                      ? 'تمت استعادة البيانات بنجاح'
-                      : 'تعذر استعادة الملف'),
-                  backgroundColor: success ? AppColors.green : AppColors.red,
-                ));
-              }
-            },
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
-            icon: const Icon(Icons.upload),
-            label: const Text('حفظ نسخة'),
-            onPressed: () {
-              Navigator.pop(ctx);
-              provider.exportBackup();
-            },
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _importFromExcel(BuildContext context) async {
@@ -2106,14 +2054,30 @@ class _HomeScreenState extends State<HomeScreen>
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ✅ شعار التطبيق من البيانات الشخصية
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    width: 90,
+                    height: 90,
                     decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.gold, width: 3)),
-                    child: const Icon(Icons.account_balance_wallet,
-                        color: AppColors.primary, size: 40),
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.gold, width: 3),
+                    ),
+                    child: ClipOval(
+                      child: _drawerLogoBase64 != null
+                          ? Image.memory(
+                              base64Decode(_drawerLogoBase64!),
+                              fit: BoxFit.cover,
+                              width: 90,
+                              height: 90,
+                            )
+                          : Image.asset(
+                              'assets/icon.png',
+                              fit: BoxFit.cover,
+                              width: 90,
+                              height: 90,
+                            ),
+                    ),
                   ),
                   const SizedBox(height: 15),
                   const Text('تطبيق المحاسب',
@@ -2177,7 +2141,9 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const PersonalDataScreen()));
+                      builder: (_) => const PersonalDataScreen())).then((_) {
+                _loadDrawerLogo();
+              });
             },
           ),
           const Divider(height: 20, indent: 20, endIndent: 20),
@@ -2962,7 +2928,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(enabled: value);
     setState(() => _enabled = value);
 
-    // ✅ جدولة/إلغاء المهمة اليومية
     if (value) {
       await AutoBackupService.scheduleDailyBackup();
     } else {
@@ -3000,7 +2965,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       await AutoBackupService.saveSettings(
           hour: picked.hour, minute: picked.minute);
       setState(() => _selectedTime = picked);
-      // إعادة جدولة المهمة بالوقت الجديد
       if (_enabled) {
         await AutoBackupService.scheduleDailyBackup();
       }
@@ -3776,7 +3740,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== قائمة الاقتراحات ==========
+  // ========== قائمة الاقتراحات (تظهر في الأعلى) ==========
   Widget _buildSuggestionsList({
     required List<String> suggestions,
     required TextEditingController controller,
@@ -3784,7 +3748,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }) {
     if (suggestions.isEmpty) return const SizedBox.shrink();
     return Container(
-      margin: const EdgeInsets.only(top: 2),
+      margin: const EdgeInsets.only(bottom: 8),
       constraints: const BoxConstraints(maxHeight: 200),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -3800,7 +3764,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       child: ListView.builder(
         shrinkWrap: true,
         padding: EdgeInsets.zero,
-        itemCount: suggestions.length > 5 ? 5 : suggestions.length,
+        itemCount: suggestions.length,
         itemBuilder: (ctx, i) {
           return InkWell(
             onTap: () {
@@ -3832,7 +3796,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة تعديل العملية (مع الاقتراحات) ==========
+  // ========== نافذة تعديل العملية ==========
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
     double amt = (tx['amount'] as num).toDouble();
     String amtStr = amt == amt.roundToDouble()
@@ -3860,76 +3824,93 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-          title: Row(children: [
-            IconButton(
-                icon: const Icon(Icons.close, size: 22),
-                onPressed: () => Navigator.pop(ctx),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints()),
-            const Spacer(),
-            const Text('تعديل العملية',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 6),
-            const Icon(Icons.edit, color: AppColors.primary),
-          ]),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: amountCtrl,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.right,
-                      onTap: () {
-                        amountCtrl.selection = TextSelection(
-                            baseOffset: 0,
-                            extentOffset: amountCtrl.text.length);
+        builder: (context, setDialogState) => GestureDetector(
+          onTap: () {
+            if (showSuggestions) {
+              setDialogState(() => showSuggestions = false);
+            }
+          },
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            title: Row(children: [
+              IconButton(
+                  icon: const Icon(Icons.close, size: 22),
+                  onPressed: () => Navigator.pop(ctx),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints()),
+              const Spacer(),
+              const Text('تعديل العملية',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 6),
+              const Icon(Icons.edit, color: AppColors.primary),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  // ✅ قائمة الاقتراحات في الأعلى (فوق المبلغ والتاريخ)
+                  if (showSuggestions)
+                    _buildSuggestionsList(
+                      suggestions: suggestions,
+                      controller: detailsCtrl,
+                      onSelected: () {
+                        setDialogState(() {
+                          suggestions = [];
+                          showSuggestions = false;
+                        });
                       },
-                      decoration: const InputDecoration(
-                          labelText: 'المبلغ',
-                          border: UnderlineInputBorder()),
                     ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    flex: 2,
-                    child: InkWell(
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          setDialogState(() {
-                            selectedDate = picked;
-                            dateCtrl.text =
-                                '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
-                          });
-                        }
-                      },
-                      child: AbsorbPointer(
-                        child: TextField(
-                          controller: dateCtrl,
-                          textAlign: TextAlign.right,
-                          decoration: const InputDecoration(
-                              labelText: 'التاريخ',
-                              border: UnderlineInputBorder()),
+                  Row(children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.right,
+                        onTap: () {
+                          amountCtrl.selection = TextSelection(
+                              baseOffset: 0,
+                              extentOffset: amountCtrl.text.length);
+                        },
+                        decoration: const InputDecoration(
+                            labelText: 'المبلغ',
+                            border: UnderlineInputBorder()),
+                      ),
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      flex: 2,
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedDate = picked;
+                              dateCtrl.text =
+                                  '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
+                            });
+                          }
+                        },
+                        child: AbsorbPointer(
+                          child: TextField(
+                            controller: dateCtrl,
+                            textAlign: TextAlign.right,
+                            decoration: const InputDecoration(
+                                labelText: 'التاريخ',
+                                border: UnderlineInputBorder()),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ]),
-                const SizedBox(height: 15),
-                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  ]),
+                  const SizedBox(height: 15),
                   Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     Expanded(
                       child: TextField(
@@ -4044,86 +4025,74 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ),
                     ),
                   ]),
-                  // ✅ قائمة الاقتراحات فوق الأزرار مباشرة
-                  if (showSuggestions)
-                    _buildSuggestionsList(
-                      suggestions: suggestions,
-                      controller: detailsCtrl,
-                      onSelected: () {
-                        setDialogState(() {
-                          suggestions = [];
-                          showSuggestions = false;
-                        });
-                      },
-                    ),
-                ]),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
-                        final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.updateTransaction(
-                          int.parse(tx['id'].toString()),
-                          int.parse(widget.customer['id'].toString()),
-                          amount,
-                          'take',
-                          detailsCtrl.text,
-                          imageData: selectedImageBase64,
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
+                  const SizedBox(height: 20),
+                  Row(children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount = double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) return;
+                          final now = DateTime.now();
+                          final dateStr =
+                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                          provider.updateTransaction(
+                            int.parse(tx['id'].toString()),
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'take',
+                            detailsCtrl.text,
+                            imageData: selectedImageBase64,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: const Text('عليه',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                      child: const Text('عليه',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
-                        final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.updateTransaction(
-                          int.parse(tx['id'].toString()),
-                          int.parse(widget.customer['id'].toString()),
-                          amount,
-                          'give',
-                          detailsCtrl.text,
-                          imageData: selectedImageBase64,
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount = double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) return;
+                          final now = DateTime.now();
+                          final dateStr =
+                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                          provider.updateTransaction(
+                            int.parse(tx['id'].toString()),
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'give',
+                            detailsCtrl.text,
+                            imageData: selectedImageBase64,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: const Text('له',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                      child: const Text('له',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
-                  ),
+                  ]),
                 ]),
-              ]),
+              ),
             ),
           ),
         ),
@@ -4131,7 +4100,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة إضافة عملية جديدة (مع الاقتراحات) ==========
+  // ========== نافذة إضافة عملية جديدة ==========
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
@@ -4147,71 +4116,88 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-          title: Row(children: [
-            IconButton(
-                icon: const Icon(Icons.close, size: 22),
-                onPressed: () => Navigator.pop(ctx),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints()),
-            const Spacer(),
-            const Text('إضافة عملية جديدة',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 6),
-            const Icon(Icons.add_circle_outline, color: AppColors.primary),
-          ]),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: amountCtrl,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.right,
-                      decoration: const InputDecoration(
-                          labelText: 'المبلغ',
-                          border: UnderlineInputBorder()),
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    flex: 2,
-                    child: InkWell(
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          setDialogState(() {
-                            selectedDate = picked;
-                            dateCtrl.text =
-                                '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
-                          });
-                        }
+        builder: (context, setDialogState) => GestureDetector(
+          onTap: () {
+            if (showSuggestions) {
+              setDialogState(() => showSuggestions = false);
+            }
+          },
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            title: Row(children: [
+              IconButton(
+                  icon: const Icon(Icons.close, size: 22),
+                  onPressed: () => Navigator.pop(ctx),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints()),
+              const Spacer(),
+              const Text('إضافة عملية جديدة',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 6),
+              const Icon(Icons.add_circle_outline, color: AppColors.primary),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  // ✅ قائمة الاقتراحات في الأعلى (فوق المبلغ والتاريخ)
+                  if (showSuggestions)
+                    _buildSuggestionsList(
+                      suggestions: suggestions,
+                      controller: detailsCtrl,
+                      onSelected: () {
+                        setDialogState(() {
+                          suggestions = [];
+                          showSuggestions = false;
+                        });
                       },
-                      child: AbsorbPointer(
-                        child: TextField(
-                          controller: dateCtrl,
-                          textAlign: TextAlign.right,
-                          decoration: const InputDecoration(
-                              labelText: 'التاريخ',
-                              border: UnderlineInputBorder()),
+                    ),
+                  Row(children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.right,
+                        decoration: const InputDecoration(
+                            labelText: 'المبلغ',
+                            border: UnderlineInputBorder()),
+                      ),
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      flex: 2,
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedDate = picked;
+                              dateCtrl.text =
+                                  '${picked.year}/${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}';
+                            });
+                          }
+                        },
+                        child: AbsorbPointer(
+                          child: TextField(
+                            controller: dateCtrl,
+                            textAlign: TextAlign.right,
+                            decoration: const InputDecoration(
+                                labelText: 'التاريخ',
+                                border: UnderlineInputBorder()),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ]),
-                const SizedBox(height: 15),
-                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  ]),
+                  const SizedBox(height: 15),
                   Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     Expanded(
                       child: TextField(
@@ -4322,86 +4308,74 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ),
                     ),
                   ]),
-                  // ✅ قائمة الاقتراحات فوق الأزرار مباشرة
-                  if (showSuggestions)
-                    _buildSuggestionsList(
-                      suggestions: suggestions,
-                      controller: detailsCtrl,
-                      onSelected: () {
-                        setDialogState(() {
-                          suggestions = [];
-                          showSuggestions = false;
-                        });
-                      },
-                    ),
-                ]),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
-                        final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.addTransaction(
-                          int.parse(widget.customer['id'].toString()),
-                          amount,
-                          'take',
-                          detailsCtrl.text,
-                          dateStr,
-                          imageData: selectedImageBase64,
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
+                  const SizedBox(height: 20),
+                  Row(children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount = double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) return;
+                          final now = DateTime.now();
+                          final dateStr =
+                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                          provider.addTransaction(
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'take',
+                            detailsCtrl.text,
+                            dateStr,
+                            imageData: selectedImageBase64,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: const Text('عليه',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                      child: const Text('عليه',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final amount = double.tryParse(amountCtrl.text);
-                        if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
-                        final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.addTransaction(
-                          int.parse(widget.customer['id'].toString()),
-                          amount,
-                          'give',
-                          detailsCtrl.text,
-                          dateStr,
-                          imageData: selectedImageBase64,
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final amount = double.tryParse(amountCtrl.text);
+                          if (amount == null || amount <= 0) return;
+                          final now = DateTime.now();
+                          final dateStr =
+                              '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                          provider.addTransaction(
+                            int.parse(widget.customer['id'].toString()),
+                            amount,
+                            'give',
+                            detailsCtrl.text,
+                            dateStr,
+                            imageData: selectedImageBase64,
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: const Text('له',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                      child: const Text('له',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
-                  ),
+                  ]),
                 ]),
-              ]),
+              ),
             ),
           ),
         ),
@@ -4855,7 +4829,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ============ PDF ============
+  // ============ PDF محسّن ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal) async {
     if (mounted) {
@@ -4878,8 +4852,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
 
     try {
-      final fontData = await rootBundle.load('assets/fonts/Cairo-Black.ttf');
-      final font = pw.Font.ttf(fontData);
+      // ✅ استخدام خط أخف للبيانات لتسريع الإنتاج
+      final fontDataRegular =
+          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontRegular = pw.Font.ttf(fontDataRegular);
+      final fontDataBold =
+          await rootBundle.load('assets/fonts/Cairo-Black.ttf');
+      final fontBold = pw.Font.ttf(fontDataBold);
 
       final personalData = await PersonalDataService.getData();
       final logoBase64 = await PersonalDataService.getLogoBase64();
@@ -4896,7 +4875,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       }
 
       final pdf = pw.Document(
-          theme: pw.ThemeData.withFont(base: font, bold: font));
+          theme: pw.ThemeData.withFont(
+              base: fontRegular, bold: fontBold));
 
       final darkBlue = PdfColor.fromHex("#1E3A5F");
       final greenTotal = PdfColor.fromHex("#1B5E20");
@@ -4907,6 +4887,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final lightRed = PdfColor.fromHex("#FFCDD2");
       final black = PdfColors.black;
 
+      // ✅ بناء الصفوف مسبقاً بكفاءة
       final List<pw.TableRow> dataRows = [];
       double newFinalBal = 0;
       double newTotalGive = 0;
@@ -4932,13 +4913,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ? '-${formatNumber(newFinalBal.abs())}'
             : formatNumber(newFinalBal);
 
-        // ✅ الترتيب: الرصيد → له → عليه → التفاصيل → التاريخ
         dataRows.add(pw.TableRow(children: [
-          _pdfCell(balStr, font, 12, black),
-          _pdfCell(isGive ? formatNumber(amt) : '-', font, 12, black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), font, 12, black),
-          _pdfCell((tx['details'] ?? '').toString(), font, 12, black),
-          _pdfCell(dateOnly, font, 12, black),
+          _pdfCell(balStr, fontRegular, 12, black),
+          _pdfCell(isGive ? formatNumber(amt) : '-', fontRegular, 12, black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), fontRegular, 12, black),
+          _pdfCell((tx['details'] ?? '').toString(), fontRegular, 12, black),
+          _pdfCell(dateOnly, fontRegular, 12, black),
         ]));
       }
 
@@ -4949,48 +4929,45 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final double balanceValue = (newTotalTake - newTotalGive).abs();
       final PdfColor balanceRowColor = isOnHim ? lightRed : lightGreen;
 
-      // ✅ بناء الأكليشة (Header) — تتكرر في كل صفحة
       pw.Widget buildHeader() {
         final leftItems = <pw.Widget>[];
         final rightItems = <pw.Widget>[];
 
-        // العربي على اليمين (معكوس من الحالي)
         if ((personalData['nameAr'] ?? '').isNotEmpty) {
           rightItems.add(pw.Text(
             personalData['nameAr'],
-            style: pw.TextStyle(font: font, fontSize: 10, color: black),
+            style: pw.TextStyle(font: fontBold, fontSize: 10, color: black),
           ));
         }
         if ((personalData['titleAr'] ?? '').isNotEmpty) {
           rightItems.add(pw.Text(
             personalData['titleAr'],
-            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
           ));
         }
         if ((personalData['phone'] ?? '').isNotEmpty) {
           rightItems.add(pw.Text(
             personalData['phone'],
-            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
           ));
         }
 
-        // الإنجليزي على اليسار
         if ((personalData['nameEn'] ?? '').isNotEmpty) {
           leftItems.add(pw.Text(
             personalData['nameEn'],
-            style: pw.TextStyle(font: font, fontSize: 10, color: black),
+            style: pw.TextStyle(font: fontBold, fontSize: 10, color: black),
           ));
         }
         if ((personalData['titleEn'] ?? '').isNotEmpty) {
           leftItems.add(pw.Text(
             personalData['titleEn'],
-            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
           ));
         }
         if ((personalData['email'] ?? '').isNotEmpty) {
           leftItems.add(pw.Text(
             personalData['email'],
-            style: pw.TextStyle(font: font, fontSize: 9, color: black),
+            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
           ));
         }
 
@@ -5000,14 +4977,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // اليمين: العربي (ملتصق بالحافة اليمنى)
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: rightItems,
                   ),
                 ),
-                // الوسط: الشعار
                 pw.SizedBox(
                   width: 60,
                   child: pw.Center(
@@ -5027,7 +5002,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         : pw.SizedBox(),
                   ),
                 ),
-                // اليسار: الإنجليزي (ملتصق بالحافة اليسرى)
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -5043,12 +5017,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               child: pw.Text(
                 'كشف حساب : ${widget.customer['name']}',
                 style: pw.TextStyle(
-                    font: font, fontSize: 14, color: darkBlue),
+                    font: fontBold, fontSize: 14, color: darkBlue),
                 textAlign: pw.TextAlign.center,
               ),
             ),
             pw.SizedBox(height: 6),
-            // ✅ رأس الجدول (يتكرر في كل صفحة)
             pw.Table(
               border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
               columnWidths: {
@@ -5062,11 +5035,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.TableRow(
                   decoration: pw.BoxDecoration(color: headerBg),
                   children: [
-                    _pdfCell('الرصيد', font, 12, black),
-                    _pdfCell('له', font, 12, black),
-                    _pdfCell('عليه', font, 12, black),
-                    _pdfCell('التفاصيل', font, 12, black),
-                    _pdfCell('التاريخ', font, 12, black),
+                    _pdfCell('الرصيد', fontBold, 12, black),
+                    _pdfCell('له', fontBold, 12, black),
+                    _pdfCell('عليه', fontBold, 12, black),
+                    _pdfCell('التفاصيل', fontBold, 12, black),
+                    _pdfCell('التاريخ', fontBold, 12, black),
                   ],
                 ),
               ],
@@ -5089,13 +5062,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 children: [
                   pw.Text('تطبيق المحاسب',
                       style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black)),
                   pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
                       style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black)),
                   pw.Text('المهندس : اسامه الاضرعي',
                       style: pw.TextStyle(
-                          font: font, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black)),
                 ]),
           ]),
         ),
@@ -5115,29 +5088,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: totalBg),
                 children: [
-                  _pdfCell('', font, 14, black),
-                  _pdfCell(formatNumber(newTotalGive), font, 14, greenTotal),
-                  _pdfCell(formatNumber(newTotalTake), font, 14, redTotal),
-                  _pdfCell('إجمالي العمليات', font, 14, black),
-                  _pdfCell('', font, 14, black),
+                  _pdfCell('', fontBold, 14, black),
+                  _pdfCell(formatNumber(newTotalGive), fontBold, 14, greenTotal),
+                  _pdfCell(formatNumber(newTotalTake), fontBold, 14, redTotal),
+                  _pdfCell('إجمالي العمليات', fontBold, 14, black),
+                  _pdfCell('', fontBold, 14, black),
                 ],
               ),
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: balanceRowColor),
                 children: [
-                  _pdfCell('', font, 14, black),
+                  _pdfCell('', fontBold, 14, black),
                   _pdfCell(
                       !isOnHim ? formatNumber(balanceValue) : '',
-                      font,
+                      fontBold,
                       14,
                       black),
                   _pdfCell(
                       isOnHim ? formatNumber(balanceValue) : '',
-                      font,
+                      fontBold,
                       14,
                       black),
-                  _pdfCell(balanceText, font, 14, black),
-                  _pdfCell('', font, 14, black),
+                  _pdfCell(balanceText, fontBold, 14, black),
+                  _pdfCell('', fontBold, 14, black),
                 ],
               ),
             ],
