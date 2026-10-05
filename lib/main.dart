@@ -409,6 +409,7 @@ class AutoBackupService {
     }
   }
 
+  // ============ جدولة المهمة اليومية المتكررة ============
   static Future<void> scheduleDailyBackup() async {
     final settings = await getSettings();
     final hour = settings['hour'] as int;
@@ -421,15 +422,27 @@ class AutoBackupService {
     }
     final delay = target.difference(now);
 
-    await Workmanager().registerOneOffTask(
+    // ✅ إلغاء أي مهمة سابقة لتجنب التكرار
+    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+
+    // ✅ جدولة مهمة متكررة كل 24 ساعة
+    await Workmanager().registerPeriodicTask(
       _workManagerUniqueName,
       _workManagerTaskName,
       initialDelay: delay,
+      frequency: const Duration(hours: 24),
       constraints: Constraints(
         networkType: NetworkType.not_required,
+        requiresBatteryNotLow: false,
+        requiresCharging: false,
+        requiresDeviceIdle: false,
+        requiresStorageNotLow: false,
       ),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicyDelay: const Duration(minutes: 15),
     );
-    debugPrint('✅ تم جدولة المهمة اليومية بعد: ${delay.inHours} ساعة');
+    debugPrint('✅ تم جدولة المهمة اليومية المتكررة بعد: ${delay.inHours} ساعة');
   }
 
   static Future<void> cancelDailyBackup() async {
@@ -445,7 +458,6 @@ class AutoBackupService {
     if (!await _hasDataChanged()) return null;
 
     final result = await performBackup(folderPath);
-    await scheduleDailyBackup();
     return result;
   }
 
@@ -474,12 +486,14 @@ class AutoBackupService {
     }
   }
 
+  // ✅ التحقق عند فتح التطبيق (نسخ محلي)
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
       final folderPath = settings['folderPath'] as String;
       if (folderPath.isEmpty) return null;
+
       final now = DateTime.now();
       final todayTarget = DateTime(now.year, now.month, now.day,
           settings['hour'] as int, settings['minute'] as int);
@@ -488,16 +502,24 @@ class AutoBackupService {
       if (lastBackupStr.isNotEmpty) {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
-      bool shouldBackup = lastBackup == null ||
-          (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
+
+      // ✅ إذا لم يتم النسخ اليوم بعد، أو لم يتم النسخ أبداً
+      bool shouldBackup =
+          lastBackup == null || lastBackup.isBefore(todayTarget);
+
       if (!shouldBackup) return null;
       if (!await _hasDataChanged()) return null;
-      return await performBackup(folderPath);
+
+      final result = await performBackup(folderPath);
+      // ✅ إعادة جدولة المهمة بعد النسخ
+      await scheduleDailyBackup();
+      return result;
     } catch (e) {
       return null;
     }
   }
 
+  // ✅ التحقق عند فتح التطبيق (نسخ Drive)
   static Future<String?> checkAndRunDriveBackup() async {
     try {
       final settings = await getSettings();
@@ -505,6 +527,7 @@ class AutoBackupService {
       if (!GoogleDriveService.isSignedIn) {
         if (!await GoogleDriveService.trySilentSignIn()) return null;
       }
+
       final now = DateTime.now();
       final todayTarget = DateTime(now.year, now.month, now.day,
           settings['driveHour'] as int, settings['driveMinute'] as int);
@@ -513,10 +536,14 @@ class AutoBackupService {
       if (lastBackupStr.isNotEmpty) {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
-      bool shouldBackup = lastBackup == null ||
-          (now.isAfter(todayTarget) && lastBackup.isBefore(todayTarget));
+
+      // ✅ إذا لم يتم النسخ اليوم بعد، أو لم يتم النسخ أبداً
+      bool shouldBackup =
+          lastBackup == null || lastBackup.isBefore(todayTarget);
+
       if (!shouldBackup) return null;
       if (!await _hasDataChangedForDrive()) return null;
+
       final dbFile = await _getDatabaseFile();
       final error = await GoogleDriveService.uploadBackup(dbFile);
       if (error == null) {
@@ -2448,8 +2475,13 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ✅ التحقق من النسخ عند إغلاق التطبيق
   @override
   void dispose() {
+    AutoBackupService.checkAndRunBackup();
+    if (GoogleDriveService.isSignedIn) {
+      AutoBackupService.checkAndRunDriveBackup();
+    }
     _tabController?.dispose();
     searchController?.dispose();
     super.dispose();
@@ -3840,7 +3872,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
-    List<String> suggestions = [];
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
@@ -4112,7 +4143,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final dateCtrl = TextEditingController(
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
-    List<String> suggestions = [];
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
 
     showDialog(
@@ -4839,7 +4869,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
       final fontRegular = pw.Font.ttf(fontDataRegular);
       final fontDataBold =
-          await rootBundle.load('assets/fonts/Cairo-Black.ttf');
+          await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
       final fontBold = pw.Font.ttf(fontDataBold);
 
       final personalData = await PersonalDataService.getData();
