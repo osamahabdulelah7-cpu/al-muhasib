@@ -43,9 +43,8 @@ dependencies:
   # ✅ حزمة المهام الخلفية
   workmanager: ^0.5.2
 
-  # ✅ الإشعارات والتنبيهات
+  # ✅ الإشعارات
   flutter_local_notifications: ^17.2.2
-  android_alarm_manager_plus: ^4.0.3
 
 dev_dependencies:
   flutter_test:
