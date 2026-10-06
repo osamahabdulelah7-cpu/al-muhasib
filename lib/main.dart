@@ -1158,8 +1158,13 @@ class AppAccountProvider extends ChangeNotifier {
     await loadCustomers();
   }
 
-  Future<void> updateTransaction(int id, int customerId, double amount,
-      String type, String details,
+  Future<void> updateTransaction(
+      int id,
+      int customerId,
+      double amount,
+      String type,
+      String details,
+      String date,
       {String? imageData}) async {
     final db = await AppDBHelper.instance.database;
     await db.update(
@@ -1168,10 +1173,28 @@ class AppAccountProvider extends ChangeNotifier {
           'amount': amount,
           'type': type,
           'details': details,
+          'date': date,
           if (imageData != null) 'image_data': imageData,
         },
         where: 'id = ?',
         whereArgs: [id]);
+
+    // تحديث آخر نشاط للحساب بعد تعديل العملية.
+    final latest = await db.query(
+      'transactions',
+      columns: ['date'],
+      where: 'customer_id = ?',
+      whereArgs: [customerId],
+      orderBy: 'date DESC, id DESC',
+      limit: 1,
+    );
+    await db.update(
+      'customers',
+      {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+      where: 'id = ?',
+      whereArgs: [customerId],
+    );
+
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -1179,6 +1202,23 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> deleteTransaction(int id, int customerId) async {
     final db = await AppDBHelper.instance.database;
     await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
+
+    // بعد الحذف يجب إعادة حساب آخر نشاط للحساب، خصوصًا عند حذف أحدث عملية.
+    final latest = await db.query(
+      'transactions',
+      columns: ['date'],
+      where: 'customer_id = ?',
+      whereArgs: [customerId],
+      orderBy: 'date DESC, id DESC',
+      limit: 1,
+    );
+    await db.update(
+      'customers',
+      {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+      where: 'id = ?',
+      whereArgs: [customerId],
+    );
+
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -4211,19 +4251,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Row(children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.updateTransaction(
+                        await provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'take',
                           detailsCtrl.text,
+                          dateStr,
                           imageData: selectedImageBase64,
                         );
                         Navigator.pop(ctx);
@@ -4243,19 +4284,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.updateTransaction(
+                        await provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'give',
                           detailsCtrl.text,
+                          dateStr,
                           imageData: selectedImageBase64,
                         );
                         Navigator.pop(ctx);
@@ -5053,10 +5095,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         final bool isGive = tx['type'] == 'give';
         final double amt = (tx['amount'] as num).toDouble();
         if (isGive) {
-          newFinalBal -= amt;
+          newFinalBal += amt;
           newTotalGive += amt;
         } else {
-          newFinalBal += amt;
+          newFinalBal -= amt;
           newTotalTake += amt;
         }
         String dateOnly = tx['date'].toString().split(' ').first;
