@@ -48,7 +48,7 @@ Future<void> cleanTempPdfFiles() async {
     final tempDir = await getTemporaryDirectory();
     final files = tempDir.listSync();
     for (var file in files) {
-      if (file is File && file.path.endsWith('.pdf')) {
+      if (file is File && file.path.endsWith('.pdf') && p.basename(file.path).startsWith('كشف_')) {
         try {
           await file.delete();
         } catch (_) {}
@@ -872,7 +872,7 @@ class AppDBHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     return await openDatabase(p.join(dbPath, filePath),
-        version: 5, onCreate: _createDB, onUpgrade: _upgradeDB);
+        version: 6, onCreate: _createDB, onUpgrade: _upgradeDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -917,6 +917,12 @@ class AppDBHelper {
         logo_data TEXT
       )
     ''');
+    // فهارس لتحسين سرعة الحسابات والبحث والنسخ.
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+
     await db.insert('categories', {'name': 'عام', 'sort_order': 1});
     await db.insert('categories', {'name': 'عملاء', 'sort_order': 2});
     await db.insert('categories', {'name': 'موردون', 'sort_order': 3});
@@ -962,18 +968,62 @@ class AppDBHelper {
         )
       ''');
     }
+    if (oldVersion < 6) {
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+    }
   }
 
   Future<void> restoreDatabase(File newDbFile) async {
+    if (!await newDbFile.exists()) {
+      throw Exception('ملف النسخة الاحتياطية غير موجود');
+    }
+    final bytes = await newDbFile.openRead(0, 16).fold<List<int>>([], (a, b) => a..addAll(b));
+    const sqliteHeader = 'SQLite format 3\u0000';
+    final header = String.fromCharCodes(bytes);
+    if (header != sqliteHeader) {
+      throw Exception('الملف المحدد ليس قاعدة بيانات SQLite صالحة');
+    }
+    final sourceDb = await openDatabase(newDbFile.path, readOnly: true);
+    try {
+      final tables = await sourceDb.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table'");
+      final names = tables.map((e) => e['name'].toString()).toSet();
+      const required = {'categories', 'currencies', 'customers', 'transactions'};
+      if (!required.every(names.contains)) {
+        throw Exception('النسخة الاحتياطية لا تحتوي على جداول المحاسب المطلوبة');
+      }
+    } finally {
+      await sourceDb.close();
+    }
+
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, 'al_muhasib_final_v6.db');
+    final current = File(path);
     if (_db != null) {
       await _db!.close();
       _db = null;
     }
-    final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'al_muhasib_final_v6.db');
-    await newDbFile.copy(path);
-    _db = await openDatabase(path,
-        version: 5, onCreate: _createDB, onUpgrade: _upgradeDB);
+    // الاحتفاظ بنسخة أمان مؤقتة قبل الاستبدال.
+    if (await current.exists()) {
+      final safety = File(p.join(dbPath, 'al_muhasib_pre_restore.db'));
+      await current.copy(safety.path);
+    }
+    try {
+      await newDbFile.copy(path);
+      _db = await openDatabase(path,
+          version: 6, onCreate: _createDB, onUpgrade: _upgradeDB);
+    } catch (e) {
+      final safety = File(p.join(dbPath, 'al_muhasib_pre_restore.db'));
+      if (await safety.exists()) {
+        await safety.copy(path);
+      }
+      _db = await openDatabase(path,
+          version: 6, onCreate: _createDB, onUpgrade: _upgradeDB);
+      rethrow;
+    }
   }
 }
 
@@ -1039,18 +1089,25 @@ class AppAccountProvider extends ChangeNotifier {
     return 0;
   }
 
-  Future<void> deleteCategory(int id) async {
+  Future<bool> deleteCategory(int id) async {
     final db = await AppDBHelper.instance.database;
+    final categoryCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM categories')) ??
+        0;
+    if (categoryCount <= 1) return false;
     final customersInCat =
         await db.query('customers', where: 'category_id = ?', whereArgs: [id]);
-    for (var cust in customersInCat) {
-      await db.delete('transactions',
-          where: 'customer_id = ?', whereArgs: [cust['id']]);
-    }
-    await db.delete('customers', where: 'category_id = ?', whereArgs: [id]);
-    await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      for (final cust in customersInCat) {
+        await txn.delete('transactions',
+            where: 'customer_id = ?', whereArgs: [cust['id']]);
+      }
+      await txn.delete('customers', where: 'category_id = ?', whereArgs: [id]);
+      await txn.delete('categories', where: 'id = ?', whereArgs: [id]);
+    });
     await loadCategories();
     await loadCustomers();
+    return true;
   }
 
   Future<void> loadCurrencies() async {
@@ -1080,20 +1137,21 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> calculateAllCustomerBalances() async {
     final db = await AppDBHelper.instance.database;
     customerBalances.clear();
-    for (var cust in customers) {
-      int cId = int.parse(cust['id'].toString());
-      final txs = await db.query('transactions',
-          where: 'customer_id = ?', whereArgs: [cId]);
-      double total = 0.0;
-      for (var tx in txs) {
-        double amt = (tx['amount'] as num).toDouble();
-        if (tx['type'] == 'give') {
-          total += amt;
-        } else {
-          total -= amt;
-        }
+    final rows = await db.rawQuery('''
+      SELECT customer_id,
+             COALESCE(SUM(CASE WHEN type = 'give' THEN amount ELSE -amount END), 0) AS balance
+      FROM transactions
+      GROUP BY customer_id
+    ''');
+    for (final row in rows) {
+      final id = int.tryParse(row['customer_id'].toString());
+      if (id != null) {
+        customerBalances[id] = (row['balance'] as num?)?.toDouble() ?? 0.0;
       }
-      customerBalances[cId] = total;
+    }
+    for (final cust in customers) {
+      final id = int.tryParse(cust['id'].toString());
+      if (id != null) customerBalances.putIfAbsent(id, () => 0.0);
     }
   }
 
@@ -1128,8 +1186,10 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<void> deleteCustomer(int id) async {
     final db = await AppDBHelper.instance.database;
-    await db.delete('transactions', where: 'customer_id = ?', whereArgs: [id]);
-    await db.delete('customers', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      await txn.delete('transactions', where: 'customer_id = ?', whereArgs: [id]);
+      await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
+    });
     await loadCustomers();
   }
 
@@ -1143,6 +1203,8 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> addTransaction(int customerId, double amount, String type,
       String details, String date,
       {String? imageData}) async {
+    if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
+    if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
     final db = await AppDBHelper.instance.database;
     await db.insert('transactions', {
       'customer_id': customerId,
@@ -1166,6 +1228,8 @@ class AppAccountProvider extends ChangeNotifier {
       String details,
       String date,
       {String? imageData}) async {
+    if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
+    if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
     final db = await AppDBHelper.instance.database;
     await db.update(
         'transactions',
@@ -1272,7 +1336,7 @@ class AppAccountProvider extends ChangeNotifier {
           WHERE details IS NOT NULL AND TRIM(details) != ''
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
-          LIMIT 100
+          LIMIT 200
         ''');
       } else {
         result = await db.rawQuery('''
@@ -1282,7 +1346,7 @@ class AppAccountProvider extends ChangeNotifier {
             AND details LIKE ?
           GROUP BY details
           ORDER BY usage_count DESC, details ASC
-          LIMIT 100
+          LIMIT 200
         ''', ['%$query%']);
       }
       return result
@@ -1438,9 +1502,18 @@ class AppAccountProvider extends ChangeNotifier {
                   double.tryParse(v.toString().replaceAll(',', '').trim()) ?? 0;
             }
           }
+          if (takeAmount < 0 || giveAmount < 0) {
+            rowsSkipped++;
+            continue;
+          }
           if (takeAmount == 0 && giveAmount == 0) continue;
-          double amount;
-          String type;
+          // لا نقبل صفًا يحتوي مبلغًا في (له) و(عليه) معًا؛ فهذا غامض محاسبيًا.
+          if (takeAmount > 0 && giveAmount > 0) {
+            rowsSkipped++;
+            continue;
+          }
+          final double amount;
+          final String type;
           if (giveAmount > 0) {
             amount = giveAmount;
             type = 'give';
@@ -2429,17 +2502,22 @@ class _HomeScreenState extends State<HomeScreen>
                     (name.contains(searchQuery) || phone.contains(searchQuery));
               }).toList();
 
-              double totalGive = 0.0, totalTake = 0.0;
+              // لا يجوز جمع أرصدة بعملات مختلفة في إجمالي واحد.
+              // لذلك نحسب الإجماليات بشكل مستقل لكل عملة.
+              final Map<String, Map<String, double>> currencyTotals = {};
               for (var cust in categoryCustomers) {
-                int cId = int.parse(cust['id'].toString());
-                double bal = provider.customerBalances[cId] ?? 0.0;
+                final int cId = int.parse(cust['id'].toString());
+                final String currency =
+                    (cust['currency'] ?? 'غير محددة').toString();
+                final double bal = provider.customerBalances[cId] ?? 0.0;
+                final totals = currencyTotals.putIfAbsent(
+                    currency, () => {'give': 0.0, 'take': 0.0});
                 if (bal > 0) {
-                  totalGive += bal;
-                } else {
-                  totalTake += bal.abs();
+                  totals['give'] = (totals['give'] ?? 0) + bal;
+                } else if (bal < 0) {
+                  totals['take'] = (totals['take'] ?? 0) + bal.abs();
                 }
               }
-              double netBalance = totalGive - totalTake;
 
               return Column(children: [
                 Expanded(
@@ -2494,43 +2572,71 @@ class _HomeScreenState extends State<HomeScreen>
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                            horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           color: AppColors.solidBlue,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('عليه: ${formatNumber(totalTake)}',
-                                        style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 18)),
-                                    Text('له: ${formatNumber(totalGive)}',
-                                        style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 18)),
-                                  ]),
-                              const SizedBox(height: 3),
-                              Container(
-                                  height: 1,
-                                  color: Colors.black.withOpacity(0.2)),
-                              const SizedBox(height: 3),
-                              Center(
-                                child: Text(
-                                    '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                          mainAxisSize: MainAxisSize.min,
+                          children: currencyTotals.entries.map((entry) {
+                            final currency = entry.key;
+                            final totalGive = entry.value['give'] ?? 0.0;
+                            final totalTake = entry.value['take'] ?? 0.0;
+                            final netBalance = totalGive - totalTake;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    currency,
                                     style: const TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15)),
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'عليه: ${formatNumber(totalTake)}',
+                                        style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16),
+                                      ),
+                                      Text(
+                                        'له: ${formatNumber(totalGive)}',
+                                        style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    height: 1,
+                                    color: Colors.black.withOpacity(0.2),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Center(
+                                    child: Text(
+                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                                      style: const TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ]),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ]),
@@ -3038,9 +3144,31 @@ class BackupOptionsScreen extends StatelessWidget {
                 backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
             icon: const Icon(Icons.upload),
             label: const Text('حفظ نسخة'),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              provider.exportBackup();
+              if (fromDrive) {
+                if (!GoogleDriveService.isSignedIn) {
+                  final signedIn = await GoogleDriveService.signIn();
+                  if (!signedIn || !context.mounted) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('❌ يجب تسجيل الدخول إلى Google أولاً'),
+                        backgroundColor: AppColors.red,
+                      ));
+                    }
+                    return;
+                  }
+                }
+                final error = await AutoBackupService.runDriveBackupNow();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(error == null ? '☁️ تم الرفع على Drive بنجاح' : '❌ فشل الرفع: $error'),
+                    backgroundColor: error == null ? AppColors.drive : AppColors.red,
+                  ));
+                }
+              } else {
+                await provider.exportBackup();
+              }
             },
           ),
         ],
@@ -5325,7 +5453,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(bytes);
       await OpenFile.open(file.path);
-      Future.delayed(const Duration(seconds: 5), () async {
+      Future.delayed(const Duration(seconds: 30), () async {
         try {
           if (await file.exists()) {
             await file.delete();
@@ -5568,9 +5696,17 @@ class CategoriesScreen extends StatelessWidget {
               child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () {
-              provider.deleteCategory(catId);
-              Navigator.pop(ctx);
+            onPressed: () async {
+              final success = await provider.deleteCategory(catId);
+              if (context.mounted) {
+                Navigator.pop(ctx);
+                if (!success) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('لا يمكن حذف آخر تصنيف في التطبيق'),
+                    backgroundColor: AppColors.red,
+                  ));
+                }
+              }
             },
             child: const Text('حذف'),
           ),
