@@ -61,6 +61,14 @@ android {
             shrinkResources false
         }
     }
+
+    // ✅ حل مشكلة تعارض appcompat مع android_alarm_manager_plus
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.appcompat:appcompat:1.6.1'
+            force 'androidx.appcompat:appcompat-resources:1.6.1'
+        }
+    }
 }
 
 flutter {
