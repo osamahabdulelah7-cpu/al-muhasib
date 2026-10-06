@@ -26,7 +26,6 @@ import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:image_picker/image_picker.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 
 // ====================================================
 // ✅ دالة تنسيق الأرقام
@@ -109,7 +108,6 @@ class NotificationService {
     );
     await _plugin.initialize(initSettings);
 
-    // ✅ طلب إذن الإشعارات (أندرويد 13+)
     if (Platform.isAndroid) {
       await _plugin
           .resolvePlatformSpecificImplementation<
@@ -118,8 +116,7 @@ class NotificationService {
     }
   }
 
-  static Future<void> showPersistentLocalNotification(
-      String timeText) async {
+  static Future<void> showPersistentLocalNotification(String timeText) async {
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -140,8 +137,7 @@ class NotificationService {
     );
   }
 
-  static Future<void> showPersistentDriveNotification(
-      String timeText) async {
+  static Future<void> showPersistentDriveNotification(String timeText) async {
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -211,23 +207,6 @@ void callbackDispatcher() {
       return false;
     }
   });
-}
-
-// ====================================================
-// ✅ دالة معالجة AlarmManager
-// ====================================================
-@pragma('vm:entry-point')
-Future<void> alarmCallback() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.initialize();
-  try {
-    await AppDBHelper.instance.database;
-    await AutoBackupService.performScheduledBackup();
-    await AutoBackupService.performScheduledDriveBackup();
-    debugPrint('✅ تم تنفيذ مهمة AlarmManager');
-  } catch (e) {
-    debugPrint('❌ خطأ في AlarmManager: $e');
-  }
 }
 
 // ====================================================
@@ -433,8 +412,6 @@ class AutoBackupService {
   static const int _maxDriveBackups = 5;
   static const String _workManagerTaskName = 'al_muhasib_daily_backup';
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
-  static const int _alarmIdLocal = 2001;
-  static const int _alarmIdDrive = 2002;
 
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -542,7 +519,7 @@ class AutoBackupService {
     return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
-  // ============ جدولة المهام (Workmanager + AlarmManager + إشعارات) ============
+  // ============ جدولة المهام (Workmanager + الإشعارات) ============
   static Future<void> scheduleDailyBackup() async {
     final settings = await getSettings();
     final hour = settings['hour'] as int;
@@ -555,10 +532,8 @@ class AutoBackupService {
     }
     final delay = target.difference(now);
 
-    // ✅ إلغاء أي مهمة سابقة
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
 
-    // ✅ جدولة Workmanager (كاحتياطي)
     await Workmanager().registerPeriodicTask(
       _workManagerUniqueName,
       _workManagerTaskName,
@@ -576,17 +551,6 @@ class AutoBackupService {
       backoffPolicyDelay: const Duration(minutes: 15),
     );
 
-    // ✅ جدولة AlarmManager (الأكثر دقة)
-    await AndroidAlarmManager.cancel(_alarmIdLocal);
-    await AndroidAlarmManager.oneShotAt(
-      target,
-      _alarmIdLocal,
-      alarmCallback,
-      exact: true,
-      wakeup: true,
-    );
-
-    // ✅ عرض الإشعار الدائم
     await NotificationService.showPersistentLocalNotification(
         _formatTime(hour, minute));
 
@@ -595,7 +559,6 @@ class AutoBackupService {
 
   static Future<void> cancelDailyBackup() async {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-    await AndroidAlarmManager.cancel(_alarmIdLocal);
     await NotificationService.cancelLocalNotification();
     debugPrint('✅ تم إلغاء المهام اليومية');
   }
@@ -644,7 +607,6 @@ class AutoBackupService {
     }
   }
 
-  // ✅ التحقق عند فتح التطبيق (نسخ محلي)
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
@@ -668,7 +630,6 @@ class AutoBackupService {
       if (!await _hasDataChanged()) return null;
 
       final result = await performBackup(folderPath);
-      // ✅ إعادة جدولة المهام بعد النسخ
       await scheduleDailyBackup();
       return result;
     } catch (e) {
@@ -676,7 +637,6 @@ class AutoBackupService {
     }
   }
 
-  // ✅ التحقق عند فتح التطبيق (نسخ Drive)
   static Future<String?> checkAndRunDriveBackup() async {
     try {
       final settings = await getSettings();
@@ -828,26 +788,11 @@ class AutoBackupService {
     }
   }
 
-  // ✅ جدولة Drive مع AlarmManager وإشعار
+  // ✅ جدولة Drive مع الإشعار
   static Future<void> scheduleDriveBackup() async {
     final settings = await getSettings();
     final hour = settings['driveHour'] as int;
     final minute = settings['driveMinute'] as int;
-
-    final now = DateTime.now();
-    var target = DateTime(now.year, now.month, now.day, hour, minute);
-    if (target.isBefore(now)) {
-      target = target.add(const Duration(days: 1));
-    }
-
-    await AndroidAlarmManager.cancel(_alarmIdDrive);
-    await AndroidAlarmManager.oneShotAt(
-      target,
-      _alarmIdDrive,
-      alarmCallback,
-      exact: true,
-      wakeup: true,
-    );
 
     await NotificationService.showPersistentDriveNotification(
         _formatTime(hour, minute));
@@ -856,7 +801,6 @@ class AutoBackupService {
   }
 
   static Future<void> cancelDriveBackup() async {
-    await AndroidAlarmManager.cancel(_alarmIdDrive);
     await NotificationService.cancelDriveNotification();
     debugPrint('✅ تم إلغاء نسخ Drive');
   }
@@ -872,9 +816,6 @@ void main() async {
 
   // ✅ تهيئة الإشعارات
   await NotificationService.initialize();
-
-  // ✅ تهيئة AlarmManager
-  await AndroidAlarmManager.initialize();
 
   // ✅ تهيئة Workmanager
   await Workmanager().initialize(callbackDispatcher);
@@ -2674,7 +2615,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ✅ التحقق من النسخ عند إغلاق التطبيق
   @override
   void dispose() {
     AutoBackupService.checkAndRunBackup();
@@ -3274,7 +3214,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(driveEnabled: value);
     setState(() => _driveEnabled = value);
 
-    // ✅ جدولة/إلغاء نسخ Drive
     if (value) {
       await AutoBackupService.scheduleDriveBackup();
     } else {
@@ -4001,7 +3940,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة الاقتراحات المستقلة ==========
   void _showSuggestionsDialog({
     required BuildContext parentContext,
     required List<String> suggestions,
@@ -4061,7 +3999,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة تعديل العملية ==========
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
     double amt = (tx['amount'] as num).toDouble();
     String amtStr = amt == amt.roundToDouble()
@@ -4344,7 +4281,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  // ========== نافذة إضافة عملية جديدة ==========
   void _showAddTransactionDialog(BuildContext context) {
     final amountCtrl = TextEditingController();
     final detailsCtrl = TextEditingController();
