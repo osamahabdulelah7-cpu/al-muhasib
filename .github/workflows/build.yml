@@ -5,9 +5,6 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify-and-build:
     runs-on: ubuntu-latest
@@ -15,19 +12,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Restore verified main.dart
-        if: ${{ github.event.head_commit.message != 'Restore verified main.dart [skip ci]' }}
-        run: |
-          cat .ai_patch/main.gz.b64.* | tr -d '\n' | base64 --decode | gzip -d > lib/main.dart
-          test -s lib/main.dart
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/main.dart
-          if ! git diff --cached --quiet; then
-            git commit -m "Restore verified main.dart [skip ci]"
-            git push
-          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
