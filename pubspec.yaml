@@ -41,7 +41,7 @@ dependencies:
   image_picker: ^1.0.7
 
   # حزمة المهام الخلفية
-  workmanager: ^0.5.2
+  workmanager: ^0.10.10
 
   # الإشعارات
   flutter_local_notifications: ^17.2.2
