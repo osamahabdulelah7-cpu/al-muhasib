@@ -1939,9 +1939,30 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> exportBackup() async {
     try {
       final bundle = await BackupBundleService.createBundle();
-      await Share.shareXFiles([XFile(bundle.path)], text: 'نسخة احتياطية - تطبيق المحاسب');
+      await Share.shareXFiles([XFile(bundle.path)], text: 'نسخة احتياطية كاملة - تطبيق المحاسب (.alb)');
     } catch (e) {
-      debugPrint('خطأ أثناء التصدير: $e');
+      debugPrint('خطأ أثناء تصدير ALB: $e');
+    }
+  }
+
+  Future<void> exportDatabaseBackup() async {
+    try {
+      final db = await AppDBHelper.instance.database;
+      try {
+        await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+      final dbPath = p.join(await getDatabasesPath(), 'al_muhasib_final_v6.db');
+      final dbFile = File(dbPath);
+      if (!await dbFile.exists()) {
+        throw Exception('قاعدة البيانات غير موجودة');
+      }
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'al_muhasib_${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}_${DateTime.now().hour.toString().padLeft(2, '0')}-${DateTime.now().minute.toString().padLeft(2, '0')}-${DateTime.now().second.toString().padLeft(2, '0')}.db';
+      final out = File(p.join(tempDir.path, fileName));
+      await dbFile.copy(out.path);
+      await Share.shareXFiles([XFile(out.path)], text: 'نسخة قاعدة البيانات - تطبيق المحاسب (.db)');
+    } catch (e) {
+      debugPrint('خطأ أثناء تصدير DB: $e');
     }
   }
 
@@ -3940,11 +3961,23 @@ class BackupOptionsScreen extends StatelessWidget {
               }
             },
           ),
+          if (!fromDrive) ...[
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              icon: const Icon(Icons.storage),
+              label: const Text('حفظ DB'),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await provider.exportDatabaseBackup();
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
                 backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
             icon: const Icon(Icons.upload),
-            label: const Text('حفظ نسخة'),
+            label: Text(fromDrive ? 'حفظ نسخة' : 'حفظ ALB'),
             onPressed: () async {
               Navigator.pop(ctx);
               if (fromDrive) {
