@@ -1001,7 +1001,12 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       if (!await _hasDataChanged()) return null;
 
-      final result = await performBackup(folderPath);
+      var result = await performBackup(folderPath);
+      // إذا كان المجلد الذي اختاره المستخدم غير متاح للخدمة الخلفية،
+      // استخدم مجلدًا داخليًا ثابتًا بدل فشل النسخ بالكامل.
+      if (result != null && selectedFolder.isNotEmpty) {
+        result = await performBackup(await _defaultAutomaticBackupFolder());
+      }
       return result;
     } catch (e) {
       return null;
