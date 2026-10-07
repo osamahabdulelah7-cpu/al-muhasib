@@ -385,7 +385,7 @@ class BackupBundleService {
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'databaseSha256': dbHash,
       'databaseSize': dbBytes.length,
-      'schemaVersion': 9,
+      'schemaVersion': 10,
       'files': fileChecksums,
     });
     final manifestBytes = utf8.encode(manifest);
@@ -1268,7 +1268,7 @@ class AppDBHelper {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, filePath),
-      version: 9,
+      version: 10,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
       onConfigure: (db) async {
@@ -1437,6 +1437,56 @@ class AppDBHelper {
       }
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+    if (oldVersion < 10) {
+      // توحيد جميع تواريخ العمليات القديمة إلى ISO محلي: YYYY-MM-DD HH:mm:ss
+      final rows = await db.query('transactions', columns: ['id', 'date']);
+      for (final row in rows) {
+        final raw = row['date']?.toString().trim() ?? '';
+        if (raw.isEmpty) continue;
+        String? normalized;
+        final direct = DateTime.tryParse(raw);
+        if (direct != null) {
+          normalized = direct.toString().split('.').first;
+        } else {
+          final match = RegExp(r'^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$').firstMatch(raw);
+          if (match != null) {
+            final y = int.parse(match.group(1)!);
+            final m = int.parse(match.group(2)!);
+            final d = int.parse(match.group(3)!);
+            final h = int.tryParse(match.group(4) ?? '0') ?? 0;
+            final min = int.tryParse(match.group(5) ?? '0') ?? 0;
+            final sec = int.tryParse(match.group(6) ?? '0') ?? 0;
+            final value = DateTime(y, m, d, h, min, sec);
+            if (value.year == y && value.month == m && value.day == d) {
+              normalized = value.toString().split('.').first;
+            }
+          }
+        }
+        if (normalized != null && normalized != raw) {
+          await db.update('transactions', {'date': normalized},
+              where: 'id = ?', whereArgs: [row['id']]);
+        }
+      }
+
+      // إعادة حساب آخر نشاط لكل حساب بعد توحيد التواريخ.
+      final customers = await db.query('customers', columns: ['id']);
+      for (final customer in customers) {
+        final latest = await db.query(
+          'transactions',
+          columns: ['date'],
+          where: 'customer_id = ?',
+          whereArgs: [customer['id']],
+          orderBy: 'datetime(date) DESC, id DESC',
+          limit: 1,
+        );
+        await db.update(
+          'customers',
+          {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+          where: 'id = ?',
+          whereArgs: [customer['id']],
+        );
+      }
+    }
     }
   }
 
@@ -1557,7 +1607,7 @@ class AppDBHelper {
     try {
       stagedDb = await openDatabase(
         staged.path,
-        version: 9,
+        version: 10,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
@@ -1584,7 +1634,7 @@ class AppDBHelper {
       }
       _db = await openDatabase(
         path,
-        version: 9,
+        version: 10,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
@@ -1605,7 +1655,7 @@ class AppDBHelper {
         await safety.rename(path);
         _db = await openDatabase(
           path,
-          version: 9,
+          version: 10,
           onCreate: _createDB,
           onUpgrade: _upgradeDB,
           onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
@@ -1835,7 +1885,7 @@ class AppAccountProvider extends ChangeNotifier {
           'amount': amount,
           'type': type,
           'details': details,
-          'date': date,
+          'date': _normalizeDate(date),
           'image_data': null,
           'image_path': imagePath,
           'currency': currency,
@@ -1888,7 +1938,7 @@ class AppAccountProvider extends ChangeNotifier {
               'amount': amount,
               'type': type,
               'details': details,
-              'date': date,
+              'date': _normalizeDate(date),
               if (imageData != null) 'image_data': null,
               if (imageData != null) 'image_path': newImagePath,
             },
