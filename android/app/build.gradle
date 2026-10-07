@@ -18,8 +18,8 @@ android {
         applicationId "com.osama.almuhasib"
         minSdk 21
         targetSdk 36
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        versionCode 2
+        versionName '1.0.1'
         multiDexEnabled true
     }
     signingConfigs {
