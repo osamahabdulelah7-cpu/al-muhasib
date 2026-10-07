@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -14,7 +13,6 @@ import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
@@ -2314,7 +2312,7 @@ class AlMuhasibApp extends StatelessWidget {
           ),
           labelStyle: const TextStyle(color: AppColors.primary),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white,
           elevation: 2,
           shape:
@@ -3787,6 +3785,109 @@ class BackupOptionsScreen extends StatelessWidget {
         ),
       ]),
     );
+  }
+
+
+  Future<void> _showDriveRestoreDialog() async {
+    if (!GoogleDriveService.isSignedIn) {
+      final signedIn = await GoogleDriveService.trySilentSignIn();
+      if (!signedIn) {
+        final ok = await GoogleDriveService.signIn();
+        if (!ok) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('❌ يجب تسجيل الدخول إلى Google أولاً'),
+              backgroundColor: AppColors.red,
+            ));
+          }
+          return;
+        }
+      }
+    }
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final backups = await GoogleDriveService.listBackups();
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+    if (!context.mounted) return;
+    if (backups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('لا توجد نسخ احتياطية على Google Drive'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('اختر نسخة للاستعادة'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: backups.length,
+            itemBuilder: (_, index) {
+              final item = backups[index];
+              final date = item['createdTime']?.toString() ?? '';
+              return ListTile(
+                leading: const Icon(Icons.cloud_download, color: AppColors.drive),
+                title: Text(item['name']?.toString() ?? 'نسخة احتياطية'),
+                subtitle: Text(date),
+                onTap: () => Navigator.pop(ctx, item),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null || !context.mounted) return;
+
+    final fileId = selected['id']?.toString() ?? '';
+    final fileName = selected['name']?.toString() ?? 'al_muhasib_backup.alb';
+    if (fileId.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final file = await GoogleDriveService.downloadBackup(fileId, fileName);
+    bool success = false;
+    if (file != null) {
+      try {
+        success = await provider.importBackupFromFile(file);
+      } finally {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? 'تمت استعادة البيانات بنجاح'
+            : 'تعذر استعادة النسخة الاحتياطية'),
+        backgroundColor: success ? AppColors.green : AppColors.red,
+      ));
+    }
   }
 
   void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
