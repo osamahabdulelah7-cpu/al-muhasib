@@ -2338,23 +2338,31 @@ class AppAccountProvider extends ChangeNotifier {
   }
 
   String _normalizeDate(String dateStr) {
-    final raw = dateStr.trim();
-    if (raw.isEmpty) throw FormatException('التاريخ فارغ');
-    final direct = DateTime.tryParse(raw);
-    if (direct != null) return direct.toString().split('.').first;
-    final match = RegExp(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$').firstMatch(raw);
-    if (match != null) {
-      final day = int.parse(match.group(1)!);
-      final month = int.parse(match.group(2)!);
-      final year = int.parse(match.group(3)!);
-      final d = DateTime(year, month, day);
-      if (d.year != year || d.month != month || d.day != day) {
-        throw FormatException('تاريخ غير صالح: $raw');
-      }
-      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}T00:00:00';
+  final raw = dateStr.trim();
+  if (raw.isEmpty) throw FormatException('التاريخ فارغ');
+
+  final direct = DateTime.tryParse(raw);
+  if (direct != null) return direct.toString().split('.').first;
+
+  final match = RegExp(
+    r'^(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$',
+  ).firstMatch(raw);
+  if (match != null) {
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    final hour = int.tryParse(match.group(4) ?? '0') ?? 0;
+    final minute = int.tryParse(match.group(5) ?? '0') ?? 0;
+    final second = int.tryParse(match.group(6) ?? '0') ?? 0;
+    if (year < 1000) throw FormatException('تاريخ غير صالح: $raw');
+    final d = DateTime(year, month, day, hour, minute, second);
+    if (d.year != year || d.month != month || d.day != day ||
+        d.hour != hour || d.minute != minute || d.second != second) {
+      throw FormatException('تاريخ غير صالح: $raw');
     }
-    throw FormatException('تنسيق تاريخ غير مدعوم: $raw');
+    return d.toString().split('.').first;
   }
+  throw FormatException('تنسيق تاريخ غير مدعوم: $raw');
 }
 
 // ==================== AlMuhasibApp ====================
