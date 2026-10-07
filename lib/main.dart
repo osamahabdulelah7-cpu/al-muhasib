@@ -1448,7 +1448,7 @@ class AppDBHelper {
         if (direct != null) {
           normalized = direct.toString().split('.').first;
         } else {
-          final match = RegExp(r'^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$').firstMatch(raw);
+          final match = RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$').firstMatch(raw);
           if (match != null) {
             final y = int.parse(match.group(1)!);
             final m = int.parse(match.group(2)!);
