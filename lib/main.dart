@@ -950,7 +950,7 @@ class AutoBackupService {
   static Future<String?> performScheduledBackup() async {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
-    final selectedFolder = (settings['folderPath'] as String).trim();
+    final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
     final folderPath = selectedFolder.isNotEmpty
         ? selectedFolder
         : await _defaultAutomaticBackupFolder();
@@ -1009,7 +1009,7 @@ class AutoBackupService {
       final todayTarget = DateTime(now.year, now.month, now.day,
           settings['hour'] as int, settings['minute'] as int);
       DateTime? lastBackup;
-      final lastBackupStr = settings['lastBackup'] as String;
+      final lastBackupStr = settings['lastBackup'] as String? ?? '';
       if (lastBackupStr.isNotEmpty) {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
@@ -3843,7 +3843,7 @@ class _HomeScreenState extends State<HomeScreen>
               style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.gold,
                   foregroundColor: Colors.white),
-              onPressed: () {
+              onPressed: () async {
                 if (nameCtrl.text.trim().isNotEmpty) {
                   provider.addCustomer(nameCtrl.text.trim(),
                       phoneCtrl.text.trim(), selectedCurrency, selectedCat);
