@@ -9,32 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Rebuild main.dart from staged payload
+      - name: Apply comprehensive source patch
         run: |
-          python3 - <<'PY'
-          import base64, gzip, io, pathlib
-          root = pathlib.Path("_ai_patch")
-          names = ["aa","ab","ac","ad","ae"]
-          parts = [(root / f"main.gz.b64.{n}").read_text() for n in names]
-          # The first staged chunk was copied once with one extra base64 character.
-          # Find the single-character removal that restores the valid gzip stream.
-          first = parts[0]
-          rest = "".join(parts[1:])
-          good = None
-          for i in range(len(first)):
-              candidate = first[:i] + first[i+1:] + rest
-              try:
-                  raw = base64.b64decode(candidate, validate=True)
-                  data = gzip.decompress(raw)
-                  if data.startswith(b"import ") or data.startswith(b"//"):
-                      good = data
-                      break
-              except Exception:
-                  pass
-          if good is None:
-              raise SystemExit("Could not reconstruct main.dart payload")
-          pathlib.Path("lib/main.dart").write_bytes(good)
-          PY
+          cat _ai_patch/main.patch.b64.* > /tmp/main.patch.b64
+          base64 --decode /tmp/main.patch.b64 > /tmp/main.patch.gz
+          gunzip -c /tmp/main.patch.gz > /tmp/main.patch
+          git apply --3way /tmp/main.patch
           rm -rf _ai_patch
           rm -f .github/workflows/apply-ai-major-fix.yml
           git config user.name "github-actions[bot]"
