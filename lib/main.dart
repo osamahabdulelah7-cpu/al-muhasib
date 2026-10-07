@@ -2345,7 +2345,7 @@ class AppAccountProvider extends ChangeNotifier {
   if (direct != null) return direct.toString().split('.').first;
 
   final match = RegExp(
-    r'^(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$',
+    r'^(\d{1,4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$',
   ).firstMatch(raw);
   if (match != null) {
     final year = int.parse(match.group(1)!);
