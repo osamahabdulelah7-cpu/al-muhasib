@@ -43,18 +43,36 @@ String formatNumber(double value) {
 // ====================================================
 // ✅ دالة تنظيف ملفات PDF المؤقتة
 // ====================================================
-Future<void> cleanTempPdfFiles() async {
+Future<void> cleanTemporaryArtifacts() async {
   try {
-    final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'pdf'));
-    if (!await tempDir.exists()) return;
-    final files = tempDir.listSync();
-    for (var file in files) {
-      if (file is File && file.path.endsWith('.pdf') && p.basename(file.path).startsWith('كشف_')) {
-        try { await file.delete(); } catch (_) {}
+    final tempRoot = await getTemporaryDirectory();
+    if (!await tempRoot.exists()) return;
+
+    // احذف فقط الملفات التي ينشئها التطبيق في التخزين المؤقت.
+    // لا نحذف ملفات plugins أو ملفات النظام الأخرى.
+    await for (final entity in tempRoot.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      final lower = name.toLowerCase();
+      final isOurBackup = name.startsWith('al_muhasib_') &&
+          (lower.endsWith('.alb') || lower.endsWith('.db'));
+      final isOurPdf = lower.endsWith('.pdf') &&
+          (name.startsWith('كشف_') || name.startsWith('statement_'));
+      if (isOurBackup || isOurPdf) {
+        try { await entity.delete(); } catch (_) {}
       }
+    }
+
+    // احذف مجلد PDF بعد تفريغه إن أصبح فارغاً.
+    final pdfDir = Directory(p.join(tempRoot.path, 'pdf'));
+    if (await pdfDir.exists()) {
+      try { await pdfDir.delete(recursive: false); } catch (_) {}
     }
   } catch (_) {}
 }
+
+// توافق مع أي استدعاء قديم.
+Future<void> cleanTempPdfFiles() => cleanTemporaryArtifacts();
 
 // ====================================================
 // ✅ الألوان
@@ -1219,8 +1237,8 @@ void main() async {
     FlutterError.presentError(details);
   };
 
-  // ✅ تنظيف ملفات PDF المؤقتة عند فتح التطبيق
-  await cleanTempPdfFiles();
+  // ✅ تنظيف الملفات المؤقتة التي أنشأها التطبيق عند فتحه
+  await cleanTemporaryArtifacts();
 
   runZonedGuarded(() async {
     final provider = AppAccountProvider();
