@@ -1221,7 +1221,7 @@ class AutoBackupService {
   }
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -1229,34 +1229,47 @@ void main() async {
     statusBarBrightness: Brightness.light,
   ));
 
-  // ✅ تهيئة الإشعارات
-  await NotificationService.initialize();
-
-  // ✅ تهيئة Workmanager
-  await Workmanager().initialize(callbackDispatcher);
-
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
   };
 
-  // ✅ تنظيف الملفات المؤقتة التي أنشأها التطبيق عند فتحه
-  await cleanTemporaryArtifacts();
+  // عرض الواجهة فوراً. لا نجعل تهيئة قاعدة البيانات أو الخدمات
+  // والإشعارات سبباً في بقاء شاشة البداية بيضاء في Release.
+  final provider = AppAccountProvider();
+  runApp(
+    ChangeNotifierProvider<AppAccountProvider>.value(
+      value: provider,
+      child: const AlMuhasibApp(),
+    ),
+  );
 
   runZonedGuarded(() async {
-    final provider = AppAccountProvider();
+    try {
+      await NotificationService.initialize();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تهيئة الإشعارات: $e\n$st');
+    }
+
+    try {
+      await Workmanager().initialize(callbackDispatcher);
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
+    }
+
+    try {
+      await cleanTemporaryArtifacts();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تنظيف الملفات المؤقتة: $e\n$st');
+    }
+
     try {
       await provider.loadInitialData();
     } catch (e, st) {
-      debugPrint('خطأ: $e\n$st');
+      debugPrint('⚠️ تعذر تحميل بيانات التطبيق: $e\n$st');
     }
-    runApp(
-      ChangeNotifierProvider<AppAccountProvider>.value(
-        value: provider,
-        child: const AlMuhasibApp(),
-      ),
-    );
 
-    Future.delayed(const Duration(seconds: 2), () async {
+    try {
+      await Future.delayed(const Duration(seconds: 2));
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
       final settings = await AutoBackupService.getSettings();
@@ -1266,7 +1279,9 @@ void main() async {
       if (settings['driveEnabled'] == true) {
         await AutoBackupService.scheduleDriveBackup();
       }
-    });
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
+    }
   }, (error, stack) {
     debugPrint('ZoneError: $error\n$stack');
   });
