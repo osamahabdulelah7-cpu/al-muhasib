@@ -2394,6 +2394,7 @@ class AppAccountProvider extends ChangeNotifier {
   }
   throw FormatException('تنسيق تاريخ غير مدعوم: $raw');
 }
+}
 
 // ==================== AlMuhasibApp ====================
 class AlMuhasibApp extends StatelessWidget {
