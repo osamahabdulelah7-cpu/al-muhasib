@@ -5505,13 +5505,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  void _showTransactionDetailsDialog(BuildContext context,
-      AppAccountProvider provider, Map<String, dynamic> tx) {
+  Future<void> _showTransactionDetailsDialog(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> tx) async {
     final bool isGive = tx['type'] == 'give';
     final double amt = (tx['amount'] as num).toDouble();
     final String details = tx['details']?.toString() ?? '';
     final String dateStr = tx['date'].toString();
-    final String? imageData = tx['image_data']?.toString();
+    String? imageData = tx['image_data']?.toString();
+    if ((imageData == null || imageData!.isEmpty) &&
+        (tx['image_path']?.toString().isNotEmpty ?? false)) {
+      final bytes = await ImageStorageService.readRelative(tx['image_path']?.toString());
+      if (bytes != null) imageData = base64Encode(bytes);
+    }
+    final dialogTx = {...tx, if (imageData != null) 'image_data': imageData};
 
     showDialog(
       context: context,
@@ -5542,7 +5548,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   const Divider(),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => _showImageOptionsSheet(ctx, provider, tx),
+                    onTap: () => _showImageOptionsSheet(ctx, provider, dialogTx),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.memory(base64Decode(imageData),
