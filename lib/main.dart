@@ -5480,7 +5480,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${selectedDate.year.toString().padLeft(4, '0')}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
                         await provider.addTransaction(
                           int.parse(widget.customer['id'].toString()),
