@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -3788,7 +3789,7 @@ class BackupOptionsScreen extends StatelessWidget {
   }
 
 
-  Future<void> _showDriveRestoreDialog() async {
+  Future<void> _showDriveRestoreDialog(BuildContext context) async {
     if (!GoogleDriveService.isSignedIn) {
       final signedIn = await GoogleDriveService.trySilentSignIn();
       if (!signedIn) {
@@ -3913,7 +3914,7 @@ class BackupOptionsScreen extends StatelessWidget {
             onPressed: () async {
               Navigator.pop(ctx);
               if (fromDrive) {
-                await _showDriveRestoreDialog();
+                await _showDriveRestoreDialog(context);
                 return;
               }
               bool success = await provider.importBackup();
