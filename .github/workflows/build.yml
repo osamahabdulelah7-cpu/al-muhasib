@@ -57,3 +57,5 @@ jobs:
         with:
           name: Al-Mohaseb-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+
+# Final verification trigger: run the complete CI/build pipeline on the current main revision.
