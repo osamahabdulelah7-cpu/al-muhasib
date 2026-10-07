@@ -1099,8 +1099,11 @@ class AutoBackupService {
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
       final bundle = await BackupBundleService.createBundle(outputDirectory: backupDir);
-      final now = DateTime.now();
+      // النسخ التلقائي المحلي يحفظ الصيغتين: ALB الكاملة وSQLite DB الخام.
       final dbFile = await _getDatabaseFile();
+      final stamp = '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}_${DateTime.now().hour.toString().padLeft(2, '0')}-${DateTime.now().minute.toString().padLeft(2, '0')}-${DateTime.now().second.toString().padLeft(2, '0')}';
+      await dbFile.copy(p.join(backupDir.path, 'al_muhasib_${stamp}.db'));
+      final now = DateTime.now();
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
           lastBackup: now.toIso8601String(),
