@@ -2,7 +2,7 @@ name: al_muhasib
 description: "تطبيق دفتر المحاسب الشامل لجميع الحسابات والعملات"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -28,22 +28,17 @@ dependencies:
 
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
-  permission_handler: ^11.3.0
   open_file: ^3.3.2
 
   # Google Drive Sync
   http: ^1.1.0
+  crypto: ^3.0.6
+  archive: ^4.3.0
   google_sign_in: ^6.2.1
   googleapis: ^13.1.0
-  googleapis_auth: ^1.4.1
 
-  # ✅ حزمة الصور
   image_picker: ^1.0.7
-
-  # ✅ حزمة المهام الخلفية
   workmanager: ^0.5.2
-
-  # ✅ الإشعارات
   flutter_local_notifications: ^17.2.2
 
 dev_dependencies:
