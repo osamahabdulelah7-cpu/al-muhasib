@@ -940,7 +940,7 @@ class AutoBackupService {
     debugPrint('✅ تم إلغاء المهام اليومية');
   }
 
-  static Future<String?> _defaultAutomaticBackupFolder() async {
+  static Future<String> _defaultAutomaticBackupFolder() async {
     final documents = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(documents.path, 'auto_backups'));
     if (!await dir.exists()) await dir.create(recursive: true);
