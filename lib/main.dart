@@ -973,6 +973,7 @@ class AutoBackupService {
     try {
       final bundle = await BackupBundleService.createBundle();
       final error = await GoogleDriveService.uploadBackup(bundle);
+      try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
@@ -1059,6 +1060,7 @@ class AutoBackupService {
 
       final bundle = await BackupBundleService.createBundle();
       final error = await GoogleDriveService.uploadBackup(bundle);
+      try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final dbFile = await _getDatabaseFile();
         final lastModified = (await dbFile.stat()).modified.toIso8601String();
@@ -2021,15 +2023,21 @@ class AppAccountProvider extends ChangeNotifier {
   }
 
   Future<void> exportBackup() async {
+    File? bundle;
     try {
-      final bundle = await BackupBundleService.createBundle();
+      bundle = await BackupBundleService.createBundle();
       await Share.shareXFiles([XFile(bundle.path)], text: 'نسخة احتياطية كاملة - تطبيق المحاسب (.alb)');
     } catch (e) {
       debugPrint('خطأ أثناء تصدير ALB: $e');
+    } finally {
+      if (bundle != null) {
+        try { await bundle.delete(); } catch (_) {}
+      }
     }
   }
 
   Future<void> exportDatabaseBackup() async {
+    File? out;
     try {
       final db = await AppDBHelper.instance.database;
       try {
@@ -2042,11 +2050,15 @@ class AppAccountProvider extends ChangeNotifier {
       }
       final tempDir = await getTemporaryDirectory();
       final fileName = 'al_muhasib_${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}_${DateTime.now().hour.toString().padLeft(2, '0')}-${DateTime.now().minute.toString().padLeft(2, '0')}-${DateTime.now().second.toString().padLeft(2, '0')}.db';
-      final out = File(p.join(tempDir.path, fileName));
+      out = File(p.join(tempDir.path, fileName));
       await dbFile.copy(out.path);
       await Share.shareXFiles([XFile(out.path)], text: 'نسخة قاعدة البيانات - تطبيق المحاسب (.db)');
     } catch (e) {
       debugPrint('خطأ أثناء تصدير DB: $e');
+    } finally {
+      if (out != null) {
+        try { await out.delete(); } catch (_) {}
+      }
     }
   }
 
