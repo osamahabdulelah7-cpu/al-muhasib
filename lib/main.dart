@@ -10,7 +10,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
@@ -22,7 +21,6 @@ import 'package:excel/excel.dart' as excel_lib;
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
-import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:image_picker/image_picker.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -465,26 +463,11 @@ class AutoBackupService {
     }
   }
 
-  static Future<bool> requestStoragePermission() async {
-    try {
-      if (!Platform.isAndroid) return true;
-      if (await Permission.manageExternalStorage.isGranted) return true;
-      final status = await Permission.manageExternalStorage.request();
-      if (status.isGranted) return true;
-      final oldStatus = await Permission.storage.request();
-      if (oldStatus.isGranted) return true;
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
+  // The app uses only app-private storage, so no broad external-storage
+  // permission is required on modern Android.
+  static Future<bool> requestStoragePermission() async => true;
 
-  static Future<bool> hasStoragePermission() async {
-    if (!Platform.isAndroid) return true;
-    if (await Permission.manageExternalStorage.isGranted) return true;
-    if (await Permission.storage.isGranted) return true;
-    return false;
-  }
+  static Future<bool> hasStoragePermission() async => true;
 
   static Future<File> _getDatabaseFile() async {
     final dbPath = await getDatabasesPath();
@@ -1657,7 +1640,7 @@ class AlMuhasibApp extends StatelessWidget {
           ),
           labelStyle: const TextStyle(color: AppColors.primary),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white,
           elevation: 2,
           shape:
