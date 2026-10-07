@@ -10,7 +10,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
@@ -21,9 +20,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:archive/archive.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
-import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:image_picker/image_picker.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -46,13 +45,12 @@ String formatNumber(double value) {
 // ====================================================
 Future<void> cleanTempPdfFiles() async {
   try {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'pdf'));
+    if (!await tempDir.exists()) return;
     final files = tempDir.listSync();
     for (var file in files) {
       if (file is File && file.path.endsWith('.pdf') && p.basename(file.path).startsWith('كشف_')) {
-        try {
-          await file.delete();
-        } catch (_) {}
+        try { await file.delete(); } catch (_) {}
       }
     }
   } catch (_) {}
@@ -219,6 +217,309 @@ void callbackDispatcher() {
 }
 
 // ====================================================
+// ✅ تخزين الصور كملفات خاصة بالتطبيق (بدلاً من Base64 داخل SQLite)
+// ====================================================
+class ImageStorageService {
+  static Future<Directory> get _root async {
+    final dir = await getApplicationDocumentsDirectory();
+    final root = Directory(p.join(dir.path, 'app_data'));
+    if (!await root.exists()) await root.create(recursive: true);
+    return root;
+  }
+
+  static Future<Directory> get imagesDirectory async {
+    final root = await _root;
+    final dir = Directory(p.join(root.path, 'images'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  static Future<String?> saveBase64(String? base64Data, String prefix) async {
+    if (base64Data == null || base64Data.trim().isEmpty) return null;
+    try {
+      final clean = base64Data.contains(',')
+          ? base64Data.substring(base64Data.indexOf(',') + 1)
+          : base64Data;
+      final bytes = base64Decode(clean);
+      if (bytes.isEmpty) return null;
+      final dir = await imagesDirectory;
+      final name = '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${crypto.sha256.convert(bytes).toString().substring(0, 12)}.bin';
+      final file = File(p.join(dir.path, name));
+      await file.writeAsBytes(bytes, flush: true);
+      return p.join('images', name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<Uint8List?> readRelative(String? relativePath) async {
+    if (relativePath == null || relativePath.trim().isEmpty) return null;
+    try {
+      final root = await _root;
+      final normalized = p.normalize(relativePath);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) return null;
+      final file = File(p.join(root.path, normalized));
+      if (!await file.exists()) return null;
+      return Uint8List.fromList(await file.readAsBytes());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> deleteRelative(String? relativePath) async {
+    if (relativePath == null || relativePath.isEmpty) return;
+    try {
+      final root = await _root;
+      final normalized = p.normalize(relativePath);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) return;
+      final file = File(p.join(root.path, normalized));
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  static Future<void> migrateLegacyTransactionImages(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(transactions)');
+    final names = columns.map((e) => e['name'].toString()).toSet();
+    if (!names.contains('image_path') || !names.contains('image_data')) return;
+    final rows = await db.query('transactions', columns: ['id', 'image_data', 'image_path']);
+    for (final row in rows) {
+      final legacy = row['image_data']?.toString() ?? '';
+      final pathValue = row['image_path']?.toString() ?? '';
+      if (legacy.isEmpty || pathValue.isNotEmpty) continue;
+      final saved = await saveBase64(legacy, 'tx_${row['id']}');
+      if (saved != null) {
+        await db.update('transactions', {'image_path': saved, 'image_data': null},
+            where: 'id = ?', whereArgs: [row['id']]);
+      }
+    }
+  }
+
+  static Future<void> migrateLegacyLogo(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(personal_logo)');
+    final names = columns.map((e) => e['name'].toString()).toSet();
+    if (!names.contains('logo_path') || !names.contains('logo_data')) return;
+    final rows = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    if (rows.isEmpty) return;
+    final legacy = rows.first['logo_data']?.toString() ?? '';
+    final pathValue = rows.first['logo_path']?.toString() ?? '';
+    if (legacy.isEmpty || pathValue.isNotEmpty) return;
+    final saved = await saveBase64(legacy, 'logo');
+    if (saved != null) {
+      await db.update('personal_logo', {'logo_path': saved, 'logo_data': null},
+          where: 'id = ?', whereArgs: [rows.first['id']]);
+    }
+  }
+}
+
+// ====================================================
+// ✅ حزمة النسخ الاحتياطي الموحدة: قاعدة البيانات + الصور + البيانات المساندة
+// ====================================================
+class BackupBundleService {
+  static const int formatVersion = 1;
+
+  static Future<Directory> _appDataRoot() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return Directory(p.join(dir.path, 'app_data'));
+  }
+
+  static Future<Directory> appDataRootForFingerprint() => _appDataRoot();
+
+  static Future<void> _copyDirectory(Directory source, Directory target) async {
+    if (!await source.exists()) return;
+    await target.create(recursive: true);
+    await for (final entity in source.list(recursive: true, followLinks: false)) {
+      final relative = p.relative(entity.path, from: source.path);
+      final destination = p.join(target.path, relative);
+      if (entity is Directory) {
+        await Directory(destination).create(recursive: true);
+      } else if (entity is File) {
+        await File(destination).parent.create(recursive: true);
+        await entity.copy(destination);
+      }
+    }
+  }
+
+  static Future<void> _addDirectoryToArchive(
+      Archive archive, Directory dir, String prefix) async {
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        final rel = p.relative(entity.path, from: dir.path).replaceAll('\\', '/');
+        final bytes = await entity.readAsBytes();
+        archive.addFile(ArchiveFile('$prefix/$rel', bytes.length, bytes));
+      }
+    }
+  }
+
+  static Future<File> createBundle({Directory? outputDirectory}) async {
+    await AppDBHelper.instance.syncPersonalDataToDatabase();
+    try {
+      await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+    } catch (_) {}
+    final dbPath = p.join(await getDatabasesPath(), 'al_muhasib_final_v6.db');
+    final dbFile = File(dbPath);
+    if (!await dbFile.exists()) throw Exception('قاعدة البيانات غير موجودة');
+
+    final archive = Archive();
+    final dbBytes = await dbFile.readAsBytes();
+    final dbHash = crypto.sha256.convert(dbBytes).toString();
+    archive.addFile(ArchiveFile('database/al_muhasib_final_v6.db', dbBytes.length, dbBytes));
+
+    final root = await _appDataRoot();
+    await _addDirectoryToArchive(archive, root, 'app_data');
+
+    final fileChecksums = <Map<String, dynamic>>[];
+    for (final entry in archive) {
+      if (!entry.isFile) continue;
+      final content = List<int>.from(entry.content as List<int>);
+      fileChecksums.add({
+        'path': entry.name,
+        'size': content.length,
+        'sha256': crypto.sha256.convert(content).toString(),
+      });
+    }
+    final manifest = jsonEncode({
+      'format': 'al_muhasib_backup',
+      'formatVersion': formatVersion,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'databaseSha256': dbHash,
+      'databaseSize': dbBytes.length,
+      'schemaVersion': 9,
+      'files': fileChecksums,
+    });
+    final manifestBytes = utf8.encode(manifest);
+    archive.addFile(ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+
+    final encoded = ZipEncoder().encode(archive);
+    if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
+    final outDir = outputDirectory ?? await getTemporaryDirectory();
+    if (!await outDir.exists()) await outDir.create(recursive: true);
+    final now = DateTime.now();
+    final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}.alb';
+    final file = File(p.join(outDir.path, name));
+    await file.writeAsBytes(encoded, flush: true);
+    return file;
+  }
+
+  static Future<File> _extractDatabase(File bundle) async {
+    final bytes = await bundle.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    ArchiveFile? manifestFile;
+    ArchiveFile? databaseFile;
+    for (final entry in archive) {
+      if (entry.name == 'manifest.json') manifestFile = entry;
+      if (entry.name == 'database/al_muhasib_final_v6.db') databaseFile = entry;
+    }
+    if (manifestFile == null || databaseFile == null) {
+      throw Exception('النسخة الاحتياطية غير مكتملة');
+    }
+    final manifest = jsonDecode(utf8.decode(manifestFile.content as List<int>));
+    if (manifest is! Map || manifest['format'] != 'al_muhasib_backup') {
+      throw Exception('صيغة النسخة الاحتياطية غير معروفة');
+    }
+    final dbBytes = List<int>.from(databaseFile.content as List<int>);
+    final expected = manifest['databaseSha256']?.toString() ?? '';
+    final actual = crypto.sha256.convert(dbBytes).toString();
+    if (expected.isEmpty || expected != actual) throw Exception('فشل التحقق من سلامة قاعدة البيانات');
+
+    final declaredFiles = manifest['files'];
+    if (declaredFiles is List) {
+      final archiveByName = <String, ArchiveFile>{};
+      for (final entry in archive) {
+        if (entry.isFile) archiveByName[entry.name] = entry;
+      }
+      for (final item in declaredFiles) {
+        if (item is! Map) throw Exception('سجل ملفات النسخة الاحتياطية غير صالح');
+        final name = item['path']?.toString() ?? '';
+        if (name.isEmpty || p.isAbsolute(name) || p.normalize(name).startsWith('..')) {
+          throw Exception('مسار ملف غير آمن داخل النسخة الاحتياطية');
+        }
+        final entry = archiveByName[name];
+        if (entry == null) throw Exception('ملف مفقود من النسخة الاحتياطية: $name');
+        final content = List<int>.from(entry.content as List<int>);
+        final hash = crypto.sha256.convert(content).toString();
+        if (hash != item['sha256']?.toString() || content.length.toString() != item['size']?.toString()) {
+          throw Exception('فشل التحقق من سلامة الملف: $name');
+        }
+      }
+    }
+
+    final temp = await getTemporaryDirectory();
+    final dir = Directory(p.join(temp.path, 'al_muhasib_restore_${DateTime.now().microsecondsSinceEpoch}'));
+    await dir.create(recursive: true);
+    final dbOut = File(p.join(dir.path, 'al_muhasib_final_v6.db'));
+    await dbOut.writeAsBytes(dbBytes, flush: true);
+
+    final root = await _appDataRoot();
+    final stagingRoot = Directory(p.join(dir.path, 'app_data'));
+    for (final entry in archive) {
+      if (!entry.isFile || !entry.name.startsWith('app_data/')) continue;
+      final relative = entry.name.substring('app_data/'.length);
+      final normalized = p.normalize(relative);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) {
+        throw Exception('ملف داخل النسخة الاحتياطية غير آمن');
+      }
+      final out = File(p.join(stagingRoot.path, normalized));
+      await out.parent.create(recursive: true);
+      await out.writeAsBytes(List<int>.from(entry.content as List<int>), flush: true);
+    }
+    // يتم وضع مسار app_data المستخرج مؤقتاً في ملف نصي خاص بالاستعادة.
+    await File(p.join(dir.path, '.app_data_source')).writeAsString(stagingRoot.path);
+    return dbOut;
+  }
+
+  static Future<void> restoreBundle(File bundle) async {
+    final dbFile = await _extractDatabase(bundle);
+    final sourceMarker = File(p.join(p.dirname(dbFile.path), '.app_data_source'));
+    Directory? source;
+    if (await sourceMarker.exists()) {
+      source = Directory((await sourceMarker.readAsString()).trim());
+    }
+
+    final target = await _appDataRoot();
+    final parent = target.parent;
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final stagedTarget = Directory(p.join(parent.path, 'app_data_restore_$stamp'));
+    final safetyTarget = Directory(p.join(parent.path, 'app_data_pre_restore_$stamp'));
+
+    // جهّز ملفات الصور/البيانات المساندة قبل استبدال القاعدة.
+    if (source != null && await source.exists()) {
+      await _copyDirectory(source, stagedTarget);
+    }
+
+    try {
+      if (await target.exists()) await target.rename(safetyTarget.path);
+      await AppDBHelper.instance.restoreDatabase(dbFile);
+      if (await stagedTarget.exists()) {
+        await stagedTarget.rename(target.path);
+      } else {
+        await Directory(target.path).create(recursive: true);
+      }
+      if (await safetyTarget.exists()) await safetyTarget.delete(recursive: true);
+    } catch (e) {
+      if (await stagedTarget.exists()) {
+        try { await stagedTarget.delete(recursive: true); } catch (_) {}
+      }
+      if (!await target.exists() && await safetyTarget.exists()) {
+        await safetyTarget.rename(target.path);
+      }
+      rethrow;
+    }
+  }
+
+  static Future<bool> isBundle(File file) async {
+    final ext = p.extension(file.path).toLowerCase();
+    if (ext == '.alb') return true;
+    try {
+      final bytes = await file.openRead(0, 4).fold<List<int>>([], (a, b) => a..addAll(b));
+      return bytes.length == 4 && bytes[0] == 0x50 && bytes[1] == 0x4b;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+// ====================================================
 // ✅ خدمة البيانات الشخصية
 // ====================================================
 class PersonalDataService {
@@ -264,17 +565,33 @@ class PersonalDataService {
 
   static Future<String?> getLogoBase64() async {
     final db = await AppDBHelper.instance.database;
-    final result =
-        await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
-    if (result.isNotEmpty) return result.first['logo_data'] as String?;
-    return null;
+    final result = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    if (result.isEmpty) return null;
+    final pathValue = result.first['logo_path']?.toString();
+    if (pathValue != null && pathValue.isNotEmpty) {
+      final bytes = await ImageStorageService.readRelative(pathValue);
+      if (bytes != null) return base64Encode(bytes);
+    }
+    return result.first['logo_data']?.toString();
   }
 
   static Future<void> saveLogoBase64(String? base64) async {
     final db = await AppDBHelper.instance.database;
-    await db.delete('personal_logo');
-    if (base64 != null) {
-      await db.insert('personal_logo', {'logo_data': base64});
+    final old = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    final oldPath = old.isNotEmpty ? old.first['logo_path']?.toString() : null;
+    String? newPath;
+    if (base64 != null && base64.trim().isNotEmpty) {
+      newPath = await ImageStorageService.saveBase64(base64, 'logo');
+      if (newPath == null) throw Exception('تعذر حفظ الشعار');
+    }
+    await db.transaction((txn) async {
+      await txn.delete('personal_logo');
+      if (newPath != null) {
+        await txn.insert('personal_logo', {'logo_data': null, 'logo_path': newPath});
+      }
+    });
+    if (oldPath != null && oldPath != newPath) {
+      await ImageStorageService.deleteRelative(oldPath);
     }
   }
 }
@@ -325,8 +642,9 @@ class GoogleDriveService {
     if (_driveApi == null) return 'الرجاء تسجيل الدخول أولاً';
     try {
       final now = DateTime.now();
+      final ext = '.alb';
       final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}.db';
+          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$ext';
       final fileContent = await dbFile.readAsBytes();
       final driveFile = drive.File()
         ..name = fileName
@@ -498,12 +816,27 @@ class AutoBackupService {
 
   static Future<String?> _getDatabaseFingerprint() async {
     try {
+      final entries = <String>[];
       final dbFile = await _getDatabaseFile();
       if (!await dbFile.exists()) return null;
-      final bytes = await dbFile.readAsBytes();
-      final digest = crypto.sha256.convert(bytes).toString();
-      final stat = await dbFile.stat();
-      return '${stat.size}:$digest';
+      final dbBytes = await dbFile.readAsBytes();
+      entries.add('database/al_muhasib_final_v6.db:${dbBytes.length}:${crypto.sha256.convert(dbBytes)}');
+
+      final root = await BackupBundleService.appDataRootForFingerprint();
+      if (await root.exists()) {
+        final files = <String>[];
+        await for (final entity in root.list(recursive: true, followLinks: false)) {
+          if (entity is File) files.add(entity.path);
+        }
+        files.sort();
+        for (final filePath in files) {
+          final bytes = await File(filePath).readAsBytes();
+          final rel = p.relative(filePath, from: root.path).replaceAll('\\', '/');
+          entries.add('app_data/$rel:${bytes.length}:${crypto.sha256.convert(bytes)}');
+        }
+      }
+      final stable = entries.join('\n');
+      return crypto.sha256.convert(utf8.encode(stable)).toString();
     } catch (_) {
       return null;
     }
@@ -610,12 +943,11 @@ class AutoBackupService {
     if (!await _hasDataChangedForDrive()) return null;
 
     try {
-      await AppDBHelper.instance.syncPersonalDataToDatabase();
-      try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
-      final dbFile = await _getDatabaseFile();
-      final error = await GoogleDriveService.uploadBackup(dbFile);
+      final bundle = await BackupBundleService.createBundle();
+      final error = await GoogleDriveService.uploadBackup(bundle);
       if (error == null) {
         final now = DateTime.now();
+        final dbFile = await _getDatabaseFile();
         final lastModified = (await dbFile.stat()).modified.toIso8601String();
         await saveSettings(
             driveLastBackup: now.toIso8601String(),
@@ -665,7 +997,6 @@ class AutoBackupService {
       return null;
     }
   }
-
   static Future<String?> checkAndRunDriveBackup() async {
     try {
       final settings = await getSettings();
@@ -691,10 +1022,10 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       if (!await _hasDataChangedForDrive()) return null;
 
-      try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
-      final dbFile = await _getDatabaseFile();
-      final error = await GoogleDriveService.uploadBackup(dbFile);
+      final bundle = await BackupBundleService.createBundle();
+      final error = await GoogleDriveService.uploadBackup(bundle);
       if (error == null) {
+        final dbFile = await _getDatabaseFile();
         final lastModified = (await dbFile.stat()).modified.toIso8601String();
         await saveSettings(
             driveLastBackup: now.toIso8601String(),
@@ -750,14 +1081,11 @@ class AutoBackupService {
       final db = await AppDBHelper.instance.database;
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try { await db.rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
-      final dbFile = await _getDatabaseFile();
-      if (!await dbFile.exists()) return 'قاعدة البيانات غير موجودة';
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
+      final bundle = await BackupBundleService.createBundle(outputDirectory: backupDir);
       final now = DateTime.now();
-      final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}.db';
-      await dbFile.copy(p.join(folderPath, fileName));
+      final dbFile = await _getDatabaseFile();
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
           lastBackup: now.toIso8601String(),
@@ -784,10 +1112,11 @@ class AutoBackupService {
     try {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
-      final dbFile = await _getDatabaseFile();
-      final error = await GoogleDriveService.uploadBackup(dbFile);
+      final bundle = await BackupBundleService.createBundle();
+      final error = await GoogleDriveService.uploadBackup(bundle);
       if (error == null) {
         final now = DateTime.now();
+        final dbFile = await _getDatabaseFile();
         final lastModified = (await dbFile.stat()).modified.toIso8601String();
         await saveSettings(
             driveLastBackup: now.toIso8601String(),
@@ -917,8 +1246,24 @@ class AppDBHelper {
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
-    return await openDatabase(p.join(dbPath, filePath),
-        version: 7, onCreate: _createDB, onUpgrade: _upgradeDB);
+    final db = await openDatabase(
+      p.join(dbPath, filePath),
+      version: 9,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+    );
+    // نقل الصور القديمة إلى ملفات التطبيق بعد اكتمال ترقية SQLite.
+    // هذا يمنع بقاء ملفات خارج المعاملة إذا فشلت ترقية قاعدة البيانات.
+    try {
+      await ImageStorageService.migrateLegacyTransactionImages(db);
+      await ImageStorageService.migrateLegacyLogo(db);
+    } catch (e) {
+      debugPrint('⚠️ تعذر ترحيل بعض الصور القديمة، ستتم المحاولة لاحقاً: $e');
+    }
+    return db;
   }
 
   Future _createDB(Database db, int version) async {
@@ -954,13 +1299,16 @@ class AppDBHelper {
         type TEXT NOT NULL,
         details TEXT,
         date TEXT NOT NULL,
-        image_data TEXT
+        image_data TEXT,
+        image_path TEXT,
+        currency TEXT NOT NULL DEFAULT ''
       )
     ''');
     await db.execute('''
       CREATE TABLE personal_logo (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        logo_data TEXT
+        logo_data TEXT,
+        logo_path TEXT
       )
     ''');
     await db.execute('''
@@ -974,6 +1322,8 @@ class AppDBHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
 
     await db.insert('categories', {'name': 'عام', 'sort_order': 1});
     await db.insert('categories', {'name': 'عملاء', 'sort_order': 2});
@@ -997,7 +1347,8 @@ class AppDBHelper {
         if (lastTx.isNotEmpty) {
           await db.update('customers', {'last_activity': lastTx.first['date']},
               where: 'id = ?', whereArgs: [cId]);
-        }      }
+        }
+      }
     }
     if (oldVersion < 3) {
       await db.execute(
@@ -1015,7 +1366,8 @@ class AppDBHelper {
       await db.execute('''
         CREATE TABLE personal_logo (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          logo_data TEXT
+          logo_data TEXT,
+        logo_path TEXT
         )
       ''');
     }
@@ -1024,6 +1376,8 @@ class AppDBHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
     }
     if (oldVersion < 7) {
       await db.execute('''
@@ -1033,6 +1387,33 @@ class AppDBHelper {
         )
       ''');
     }
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN image_path TEXT');
+      await db.execute('ALTER TABLE personal_logo ADD COLUMN logo_path TEXT');
+    }
+    if (oldVersion < 9) {
+      await db.execute("ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT ''");
+      final rows = await db.rawQuery('''
+        SELECT t.id, c.currency
+        FROM transactions t
+        INNER JOIN customers c ON c.id = t.customer_id
+        WHERE t.currency = ''
+      ''');
+      for (final row in rows) {
+        await db.update('transactions', {'currency': row['currency']?.toString() ?? ''},
+            where: 'id = ?', whereArgs: [row['id']]);
+      }
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+    }
+  }
+
+  Future<String?> getLogoRelativePath() async {
+    final db = await database;
+    final rows = await db.query('personal_logo', columns: ['logo_path'], orderBy: 'id DESC', limit: 1);
+    if (rows.isEmpty) return null;
+    final value = rows.first['logo_path']?.toString().trim();
+    return (value == null || value.isEmpty) ? null : value;
   }
 
   Future<void> syncPersonalDataToDatabase() async {
@@ -1046,8 +1427,8 @@ class AppDBHelper {
       'phone': prefs.getString('personal_phone') ?? '',
       'email': prefs.getString('personal_email') ?? '',
       'logoShape': prefs.getString('personal_logo_shape') ?? 'circle',
-      'logoBase64': (await PersonalDataService.getLogoBase64()) ?? '',
-      'backupFormatVersion': '2',
+      'logoPath': (await AppDBHelper.instance.getLogoRelativePath()) ?? '',
+      'backupFormatVersion': '3',
     };
     await db.transaction((txn) async {
       for (final entry in values.entries) {
@@ -1086,9 +1467,9 @@ class AppDBHelper {
       'email': 'personal_email',
       'logoShape': 'personal_logo_shape',
     };
-    if (values.containsKey('logoBase64')) {
-      await PersonalDataService.saveLogoBase64(
-          values['logoBase64']!.isEmpty ? null : values['logoBase64']);
+    if (values.containsKey('logoBase64') && values['logoBase64']!.isNotEmpty) {
+      // توافق مع النسخ القديمة فقط؛ النسخ الجديدة تعتمد على app_data/logo file.
+      await PersonalDataService.saveLogoBase64(values['logoBase64']);
     }
     for (final entry in mapping.entries) {
       if (values.containsKey(entry.key)) {
@@ -1103,10 +1484,11 @@ class AppDBHelper {
     }
     final bytes = await newDbFile.openRead(0, 16).fold<List<int>>([], (a, b) => a..addAll(b));
     const sqliteHeader = 'SQLite format 3\u0000';
-    final header = String.fromCharCodes(bytes);
-    if (header != sqliteHeader) {
+    if (String.fromCharCodes(bytes) != sqliteHeader) {
       throw Exception('الملف المحدد ليس قاعدة بيانات SQLite صالحة');
     }
+
+    // تحقق كامل من النسخة قبل لمس قاعدة البيانات الحالية.
     final sourceDb = await openDatabase(newDbFile.path, readOnly: true);
     try {
       final integrity = await sourceDb.rawQuery('PRAGMA integrity_check');
@@ -1133,27 +1515,77 @@ class AppDBHelper {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, 'al_muhasib_final_v6.db');
     final current = File(path);
-    if (_db != null) {
-      await _db!.close();
-      _db = null;
-    }
-    // الاحتفاظ بنسخة أمان مؤقتة قبل الاستبدال.
-    if (await current.exists()) {
-      final safety = File(p.join(dbPath, 'al_muhasib_pre_restore.db'));
-      await current.copy(safety.path);
-    }
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final staged = File(p.join(dbPath, 'al_muhasib_restore_$stamp.db'));
+    final safety = File(p.join(dbPath, 'al_muhasib_pre_restore_$stamp.db'));
+
+    // جهّز النسخة في ملف منفصل أولاً؛ لا نستبدل الحالية مباشرة.
+    await newDbFile.copy(staged.path);
+    Database? stagedDb;
     try {
-      await newDbFile.copy(path);
-      _db = await openDatabase(path,
-          version: 7, onCreate: _createDB, onUpgrade: _upgradeDB);
-      await restorePersonalDataFromDatabase();
-    } catch (e) {
-      final safety = File(p.join(dbPath, 'al_muhasib_pre_restore.db'));
-      if (await safety.exists()) {
-        await safety.copy(path);
+      stagedDb = await openDatabase(
+        staged.path,
+        version: 9,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      );
+      final integrity = await stagedDb.rawQuery('PRAGMA integrity_check');
+      if (integrity.isEmpty || integrity.first.values.first?.toString().toLowerCase() != 'ok') {
+        throw Exception('فشل التحقق من النسخة بعد تجهيزها للاستعادة');
       }
-      _db = await openDatabase(path,
-          version: 7, onCreate: _createDB, onUpgrade: _upgradeDB);
+      await stagedDb.close();
+      stagedDb = null;
+
+      if (_db != null) {
+        await _db!.close();
+        _db = null;
+      }
+      if (await current.exists()) {
+        await current.rename(safety.path);
+      }
+      try {
+        await staged.rename(path);
+      } catch (_) {
+        if (await safety.exists()) await safety.rename(path);
+        rethrow;
+      }
+      _db = await openDatabase(
+        path,
+        version: 9,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      );
+      try {
+        await ImageStorageService.migrateLegacyTransactionImages(_db!);
+        await ImageStorageService.migrateLegacyLogo(_db!);
+      } catch (e) {
+        debugPrint('⚠️ تعذر ترحيل صور النسخة المستعادة: $e');
+      }
+      await restorePersonalDataFromDatabase();
+      // تُحذف نسخة الأمان لاحقاً بعد نجاح فتح القاعدة فقط.
+      if (await safety.exists()) await safety.delete();
+    } catch (e) {
+      try { await stagedDb?.close(); } catch (_) {}
+      if (_db == null && await safety.exists()) {
+        if (await current.exists()) await current.delete();
+        await safety.rename(path);
+        _db = await openDatabase(
+          path,
+          version: 9,
+          onCreate: _createDB,
+          onUpgrade: _upgradeDB,
+          onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+        );
+        try {
+          await ImageStorageService.migrateLegacyTransactionImages(_db!);
+          await ImageStorageService.migrateLegacyLogo(_db!);
+        } catch (_) {}
+      }
+      if (await staged.exists()) {
+        try { await staged.delete(); } catch (_) {}
+      }
       rethrow;
     }
   }
@@ -1264,10 +1696,12 @@ class AppAccountProvider extends ChangeNotifier {
     final db = await AppDBHelper.instance.database;
     customerBalances.clear();
     final rows = await db.rawQuery('''
-      SELECT customer_id,
-             COALESCE(SUM(CASE WHEN type = 'give' THEN amount ELSE -amount END), 0) AS balance
-      FROM transactions
-      GROUP BY customer_id
+      SELECT t.customer_id,
+             COALESCE(SUM(CASE WHEN t.type = 'give' THEN t.amount ELSE -t.amount END), 0) AS balance
+      FROM transactions t
+      INNER JOIN customers c ON c.id = t.customer_id
+      WHERE t.currency = c.currency
+      GROUP BY t.customer_id, t.currency
     ''');
     for (final row in rows) {
       final id = int.tryParse(row['customer_id'].toString());
@@ -1321,19 +1755,30 @@ class AppAccountProvider extends ChangeNotifier {
     return true;
   }
 
-  Future<void> deleteCustomer(int id) async {
+  Future<bool> deleteCustomer(int id) async {
     final db = await AppDBHelper.instance.database;
-    await db.transaction((txn) async {
-      await txn.delete('transactions', where: 'customer_id = ?', whereArgs: [id]);
-      await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
-    });
+    final count = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM transactions WHERE customer_id = ?', [id])) ?? 0;
+    if (count > 0) return false;
+    final deleted = await db.delete('customers', where: 'id = ?', whereArgs: [id]);
     await loadCustomers();
+    return deleted > 0;
   }
 
   Future<void> loadTransactions(int customerId) async {
     final db = await AppDBHelper.instance.database;
-    currentTransactions = await db.query('transactions',
+    final rows = await db.query('transactions',
         where: 'customer_id = ?', whereArgs: [customerId], orderBy: 'date ASC, id ASC');
+    // image_data هنا للاستخدام المؤقت في الواجهة فقط؛ التخزين الدائم أصبح ملفياً.
+    for (final row in rows) {
+      final legacy = row['image_data']?.toString() ?? '';
+      final imagePath = row['image_path']?.toString() ?? '';
+      if (legacy.isEmpty && imagePath.isNotEmpty) {
+        final bytes = await ImageStorageService.readRelative(imagePath);
+        if (bytes != null) row['image_data'] = base64Encode(bytes);
+      }
+    }
+    currentTransactions = rows;
     notifyListeners();
   }
 
@@ -1343,25 +1788,45 @@ class AppAccountProvider extends ChangeNotifier {
     if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
     if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
     final db = await AppDBHelper.instance.database;
-    await db.transaction((txn) async {
-      await txn.insert('transactions', {
-        'customer_id': customerId,
-        'amount': amount,
-        'type': type,
-        'details': details,
-        'date': date,
-        'image_data': imageData,
+
+    // احفظ الصورة أولاً؛ وإذا فشلت المعاملة نحذف الملف الجديد حتى لا يصبح orphan.
+    String? imagePath;
+    if (imageData != null && imageData.trim().isNotEmpty) {
+      imagePath = await ImageStorageService.saveBase64(imageData, 'tx_new');
+      if (imagePath == null) throw Exception('تعذر حفظ صورة العملية');
+    }
+
+    try {
+      await db.transaction((txn) async {
+        final customer = await txn.query('customers', columns: ['currency'],
+            where: 'id = ?', whereArgs: [customerId], limit: 1);
+        if (customer.isEmpty) throw StateError('الحساب غير موجود');
+        final currency = customer.first['currency']?.toString() ?? '';
+        if (currency.trim().isEmpty) throw StateError('عملة الحساب غير محددة');
+        await txn.insert('transactions', {
+          'customer_id': customerId,
+          'amount': amount,
+          'type': type,
+          'details': details,
+          'date': date,
+          'image_data': null,
+          'image_path': imagePath,
+          'currency': currency,
+        });
+        final latest = await txn.query('transactions',
+            columns: ['date'],
+            where: 'customer_id = ?',
+            whereArgs: [customerId],
+            orderBy: 'date DESC, id DESC',
+            limit: 1);
+        await txn.update('customers',
+            {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+            where: 'id = ?', whereArgs: [customerId]);
       });
-      final latest = await txn.query('transactions',
-          columns: ['date'],
-          where: 'customer_id = ?',
-          whereArgs: [customerId],
-          orderBy: 'date DESC, id DESC',
-          limit: 1);
-      await txn.update('customers',
-          {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
-          where: 'id = ?', whereArgs: [customerId]);
-    });
+    } catch (_) {
+      if (imagePath != null) await ImageStorageService.deleteRelative(imagePath);
+      rethrow;
+    }
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -1377,43 +1842,69 @@ class AppAccountProvider extends ChangeNotifier {
     if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
     if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
     final db = await AppDBHelper.instance.database;
-    await db.transaction((txn) async {
-      final existing = await txn.query('transactions', where: 'id = ?', whereArgs: [id], limit: 1);
-      if (existing.isEmpty) throw StateError('العملية غير موجودة');
-      await txn.update(
+
+    String? newImagePath;
+    if (imageData != null && imageData.trim().isNotEmpty) {
+      newImagePath = await ImageStorageService.saveBase64(imageData, 'tx_$id');
+      if (newImagePath == null) throw Exception('تعذر حفظ صورة العملية');
+    }
+    String? oldImagePath;
+    try {
+      await db.transaction((txn) async {
+        final existing = await txn.query('transactions',
+            where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId], limit: 1);
+        if (existing.isEmpty) throw StateError('العملية غير موجودة');
+        oldImagePath = existing.first['image_path']?.toString();
+        await txn.update(
+            'transactions',
+            {
+              'amount': amount,
+              'type': type,
+              'details': details,
+              'date': date,
+              if (imageData != null) 'image_data': null,
+              if (imageData != null) 'image_path': newImagePath,
+            },
+            where: 'id = ? AND customer_id = ?',
+            whereArgs: [id, customerId]);
+        final latest = await txn.query(
           'transactions',
-          {
-            'amount': amount,
-            'type': type,
-            'details': details,
-            'date': date,
-            if (imageData != null) 'image_data': imageData,
-          },
+          columns: ['date'],
+          where: 'customer_id = ?',
+          whereArgs: [customerId],
+          orderBy: 'date DESC, id DESC',
+          limit: 1,
+        );
+        await txn.update(
+          'customers',
+          {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
           where: 'id = ?',
-          whereArgs: [id]);
-      final latest = await txn.query(
-        'transactions',
-        columns: ['date'],
-        where: 'customer_id = ?',
-        whereArgs: [customerId],
-        orderBy: 'date DESC, id DESC',
-        limit: 1,
-      );
-      await txn.update(
-        'customers',
-        {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
-        where: 'id = ?',
-        whereArgs: [customerId],
-      );
-    });
+          whereArgs: [customerId],
+        );
+      });
+    } catch (_) {
+      if (newImagePath != null) await ImageStorageService.deleteRelative(newImagePath);
+      rethrow;
+    }
+    if (imageData != null && oldImagePath != null && oldImagePath != newImagePath) {
+      await ImageStorageService.deleteRelative(oldImagePath);
+    }
     await loadTransactions(customerId);
     await loadCustomers();
   }
 
   Future<void> deleteTransaction(int id, int customerId) async {
     final db = await AppDBHelper.instance.database;
+    String? oldImagePath;
     await db.transaction((txn) async {
-      await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
+      final existing = await txn.query('transactions',
+          where: 'id = ? AND customer_id = ?',
+          whereArgs: [id, customerId],
+          limit: 1);
+      if (existing.isEmpty) throw StateError('العملية غير موجودة');
+      oldImagePath = existing.first['image_path']?.toString();
+      await txn.delete('transactions',
+          where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId]);
       final latest = await txn.query(
         'transactions',
         columns: ['date'],
@@ -1429,18 +1920,15 @@ class AppAccountProvider extends ChangeNotifier {
         whereArgs: [customerId],
       );
     });
+    if (oldImagePath != null) await ImageStorageService.deleteRelative(oldImagePath);
     await loadTransactions(customerId);
     await loadCustomers();
   }
 
   Future<void> exportBackup() async {
     try {
-      final dbPath = await getDatabasesPath();
-      final path = p.join(dbPath, 'al_muhasib_final_v6.db');
-      if (await File(path).exists()) {
-        await Share.shareXFiles([XFile(path)],
-            text: 'نسخة احتياطية - تطبيق المحاسب');
-      }
+      final bundle = await BackupBundleService.createBundle();
+      await Share.shareXFiles([XFile(bundle.path)], text: 'نسخة احتياطية - تطبيق المحاسب');
     } catch (e) {
       debugPrint('خطأ أثناء التصدير: $e');
     }
@@ -1450,8 +1938,12 @@ class AppAccountProvider extends ChangeNotifier {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       if (result != null && result.files.single.path != null) {
-        await AppDBHelper.instance
-            .restoreDatabase(File(result.files.single.path!));
+        final selected = File(result.files.single.path!);
+        if (await BackupBundleService.isBundle(selected)) {
+          await BackupBundleService.restoreBundle(selected);
+        } else {
+          await AppDBHelper.instance.restoreDatabase(selected);
+        }
         await loadInitialData();
         return true;
       }
@@ -1463,7 +1955,11 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<bool> importBackupFromFile(File selectedFile) async {
     try {
-      await AppDBHelper.instance.restoreDatabase(selectedFile);
+      if (await BackupBundleService.isBundle(selectedFile)) {
+        await BackupBundleService.restoreBundle(selectedFile);
+      } else {
+        await AppDBHelper.instance.restoreDatabase(selectedFile);
+      }
       await loadInitialData();
       return true;
     } catch (e) {
@@ -1500,8 +1996,7 @@ class AppAccountProvider extends ChangeNotifier {
           .where((s) => s.trim().isNotEmpty)
           .toList();
     } catch (e) {
-      return [];
-    }
+      return [];    }
   }
 
   Future<Map<String, dynamic>> importFromExcel(File excelFile,
@@ -1621,6 +2116,17 @@ class AppAccountProvider extends ChangeNotifier {
                       .split('.')[0];
             } else if (dateCell is excel_lib.DateTimeCellValue) {
               dateStr = dateCell.asDateTimeLocal().toString().split('.')[0];
+            } else if (dateCell is excel_lib.IntCellValue || dateCell is excel_lib.DoubleCellValue) {
+              final serial = dateCell is excel_lib.IntCellValue
+                  ? dateCell.value.toDouble()
+                  : (dateCell as excel_lib.DoubleCellValue).value;
+              if (serial > 0) {
+                final wholeDays = serial.floor();
+                final millis = ((serial - wholeDays) * Duration.millisecondsPerDay).round();
+                final excelDate = DateTime(1899, 12, 30).add(
+                    Duration(days: wholeDays, milliseconds: millis));
+                dateStr = excelDate.toString().split('.').first;
+              }
             } else if (dateCell != null) {
               dateStr = dateCell.toString().trim();
             }
@@ -1705,6 +2211,7 @@ class AppAccountProvider extends ChangeNotifier {
             'type': type,
             'details': details,
             'date': dateStr,
+            'currency': (await txn.query('customers', columns: ['currency'], where: 'id = ?', whereArgs: [customerId], limit: 1)).first['currency']?.toString() ?? 'ريال يمني',
           });
           transactionsCreated++;
           await txn.update('customers', {'last_activity': dateStr},
@@ -1996,7 +2503,8 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
                       fit: BoxFit.cover,
                     ),
                   )
-                : ClipRRect(                    borderRadius: BorderRadius.circular(12),
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
                     child: Image.asset(
                       'assets/icon.png',
                       width: 140,
@@ -2387,7 +2895,20 @@ class _HomeScreenState extends State<HomeScreen>
     if (categories.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('دفتر المحاسب الشامل')),
-        body: const Center(child: Text('لا توجد تصنيفات مضافة')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('لا توجد تصنيفات مضافة'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+                icon: const Icon(Icons.category),
+                label: const Text('إدارة التصنيفات'),
+              ),
+            ],
+          ),
+        ),
       );
     }
     if (_tabController == null ||
@@ -2474,8 +2995,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 SizedBox(
                   height: 48,
-                  child: TabBar(
-                    controller: _tabController,
+                  child: TabBar(                    controller: _tabController,
                     isScrollable: true,
                     indicatorColor: AppColors.primary,
                     indicatorWeight: 3,
@@ -2995,7 +3515,8 @@ class _HomeScreenState extends State<HomeScreen>
             Icon(Icons.edit, color: AppColors.primary),
             SizedBox(width: 8),
             Text('تعديل الحساب'),
-          ]),          content: SingleChildScrollView(
+          ]),
+          content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               TextField(
                   controller: nameCtrl,
@@ -3100,9 +3621,15 @@ class _HomeScreenState extends State<HomeScreen>
                   const Text('إلغاء', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () {
-              provider.deleteCustomer(id);
-              Navigator.pop(ctx);
+            onPressed: () async {
+              final ok = await provider.deleteCustomer(id);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('لا يمكن حذف حساب يحتوي على عمليات. احذف الحساب فقط بعد إزالة عملياته أو احتفظ به للأرشفة.'),
+                  backgroundColor: AppColors.red,
+                ));
+              }
             },
             child: const Text('حذف'),
           )
@@ -3467,8 +3994,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           backgroundColor: AppColors.green,
         ));
       }
-    } else {
-      if (mounted) {
+    } else {      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('❌ فشل: $error'), backgroundColor: AppColors.red));
       }
@@ -3994,7 +4520,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         const Divider(height: 1),
         Container(
           color: Colors.white,
-          child: ListTile(            enabled: _signedIn,
+          child: ListTile(
+            enabled: _signedIn,
             leading: Container(
               width: 45,
               height: 45,
@@ -4204,9 +4731,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             title: const Text('حذف العملية',
                 style: TextStyle(
                     fontWeight: FontWeight.bold, color: AppColors.red)),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(ctx);
-              provider.deleteTransaction(
+              await provider.deleteTransaction(
                 int.parse(tx['id'].toString()),
                 int.parse(widget.customer['id'].toString()),
               );
@@ -4298,6 +4825,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    Timer? suggestionDebounce;
+    int suggestionRequest = 0;
 
     showDialog(
       context: context,
@@ -4379,34 +4908,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       decoration: const InputDecoration(
                           labelText: 'التفاصيل / البيان',
                           border: UnderlineInputBorder()),
-                      onChanged: (val) async {
-                        if (val.length >= 2) {
-                          final allDetails =
-                              await provider.getDistinctDetails(query: val);
+                      onChanged: (val) {
+                        suggestionDebounce?.cancel();
+                        final request = ++suggestionRequest;
+                        if (val.trim().length < 2) return;
+                        suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
+                          final allDetails = await provider.getDistinctDetails(query: val.trim());
+                          if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
                           final prefixMatches = allDetails
-                              .where((d) => d.startsWith(val) && d != val)
+                              .where((d) => d.startsWith(val.trim()) && d != val.trim())
                               .toList();
                           final containsMatches = allDetails
-                              .where((d) =>
-                                  d.contains(val) &&
-                                  !d.startsWith(val) &&
-                                  d != val)
+                              .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
                               .toList();
-                          final combined = [
-                            ...prefixMatches,
-                            ...containsMatches
-                          ];
+                          final combined = [...prefixMatches, ...containsMatches];
                           if (combined.isNotEmpty && context.mounted) {
                             _showSuggestionsDialog(
                               parentContext: context,
                               suggestions: combined,
                               controller: detailsCtrl,
-                              onSelected: () {
-                                setDialogState(() {});
-                              },
+                              onSelected: () { setDialogState(() {}); },
                             );
                           }
-                        }
+                        });
                       },
                     ),
                   ),
@@ -4469,8 +4993,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           ),
                         ),
                       );
-                    },
-                    child: selectedImageBase64 == null
+                    },                    child: selectedImageBase64 == null
                         ? const Padding(
                             padding: EdgeInsets.all(8),
                             child: Icon(Icons.camera_alt,
@@ -4496,10 +5019,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
+                        final original = DateTime.tryParse(tx['date']?.toString() ?? '');
+                        final time = original ?? DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                            '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
                         await provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
@@ -4529,10 +5053,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
-                        final now = DateTime.now();
+                        final original = DateTime.tryParse(tx['date']?.toString() ?? '');
+                        final time = original ?? DateTime.now();
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
-                            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+                            '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
                         await provider.updateTransaction(
                           int.parse(tx['id'].toString()),
                           int.parse(widget.customer['id'].toString()),
@@ -4574,6 +5099,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         text: '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}');
 
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    Timer? suggestionDebounce;
+    int suggestionRequest = 0;
 
     showDialog(
       context: context,
@@ -4650,34 +5177,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       decoration: const InputDecoration(
                           labelText: 'التفاصيل / البيان',
                           border: UnderlineInputBorder()),
-                      onChanged: (val) async {
-                        if (val.length >= 2) {
-                          final allDetails =
-                              await provider.getDistinctDetails(query: val);
+                      onChanged: (val) {
+                        suggestionDebounce?.cancel();
+                        final request = ++suggestionRequest;
+                        if (val.trim().length < 2) return;
+                        suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
+                          final allDetails = await provider.getDistinctDetails(query: val.trim());
+                          if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
                           final prefixMatches = allDetails
-                              .where((d) => d.startsWith(val) && d != val)
+                              .where((d) => d.startsWith(val.trim()) && d != val.trim())
                               .toList();
                           final containsMatches = allDetails
-                              .where((d) =>
-                                  d.contains(val) &&
-                                  !d.startsWith(val) &&
-                                  d != val)
+                              .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
                               .toList();
-                          final combined = [
-                            ...prefixMatches,
-                            ...containsMatches
-                          ];
+                          final combined = [...prefixMatches, ...containsMatches];
                           if (combined.isNotEmpty && context.mounted) {
                             _showSuggestionsDialog(
                               parentContext: context,
                               suggestions: combined,
                               controller: detailsCtrl,
-                              onSelected: () {
-                                setDialogState(() {});
-                              },
+                              onSelected: () { setDialogState(() {}); },
                             );
                           }
-                        }
+                        });
                       },
                     ),
                   ),
@@ -4993,11 +5515,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _updateTransactionImage(
-      AppAccountProvider provider, int txId, String? imageData) async {    final db = await AppDBHelper.instance.database;
-    await db.update('transactions', {'image_data': imageData},
-        where: 'id = ?', whereArgs: [txId]);
-    await provider
-        .loadTransactions(int.parse(widget.customer['id'].toString()));
+      AppAccountProvider provider, int txId, String? imageData) async {
+    final db = await AppDBHelper.instance.database;
+    final existing = await db.query('transactions',
+        where: 'id = ?', whereArgs: [txId], limit: 1);
+    if (existing.isEmpty) return;
+    final oldPath = existing.first['image_path']?.toString();
+    String? newPath;
+    try {
+      if (imageData != null && imageData.trim().isNotEmpty) {
+        newPath = await ImageStorageService.saveBase64(imageData, 'tx_$txId');
+        if (newPath == null) throw Exception('تعذر حفظ صورة العملية');
+      }
+      await db.update('transactions',
+          {'image_data': null, 'image_path': newPath},
+          where: 'id = ?', whereArgs: [txId]);
+    } catch (_) {
+      if (newPath != null) await ImageStorageService.deleteRelative(newPath);
+      rethrow;
+    }
+    if (oldPath != null && oldPath != newPath) {
+      await ImageStorageService.deleteRelative(oldPath);
+    }
+    await provider.loadTransactions(int.parse(widget.customer['id'].toString()));
   }
 
   @override
@@ -5452,8 +5992,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: leftItems,
                   ),
-                ),
-              ],
+                ),              ],
             ),
             pw.SizedBox(height: 6),
             pw.Divider(color: darkBlue, thickness: 1.5),
@@ -5565,10 +6104,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
       final bytes = await pdf.save();
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'pdf'));
+      if (!await tempDir.exists()) await tempDir.create(recursive: true);
       final fileName =
           'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File('${tempDir.path}/$fileName');
+      final file = File(p.join(tempDir.path, fileName));
       await file.writeAsBytes(bytes);
       await OpenFile.open(file.path);
       Future.delayed(const Duration(minutes: 10), () async {
@@ -5640,7 +6180,13 @@ class CategoriesScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(context)),
       ),
       body: provider.categories.isEmpty
-          ? const Center(child: Text('لا توجد تصنيفات'))
+          ? Center(
+              child: ElevatedButton.icon(
+                onPressed: () => _showAddDialog(context),
+                icon: const Icon(Icons.add),
+                label: const Text('إضافة أول تصنيف'),
+              ),
+            )
           : ListView.builder(
               padding: const EdgeInsets.all(8),
               itemCount: provider.categories.length,
@@ -5806,7 +6352,7 @@ class CategoriesScreen extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Text('تأكيد الحذف'),
         content: Text(count > 0
-            ? 'يوجد $count حساب داخل التصنيف. سيتم حذفهم جميعاً!'
+            ? 'يوجد $count حساب داخل التصنيف. لا يمكن حذف التصنيف حتى لا تضيع الحسابات والمعاملات.'
             : 'هل أنت متأكد من حذف التصنيف؟'),
         actions: [
           TextButton(
