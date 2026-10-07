@@ -1000,7 +1000,7 @@ class AutoBackupService {
     try {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
-      final selectedFolder = (settings['folderPath'] as String).trim();
+      final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
       final folderPath = selectedFolder.isNotEmpty
           ? selectedFolder
           : await _defaultAutomaticBackupFolder();
@@ -1045,7 +1045,7 @@ class AutoBackupService {
       final todayTarget = DateTime(now.year, now.month, now.day,
           settings['driveHour'] as int, settings['driveMinute'] as int);
       DateTime? lastBackup;
-      final lastBackupStr = settings['driveLastBackup'] as String;
+      final lastBackupStr = settings['driveLastBackup'] as String? ?? '';
       if (lastBackupStr.isNotEmpty) {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
@@ -5534,7 +5534,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Row(children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
@@ -5566,7 +5566,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         final amount = double.tryParse(amountCtrl.text);
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
