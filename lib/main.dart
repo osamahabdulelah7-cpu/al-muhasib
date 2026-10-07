@@ -920,11 +920,20 @@ class AutoBackupService {
     debugPrint('✅ تم إلغاء المهام اليومية');
   }
 
+  static Future<String?> _defaultAutomaticBackupFolder() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(documents.path, 'auto_backups'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir.path;
+  }
+
   static Future<String?> performScheduledBackup() async {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
-    final folderPath = settings['folderPath'] as String;
-    if (folderPath.isEmpty) return null;
+    final selectedFolder = (settings['folderPath'] as String).trim();
+    final folderPath = selectedFolder.isNotEmpty
+        ? selectedFolder
+        : await _defaultAutomaticBackupFolder();
     if (!await _hasDataChanged()) return null;
 
     final result = await performBackup(folderPath);
@@ -970,8 +979,10 @@ class AutoBackupService {
     try {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
-      final folderPath = settings['folderPath'] as String;
-      if (folderPath.isEmpty) return null;
+      final selectedFolder = (settings['folderPath'] as String).trim();
+      final folderPath = selectedFolder.isNotEmpty
+          ? selectedFolder
+          : await _defaultAutomaticBackupFolder();
 
       final now = DateTime.now();
       final todayTarget = DateTime(now.year, now.month, now.day,
@@ -1697,7 +1708,7 @@ class AppAccountProvider extends ChangeNotifier {
       SELECT * FROM customers
       ORDER BY 
         CASE WHEN last_activity IS NULL OR last_activity = '' THEN 1 ELSE 0 END,
-        last_activity DESC, id DESC
+        datetime(last_activity) DESC, id DESC
     ''');
     await calculateAllCustomerBalances();
     notifyListeners();
@@ -1779,16 +1790,11 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> loadTransactions(int customerId) async {
     final db = await AppDBHelper.instance.database;
     final rows = await db.query('transactions',
-        where: 'customer_id = ?', whereArgs: [customerId], orderBy: 'date ASC, id ASC');
-    // image_data هنا للاستخدام المؤقت في الواجهة فقط؛ التخزين الدائم أصبح ملفياً.
-    for (final row in rows) {
-      final legacy = row['image_data']?.toString() ?? '';
-      final imagePath = row['image_path']?.toString() ?? '';
-      if (legacy.isEmpty && imagePath.isNotEmpty) {
-        final bytes = await ImageStorageService.readRelative(imagePath);
-        if (bytes != null) row['image_data'] = base64Encode(bytes);
-      }
-    }
+        where: 'customer_id = ?',
+        whereArgs: [customerId],
+        orderBy: 'datetime(date) ASC, id ASC');
+    // لا نحمل صور آلاف العمليات إلى الذاكرة عند فتح الحساب.
+    // الصورة تُقرأ فقط عند الحاجة لعرض تفاصيل العملية.
     currentTransactions = rows;
     notifyListeners();
   }
@@ -1828,7 +1834,7 @@ class AppAccountProvider extends ChangeNotifier {
             columns: ['date'],
             where: 'customer_id = ?',
             whereArgs: [customerId],
-            orderBy: 'date DESC, id DESC',
+            orderBy: 'datetime(date) DESC, id DESC',
             limit: 1);
         await txn.update('customers',
             {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
@@ -1883,7 +1889,7 @@ class AppAccountProvider extends ChangeNotifier {
           columns: ['date'],
           where: 'customer_id = ?',
           whereArgs: [customerId],
-          orderBy: 'date DESC, id DESC',
+          orderBy: 'datetime(date) DESC, id DESC',
           limit: 1,
         );
         await txn.update(
@@ -1921,7 +1927,7 @@ class AppAccountProvider extends ChangeNotifier {
         columns: ['date'],
         where: 'customer_id = ?',
         whereArgs: [customerId],
-        orderBy: 'date DESC, id DESC',
+        orderBy: 'datetime(date) DESC, id DESC',
         limit: 1,
       );
       await txn.update(
@@ -5434,9 +5440,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         if (amount == null || amount <= 0) return;
                         final now = DateTime.now();
                         final dateStr =
-                            '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
+                            '${selectedDate.year.toString().padLeft(4, '0')}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.addTransaction(
+                        await provider.addTransaction(
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'take',
@@ -5444,7 +5450,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        Navigator.pop(ctx);
+                        if (ctx.mounted) Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.red,
@@ -5468,7 +5474,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         final dateStr =
                             '${selectedDate.year}-${selectedDate.month}-${selectedDate.day} '
                             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-                        provider.addTransaction(
+                        await provider.addTransaction(
                           int.parse(widget.customer['id'].toString()),
                           amount,
                           'give',
@@ -5476,7 +5482,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        Navigator.pop(ctx);
+                        if (ctx.mounted) Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.green,
@@ -5694,7 +5700,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     double cumulative = 0.0, totalGive = 0.0, totalTake = 0.0;
     List<Map<String, dynamic>> processedTransactions = [];
+    final customerCurrency = (widget.customer['currency'] ?? '').toString();
     for (var tx in rawTransactions) {
+      final txCurrency = (tx['currency'] ?? '').toString();
+      if (txCurrency != customerCurrency) continue;
       double amt = (tx['amount'] as num).toDouble();
       if (tx['type'] == 'give') {
         cumulative += amt;
