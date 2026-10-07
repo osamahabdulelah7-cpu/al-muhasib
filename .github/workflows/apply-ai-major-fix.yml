@@ -1,0 +1,23 @@
+name: Apply AI Major Fix Payload
+on:
+  push:
+    branches: [ "ai-major-fix-2026-10-07" ]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild main.dart from staged payload
+        run: |
+          cat _ai_patch/main.gz.b64.* > /tmp/main.gz.b64
+          base64 --decode /tmp/main.gz.b64 > /tmp/main.dart.gz
+          gunzip -c /tmp/main.dart.gz > lib/main.dart
+          rm -rf _ai_patch
+          rm -f .github/workflows/apply-ai-major-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "apply comprehensive accounting fixes"
+          git push
