@@ -1365,8 +1365,7 @@ class AppDBHelper {
       await db.execute('''
         CREATE TABLE personal_logo (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          logo_data TEXT,
-        logo_path TEXT
+          logo_data TEXT
         )
       ''');
     }
@@ -1387,8 +1386,21 @@ class AppDBHelper {
       ''');
     }
     if (oldVersion < 8) {
-      await db.execute('ALTER TABLE transactions ADD COLUMN image_path TEXT');
-      await db.execute('ALTER TABLE personal_logo ADD COLUMN logo_path TEXT');
+      final txColumns = await db.rawQuery('PRAGMA table_info(transactions)');
+      final txNames = txColumns.map((e) => e['name'].toString()).toSet();
+      if (!txNames.contains('image_path')) {
+        await db.execute('ALTER TABLE transactions ADD COLUMN image_path TEXT');
+      }
+
+      final logoTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='personal_logo'");
+      if (logoTables.isNotEmpty) {
+        final logoColumns = await db.rawQuery('PRAGMA table_info(personal_logo)');
+        final logoNames = logoColumns.map((e) => e['name'].toString()).toSet();
+        if (!logoNames.contains('logo_path')) {
+          await db.execute('ALTER TABLE personal_logo ADD COLUMN logo_path TEXT');
+        }
+      }
     }
     if (oldVersion < 9) {
       await db.execute("ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT ''");
