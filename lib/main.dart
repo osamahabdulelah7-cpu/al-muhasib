@@ -987,12 +987,17 @@ class AutoBackupService {
 
   static Future<String> _resolveBackupFolder(String? selectedFolder) async {
     final selected = selectedFolder?.trim() ?? '';
-    if (selected.isNotEmpty && await _isWritableDirectory(selected)) {
+
+    // المسار المحفوظ يجب أن يكون مساراً مطلقاً؛ المسارات النسبية القديمة
+    // قد تتحول إلى مسارات خاطئة مثل /المحاسب/... داخل عملية الخلفية.
+    if (selected.isNotEmpty &&
+        p.isAbsolute(selected) &&
+        await _isWritableDirectory(selected)) {
       return selected;
     }
 
     final fallback = await _defaultAutomaticBackupFolder();
-    if (selected.isNotEmpty && selected != fallback) {
+    if (selected != fallback) {
       await saveSettings(folderPath: fallback);
     }
     return fallback;
