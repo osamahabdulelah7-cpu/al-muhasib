@@ -240,9 +240,8 @@ void callbackDispatcher() {
         }
       }
 
-      if (!shouldRetry) {
-        await AutoBackupService._scheduleBackgroundBackup();
-      }
+      // This worker is periodic and remains registered by Android.
+      // Do not cancel/re-register it from inside its own execution.
       return !shouldRetry;
     } catch (e, st) {
       debugPrint('❌ خطأ في المهمة الخلفية: $e\n$st');
@@ -905,42 +904,23 @@ class AutoBackupService {
   // ============ جدولة المهام الخلفية ============
   static Future<void> _scheduleBackgroundBackup() async {
     final settings = await getSettings();
-    final now = DateTime.now();
-    final todayTargets = <DateTime>[];
+    final localEnabled = settings['enabled'] == true;
+    final driveEnabled = settings['driveEnabled'] == true;
 
-    if (settings['enabled'] == true) {
-      todayTargets.add(DateTime(now.year, now.month, now.day,
-          settings['hour'] as int, settings['minute'] as int));
-    }
-    if (settings['driveEnabled'] == true) {
-      todayTargets.add(DateTime(now.year, now.month, now.day,
-          settings['driveHour'] as int, settings['driveMinute'] as int));
-    }
-    if (todayTargets.isEmpty) {
+    if (!localEnabled && !driveEnabled) {
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-      debugPrint('لم تتم جدولة النسخ لأن النسخ المحلي وDrive متوقفان');
+      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت مهمة الخلفية');
       return;
     }
 
-    // اختر أقرب موعد لم يأتِ بعد اليوم. لا تُضف يوماً للموعد
-    // المنتهي إذا كان هناك موعد آخر لاحق اليوم.
-    final futureTargets = todayTargets.where((t) => t.isAfter(now)).toList();
-    final DateTime target;
-    if (futureTargets.isNotEmpty) {
-      target = futureTargets.reduce((x, y) => x.isBefore(y) ? x : y);
-    } else {
-      final tomorrowTargets = todayTargets
-          .map((t) => t.add(const Duration(days: 1)))
-          .toList();
-      target = tomorrowTargets.reduce((x, y) => x.isBefore(y) ? x : y);
-    }
-    final delay = target.difference(now);
-
-    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-    await Workmanager().registerOneOffTask(
+    // Periodic WorkManager survives normal app closure and device reboot.
+    // Android's minimum periodic interval is 15 minutes, and execution time
+    // is best-effort; the task checks the configured daily times each run.
+    await Workmanager().registerPeriodicTask(
       _workManagerUniqueName,
       _workManagerTaskName,
-      initialDelay: delay,
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
       constraints: Constraints(
         networkType: NetworkType.notRequired,
         requiresBatteryNotLow: false,
@@ -948,12 +928,10 @@ class AutoBackupService {
         requiresDeviceIdle: false,
         requiresStorageNotLow: false,
       ),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
       backoffPolicy: BackoffPolicy.linear,
       backoffPolicyDelay: const Duration(minutes: 15),
     );
-    debugPrint('تم جدولة النسخ الخلفي للموعد القادم بعد ' +
-        delay.inMinutes.toString() + ' دقيقة');
+    debugPrint('تم تسجيل فحص النسخ الاحتياطي الدوري كل 15 دقيقة');
   }
 
   static Future<void> scheduleDailyBackup() async {
@@ -1104,7 +1082,9 @@ class AutoBackupService {
       final settings = await getSettings();
       if (settings['driveEnabled'] != true) return null;
       if (!GoogleDriveService.isSignedIn) {
-        if (!await GoogleDriveService.trySilentSignIn()) return null;
+        if (!await GoogleDriveService.trySilentSignIn()) {
+          return 'تعذر تسجيل الدخول إلى Google في الخلفية. افتح التطبيق وسجّل الدخول مجدداً.';
+        }
       }
 
       final now = DateTime.now();
