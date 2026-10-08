@@ -5650,7 +5650,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       onChanged: (val) {
                         suggestionDebounce?.cancel();
                         final request = ++suggestionRequest;
-                        if (val.trim().length < 2) return;
+                        if (val.trim().length < 2) {
+                          suggestionsOverlay?.remove();
+                          suggestionsOverlay = null;
+                          return;
+                        }
                         suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
                           final allDetails = await provider.getDistinctDetails(query: val.trim());
                           if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
@@ -5832,7 +5836,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      suggestionDebounce?.cancel();
+      suggestionRequest++;
+      suggestionsOverlay?.remove();
+      suggestionsOverlay = null;
+      detailsCtrl.dispose();
+      amountCtrl.dispose();
+      dateCtrl.dispose();
+    });
   }
 
   void _showAddTransactionDialog(BuildContext context) {
@@ -5928,7 +5940,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       onChanged: (val) {
                         suggestionDebounce?.cancel();
                         final request = ++suggestionRequest;
-                        if (val.trim().length < 2) return;
+                        if (val.trim().length < 2) {
+                          suggestionsOverlay?.remove();
+                          suggestionsOverlay = null;
+                          return;
+                        }
                         suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
                           final allDetails = await provider.getDistinctDetails(query: val.trim());
                           if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
@@ -6103,7 +6119,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      suggestionDebounce?.cancel();
+      suggestionRequest++;
+      suggestionsOverlay?.remove();
+      suggestionsOverlay = null;
+      detailsCtrl.dispose();
+      amountCtrl.dispose();
+      dateCtrl.dispose();
+    });
   }
 
   Future<void> _showTransactionDetailsDialog(BuildContext context,
