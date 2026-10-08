@@ -567,7 +567,7 @@ class PersonalDataService {
 
   static Future<Map<String, dynamic>> getData() async {
     final prefs = await SharedPreferences.getInstance();
-    return {
+    final data = <String, dynamic>{
       'nameAr': prefs.getString(_prefNameAr) ?? '',
       'nameEn': prefs.getString(_prefNameEn) ?? '',
       'titleAr': prefs.getString(_prefTitleAr) ?? '',
@@ -576,6 +576,14 @@ class PersonalDataService {
       'email': prefs.getString(_prefEmail) ?? '',
       'logoShape': prefs.getString(_prefLogoShape) ?? 'circle',
     };
+    for (final side in ['right', 'left']) {
+      for (var i = 1; i <= 3; i++) {
+        data['${side}Line$i'] = prefs.getString('personal_${side}Line$i') ?? '';
+        data['${side}Color$i'] = prefs.getString('personal_${side}Color$i') ?? '#000000';
+        data['${side}Size$i'] = prefs.getDouble('personal_${side}Size$i') ?? 10.0;
+      }
+    }
+    return data;
   }
 
   static Future<void> saveData({
@@ -586,6 +594,9 @@ class PersonalDataService {
     String? phone,
     String? email,
     String? logoShape,
+    Map<String, String>? lineTexts,
+    Map<String, String>? lineColors,
+    Map<String, double>? lineSizes,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (nameAr != null) await prefs.setString(_prefNameAr, nameAr);
@@ -595,6 +606,21 @@ class PersonalDataService {
     if (phone != null) await prefs.setString(_prefPhone, phone);
     if (email != null) await prefs.setString(_prefEmail, email);
     if (logoShape != null) await prefs.setString(_prefLogoShape, logoShape);
+    if (lineTexts != null) {
+      for (final entry in lineTexts.entries) {
+        await prefs.setString('personal_${entry.key}', entry.value);
+      }
+    }
+    if (lineColors != null) {
+      for (final entry in lineColors.entries) {
+        await prefs.setString('personal_${entry.key}', entry.value);
+      }
+    }
+    if (lineSizes != null) {
+      for (final entry in lineSizes.entries) {
+        await prefs.setDouble('personal_${entry.key}', entry.value);
+      }
+    }
   }
 
   static Future<String?> getLogoBase64() async {
@@ -2534,46 +2560,7 @@ class AlMuhasibApp extends StatelessWidget {
   }
 }
 
-class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final Widget? title;
-  final List<Widget>? actions;
-  final Widget? leading;
-  final PreferredSizeWidget? bottom;
-  final double toolbarHeight;
-  const GradientAppBar({
-    super.key,
-    this.title,
-    this.actions,
-    this.leading,
-    this.bottom,
-    this.toolbarHeight = kToolbarHeight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.solidBlue,
-      child: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: title,
-        actions: actions,
-        leading: leading,
-        bottom: bottom,
-        toolbarHeight: toolbarHeight,
-        foregroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-    );
-  }
-
-  @override
-  Size get preferredSize =>
-      Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
-}
-
-// ==================== PersonalDataScreen ====================
-class PersonalDataScreen extends StatefulWidget {
+class GradientAppBar extends StatelessWclass PersonalDataScreen extends StatefulWidget {
   const PersonalDataScreen({super.key});
 
   @override
@@ -2581,16 +2568,33 @@ class PersonalDataScreen extends StatefulWidget {
 }
 
 class _PersonalDataScreenState extends State<PersonalDataScreen> {
-  final nameArCtrl = TextEditingController();
-  final nameEnCtrl = TextEditingController();
-  final titleArCtrl = TextEditingController();
-  final titleEnCtrl = TextEditingController();
-  final phoneCtrl = TextEditingController();
-  final emailCtrl = TextEditingController();
+  final List<TextEditingController> _lineControllers =
+      List.generate(6, (_) => TextEditingController());
+  final List<String> _lineColors = List<String>.filled(6, '#000000');
+  final List<double> _lineSizes = List<double>.filled(6, 10.0);
+
+  static const Map<String, String> _colorNames = {
+    '#000000': 'أسود',
+    '#1E3A5F': 'أزرق داكن',
+    '#1565C0': 'أزرق',
+    '#008577': 'أخضر مزرق',
+    '#008000': 'أخضر',
+    '#E65100': 'برتقالي',
+    '#C62828': 'أحمر',
+    '#7B1FA2': 'بنفسجي',
+    '#6D4C41': 'بني',
+    '#757575': 'رمادي',
+  };
 
   String? _logoBase64;
   String _logoShape = 'circle';
   bool _loading = true;
+
+  String _sideKey(int index) => index < 3 ? 'right' : 'left';
+  int _lineNumber(int index) => index < 3 ? index + 1 : index - 2;
+  String _textKey(int index) => '${_sideKey(index)}Line${_lineNumber(index)}';
+  String _colorKey(int index) => '${_sideKey(index)}Color${_lineNumber(index)}';
+  String _sizeKey(int index) => '${_sideKey(index)}Size${_lineNumber(index)}';
 
   @override
   void initState() {
@@ -2598,18 +2602,25 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    for (final controller in _lineControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     final data = await PersonalDataService.getData();
     final logo = await PersonalDataService.getLogoBase64();
     if (!mounted) return;
     setState(() {
-      nameArCtrl.text = data['nameAr'];
-      nameEnCtrl.text = data['nameEn'];
-      titleArCtrl.text = data['titleAr'];
-      titleEnCtrl.text = data['titleEn'];
-      phoneCtrl.text = data['phone'];
-      emailCtrl.text = data['email'];
-      _logoShape = data['logoShape'];
+      for (var i = 0; i < _lineControllers.length; i++) {
+        _lineControllers[i].text = (data[_textKey(i)] ?? '').toString();
+        _lineColors[i] = (data[_colorKey(i)] ?? '#000000').toString();
+        _lineSizes[i] = (data[_sizeKey(i)] as num?)?.toDouble() ?? 10.0;
+      }
+      _logoShape = data['logoShape'] as String;
       _logoBase64 = logo;
       _loading = false;
     });
@@ -2635,6 +2646,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
               Navigator.pop(ctx);
               await PersonalDataService.saveLogoBase64(base64Data);
               await PersonalDataService.saveData(logoShape: 'circle');
+              if (!mounted) return;
               setState(() {
                 _logoBase64 = base64Data;
                 _logoShape = 'circle';
@@ -2648,6 +2660,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
               Navigator.pop(ctx);
               await PersonalDataService.saveLogoBase64(base64Data);
               await PersonalDataService.saveData(logoShape: 'square');
+              if (!mounted) return;
               setState(() {
                 _logoBase64 = base64Data;
                 _logoShape = 'square';
@@ -2662,17 +2675,23 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
 
   Future<void> _deleteLogo() async {
     await PersonalDataService.saveLogoBase64(null);
+    if (!mounted) return;
     setState(() => _logoBase64 = null);
   }
 
   Future<void> _save() async {
+    final lineTexts = <String, String>{};
+    final lineColors = <String, String>{};
+    final lineSizes = <String, double>{};
+    for (var i = 0; i < _lineControllers.length; i++) {
+      lineTexts[_textKey(i)] = _lineControllers[i].text.trim();
+      lineColors[_colorKey(i)] = _lineColors[i];
+      lineSizes[_sizeKey(i)] = _lineSizes[i];
+    }
     await PersonalDataService.saveData(
-      nameAr: nameArCtrl.text.trim(),
-      nameEn: nameEnCtrl.text.trim(),
-      titleAr: titleArCtrl.text.trim(),
-      titleEn: titleEnCtrl.text.trim(),
-      phone: phoneCtrl.text.trim(),
-      email: emailCtrl.text.trim(),
+      lineTexts: lineTexts,
+      lineColors: lineColors,
+      lineSizes: lineSizes,
     );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2681,6 +2700,94 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
       ));
       Navigator.pop(context);
     }
+  }
+
+  Widget _buildLineEditor(int index, String lineLabel) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _lineControllers[index],
+              decoration: InputDecoration(
+                labelText: lineLabel,
+                hintText: lineLabel,
+                prefixIcon: const Icon(Icons.edit),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: DropdownButtonFormField<String>(
+                    value: _lineColors[index],
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'لون الخط',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: _colorNames.entries.map((entry) {
+                      final colorValue = int.parse(entry.key.substring(1), radix: 16);
+                      return DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Color(0xFF000000 | colorValue),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black26),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Flexible(child: Text(entry.value, overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _lineColors[index] = value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<double>(
+                    value: _lineSizes[index],
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'حجم الخط',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: const [8, 9, 10, 11, 12, 14, 16, 18, 20]
+                        .map((size) => DropdownMenuItem<double>(
+                              value: size.toDouble(),
+                              child: Text('$size'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _lineSizes[index] = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -2726,8 +2833,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
             children: [
               ElevatedButton.icon(
                 onPressed: _pickLogo,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
                 icon: const Icon(Icons.image),
                 label: const Text('تغيير الشعار'),
               ),
@@ -2735,8 +2841,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
               if (_logoBase64 != null)
                 ElevatedButton.icon(
                   onPressed: _deleteLogo,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.red),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
                   icon: const Icon(Icons.delete),
                   label: const Text('حذف الشعار'),
                 ),
@@ -2746,55 +2851,45 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
           const Center(
             child: Text(
               'البيانات التي تظهر في ترويسة التقارير',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primary),
             ),
+          ),
+          const SizedBox(height: 8),
+          const Text('يمين الصفحة', textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primary)),
+          const SizedBox(height: 10),
+          _buildLineEditor(0, 'السطر الأول'),
+          _buildLineEditor(1, 'السطر الثاني'),
+          _buildLineEditor(2, 'السطر الثالث'),
+          const SizedBox(height: 8),
+          const Divider(),
+          const SizedBox(height: 8),
+          const Text('يسار الصفحة', textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primary)),
+          const SizedBox(height: 10),
+          _buildLineEditor(3, 'السطر الأول'),
+          _buildLineEditor(4, 'السطر الثاني'),
+          _buildLineEditor(5, 'السطر الثالث'),
+          const SizedBox(height: 18),
+          ElevatedButton.icon(
+            onPressed: _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              minimumSize: const Size(double.infinity, 55),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.save),
+            label: const Text('حفظ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 20),
-          TextField(
-            controller: nameArCtrl,
-            decoration: const InputDecoration(
-              labelText: 'الاسم (عربي)',
-              prefixIcon: Icon(Icons.person),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: nameEnCtrl,
-            decoration: const InputDecoration(
-              labelText: 'الاسم (إنجليزي)',
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: titleArCtrl,
-            decoration: const InputDecoration(
-              labelText: 'العنوان (عربي)',
-              prefixIcon: Icon(Icons.title),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: titleEnCtrl,
-            decoration: const InputDecoration(
-              labelText: 'العنوان (إنجليزي)',
-              prefixIcon: Icon(Icons.title_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: phoneCtrl,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'رقم الهاتف',
-              prefixIcon: Icon(Icons.phone),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
+        ],
+      ),
+    );
+  }
+}
+
             controller: emailCtrl,
             keyboardType: TextInputType.emailAddress,
             decoration: const InputDecoration(
@@ -6341,45 +6436,37 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final PdfColor balanceRowColor = balanceDiff < 0 ? lightRed : lightGreen;
 
       pw.Widget buildHeader() {
-        final leftItems = <pw.Widget>[];
         final rightItems = <pw.Widget>[];
+        final leftItems = <pw.Widget>[];
 
-        if ((personalData['nameAr'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
-            personalData['nameAr'],
-            style: pw.TextStyle(font: fontBold, fontSize: 10, color: black),
-          ));
-        }
-        if ((personalData['titleAr'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
-            personalData['titleAr'],
-            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
-          ));
-        }
-        if ((personalData['phone'] ?? '').isNotEmpty) {
-          rightItems.add(pw.Text(
-            personalData['phone'],
-            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
-          ));
-        }
+        for (var i = 1; i <= 3; i++) {
+          final rightText = (personalData['rightLine$i'] ?? '').toString();
+          if (rightText.isNotEmpty) {
+            final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
+            final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
+            rightItems.add(pw.Text(
+              rightText,
+              style: pw.TextStyle(
+                font: i == 1 ? fontBold : fontRegular,
+                fontSize: size,
+                color: PdfColor.fromHex(colorHex),
+              ),
+            ));
+          }
 
-        if ((personalData['nameEn'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
-            personalData['nameEn'],
-            style: pw.TextStyle(font: fontBold, fontSize: 10, color: black),
-          ));
-        }
-        if ((personalData['titleEn'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
-            personalData['titleEn'],
-            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
-          ));
-        }
-        if ((personalData['email'] ?? '').isNotEmpty) {
-          leftItems.add(pw.Text(
-            personalData['email'],
-            style: pw.TextStyle(font: fontRegular, fontSize: 9, color: black),
-          ));
+          final leftText = (personalData['leftLine$i'] ?? '').toString();
+          if (leftText.isNotEmpty) {
+            final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
+            final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
+            leftItems.add(pw.Text(
+              leftText,
+              style: pw.TextStyle(
+                font: i == 1 ? fontBold : fontRegular,
+                fontSize: size,
+                color: PdfColor.fromHex(colorHex),
+              ),
+            ));
+          }
         }
 
         return pw.Container(
