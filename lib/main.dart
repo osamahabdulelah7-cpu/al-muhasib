@@ -5840,6 +5840,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
     Timer? suggestionDebounce;
     int suggestionRequest = 0;
+    OverlayEntry? suggestionsOverlay;
+    final detailsFieldKey = GlobalKey();
 
     showDialog(
       context: context,
@@ -5911,6 +5913,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Expanded(
                     child: TextField(
+                      key: detailsFieldKey,
                       controller: detailsCtrl,
                       textAlign: TextAlign.right,
                       decoration: const InputDecoration(
@@ -5930,12 +5933,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
                               .toList();
                           final combined = [...prefixMatches, ...containsMatches];
-                          if (combined.isNotEmpty && context.mounted) {
-                            _showSuggestionsDialog(
+                          if (!context.mounted) return;
+                          suggestionsOverlay?.remove();
+                          suggestionsOverlay = null;
+                          if (combined.isNotEmpty) {
+                            suggestionsOverlay = _showSuggestionsOverlay(
                               parentContext: context,
+                              anchorKey: detailsFieldKey,
                               suggestions: combined,
                               controller: detailsCtrl,
-                              onSelected: () { setDialogState(() {}); },
+                              onSelected: () {
+                                suggestionsOverlay?.remove();
+                                suggestionsOverlay = null;
+                                setDialogState(() {});
+                              },
                             );
                           }
                         });
