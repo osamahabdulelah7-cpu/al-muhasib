@@ -1017,7 +1017,7 @@ class AutoBackupService {
 
     try {
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
+      final error = await GoogleDriveService.uploadBackup(bundle);
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final now = DateTime.now();
@@ -1069,7 +1069,7 @@ class AutoBackupService {
       if (error == null) {
         await NotificationService.showTemporarySuccess(
             '📁 تم النسخ الاحتياطي',
-            'تم إنشاء نسخة .alb ونسخة قاعدة البيانات .db بنجاح');
+            'تم إنشاء النسخة الاحتياطية الكاملة بصيغة .alb بنجاح');
       }
       return error;
     } catch (e, st) {
@@ -1105,7 +1105,7 @@ class AutoBackupService {
       if (!await _hasDataChangedForDrive()) return null;
 
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
+      final error = await GoogleDriveService.uploadBackup(bundle);
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final dbFile = await _getDatabaseFile();
@@ -1185,10 +1185,7 @@ class AutoBackupService {
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
       final bundle = await BackupBundleService.createBundle(outputDirectory: backupDir);
-      // النسخ التلقائي المحلي يحفظ الصيغتين: ALB الكاملة وSQLite DB الخام.
-      final dbFile = await _getDatabaseFile();
-      final stamp = '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}_${DateTime.now().hour.toString().padLeft(2, '0')}-${DateTime.now().minute.toString().padLeft(2, '0')}-${DateTime.now().second.toString().padLeft(2, '0')}';
-      await dbFile.copy(p.join(backupDir.path, 'al_muhasib_${stamp}.db'));
+      // النسخ التلقائي يحفظ ملف ALB الكامل فقط؛ تصدير DB متاح يدوياً عند الحاجة.
       final now = DateTime.now();
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
@@ -1217,7 +1214,7 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
+      final error = await GoogleDriveService.uploadBackup(bundle);
       if (error == null) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
