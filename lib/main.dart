@@ -2651,7 +2651,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
       canvas.drawImageRect(
         image,
         sourceRect,
-        const Rect.fromLTWH(0, 0, outputSize.toDouble(), outputSize.toDouble()),
+        Rect.fromLTWH(0, 0, outputSize.toDouble(), outputSize.toDouble()),
         paint,
       );
       final picture = recorder.endRecording();
