@@ -111,7 +111,7 @@ class NotificationService {
   static const int _localNotificationId = 1001;
   static const int _driveNotificationId = 1002;
 
-  static Future<void> initialize() async {
+  static Future<void> initialize({bool requestPermission = true}) async {
     const androidSettings =
         AndroidInitializationSettings('@drawable/ic_notification');
     const iosSettings = DarwinInitializationSettings(
@@ -125,7 +125,7 @@ class NotificationService {
     );
     await _plugin.initialize(initSettings);
 
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid && requestPermission) {
       await _plugin
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
@@ -210,26 +210,39 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
     ui.DartPluginRegistrant.ensureInitialized();
-    await NotificationService.initialize();
+    await NotificationService.initialize(requestPermission: false);
     try {
       await AppDBHelper.instance.database;
+      bool shouldRetry = false;
+
       final localError = await AutoBackupService.checkAndRunBackup();
-      debugPrint('✅ فحص النسخ المحلي بالخلفية: $localError');
+      if (localError != null) {
+        shouldRetry = true;
+        debugPrint('❌ فشل النسخ المحلي بالخلفية: $localError');
+      } else {
+        debugPrint('✅ فحص النسخ المحلي بالخلفية اكتمل');
+      }
 
       final settings = await AutoBackupService.getSettings();
       if (settings['driveEnabled'] == true) {
-        // متغيرات الذاكرة لا تنتقل إلى Isolate الخلفية؛ نعيد تسجيل الدخول بصمت.
+        // متغيرات الذاكرة لا تنتقل إلى Isolate الخلفية؛ نعيد بناء جلسة Google بصمت.
         final signedIn = await GoogleDriveService.trySilentSignIn();
         if (signedIn) {
           final driveError = await AutoBackupService.checkAndRunDriveBackup();
-          debugPrint('☁️ فحص نسخ Drive بالخلفية: $driveError');
+          if (driveError != null) {
+            shouldRetry = true;
+            debugPrint('❌ فشل نسخ Drive بالخلفية: $driveError');
+          } else {
+            debugPrint('☁️ فحص نسخ Drive بالخلفية اكتمل');
+          }
         } else {
+          shouldRetry = true;
           debugPrint('⚠️ تعذر تسجيل الدخول إلى Google في المهمة الخلفية');
         }
       }
-      return true;
-    } catch (e) {
-      debugPrint('❌ خطأ في المهمة الخلفية: $e');
+      return !shouldRetry;
+    } catch (e, st) {
+      debugPrint('❌ خطأ في المهمة الخلفية: $e\n$st');
       return false;
     }
   });
@@ -940,20 +953,56 @@ class AutoBackupService {
     debugPrint('✅ تم إلغاء المهام اليومية');
   }
 
+  static Future<bool> _isWritableDirectory(String path) async {
+    try {
+      final dir = Directory(path);
+      await dir.create(recursive: true);
+      final probe = File(p.join(
+          dir.path, '.al_muhasib_write_test_' + DateTime.now().microsecondsSinceEpoch.toString()));
+      await probe.writeAsString('ok', flush: true);
+      if (await probe.exists()) await probe.delete();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<String> _defaultAutomaticBackupFolder() async {
+    // مجلد خارجي خاص بالتطبيق: يعمل في الخلفية دون الاعتماد على مجلد
+    // مشترك أو صلاحية MANAGE_EXTERNAL_STORAGE.
+    try {
+      final external = await getExternalStorageDirectory();
+      if (external != null) {
+        final dir = Directory(p.join(external.path, 'AlMuhasib', 'Backups'));
+        if (await _isWritableDirectory(dir.path)) return dir.path;
+      }
+    } catch (_) {}
+
+    // احتياط أخير: تخزين داخلي دائم للتطبيق.
     final documents = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(documents.path, 'auto_backups'));
-    if (!await dir.exists()) await dir.create(recursive: true);
+    await dir.create(recursive: true);
     return dir.path;
+  }
+
+  static Future<String> _resolveBackupFolder(String? selectedFolder) async {
+    final selected = selectedFolder?.trim() ?? '';
+    if (selected.isNotEmpty && await _isWritableDirectory(selected)) {
+      return selected;
+    }
+
+    final fallback = await _defaultAutomaticBackupFolder();
+    if (selected.isNotEmpty && selected != fallback) {
+      await saveSettings(folderPath: fallback);
+    }
+    return fallback;
   }
 
   static Future<String?> performScheduledBackup() async {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
     final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
-    final folderPath = selectedFolder.isNotEmpty
-        ? selectedFolder
-        : await _defaultAutomaticBackupFolder();
+    final folderPath = await _resolveBackupFolder(selectedFolder);
     if (!await _hasDataChanged()) return null;
 
     final result = await performBackup(folderPath);
@@ -1001,9 +1050,7 @@ class AutoBackupService {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
       final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
-      final folderPath = selectedFolder.isNotEmpty
-          ? selectedFolder
-          : await _defaultAutomaticBackupFolder();
+      final folderPath = await _resolveBackupFolder(selectedFolder);
 
       final now = DateTime.now();
       final todayTarget = DateTime(now.year, now.month, now.day,
@@ -1022,13 +1069,7 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       if (!await _hasDataChanged()) return null;
 
-      var result = await performBackup(folderPath);
-      // إذا كان المجلد الذي اختاره المستخدم غير متاح للخدمة الخلفية،
-      // استخدم مجلدًا داخليًا ثابتًا بدل فشل النسخ بالكامل.
-      if (result != null && selectedFolder.isNotEmpty) {
-        result = await performBackup(await _defaultAutomaticBackupFolder());
-      }
-      return result;
+      return await performBackup(folderPath);
     } catch (e) {
       return null;
     }
@@ -1140,8 +1181,8 @@ class AutoBackupService {
 
   static Future<String?> runBackupNow() async {
     final settings = await getSettings();
-    final folderPath = settings['folderPath'] as String;
-    if (folderPath.isEmpty) return 'الرجاء اختيار مجلد أولاً';
+    final folderPath =
+        await _resolveBackupFolder(settings['folderPath'] as String?);
     return await performBackup(folderPath);
   }
 
