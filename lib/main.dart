@@ -670,14 +670,15 @@ class GoogleDriveService {
     }
   }
 
-  static Future<String?> uploadBackup(File dbFile) async {
+  static Future<String?> uploadBackup(File backupFile) async {
     if (_driveApi == null) return 'الرجاء تسجيل الدخول أولاً';
     try {
       final now = DateTime.now();
-      final ext = '.alb';
+      final ext = p.extension(backupFile.path).toLowerCase();
+      final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
       final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$ext';
-      final fileContent = await dbFile.readAsBytes();
+          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$safeExt';
+      final fileContent = await backupFile.readAsBytes();
       final driveFile = drive.File()
         ..name = fileName
         ..parents = ['appDataFolder'];
@@ -689,6 +690,12 @@ class GoogleDriveService {
     } catch (e) {
       return 'فشل الرفع: $e';
     }
+  }
+
+  static Future<String?> uploadBackupPair(File bundle, File dbFile) async {
+    final albError = await uploadBackup(bundle);
+    if (albError != null) return albError;
+    return await uploadBackup(dbFile);
   }
 
   static Future<List<Map<String, dynamic>>> listBackups() async {
@@ -1026,7 +1033,7 @@ class AutoBackupService {
 
     try {
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackup(bundle);
+      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final now = DateTime.now();
@@ -1105,7 +1112,7 @@ class AutoBackupService {
       if (!await _hasDataChangedForDrive()) return null;
 
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackup(bundle);
+      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
         final dbFile = await _getDatabaseFile();
@@ -1127,11 +1134,20 @@ class AutoBackupService {
   static Future<void> _cleanOldDriveBackups() async {
     try {
       final backups = await GoogleDriveService.listBackups();
-      if (backups.length <= _maxDriveBackups) return;
-      backups.sort((a, b) =>
-          (b['createdTime'] as String).compareTo(a['createdTime'] as String));
-      for (int i = _maxDriveBackups; i < backups.length; i++) {
-        await GoogleDriveService.deleteBackup(backups[i]['id'] as String);
+      final alb = backups
+          .where((b) => p.extension((b['name'] as String?) ?? '').toLowerCase() == '.alb')
+          .toList();
+      final db = backups
+          .where((b) => p.extension((b['name'] as String?) ?? '').toLowerCase() == '.db')
+          .toList();
+
+      for (final group in [alb, db]) {
+        if (group.length <= _maxDriveBackups) continue;
+        group.sort((a, b) =>
+            (b['createdTime'] as String).compareTo(a['createdTime'] as String));
+        for (int i = _maxDriveBackups; i < group.length; i++) {
+          await GoogleDriveService.deleteBackup(group[i]['id'] as String);
+        }
       }
     } catch (e) {
       debugPrint('⚠️ خطأ في حذف النسخ القديمة على Drive: $e');
@@ -1147,12 +1163,21 @@ class AutoBackupService {
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
           .toList();
-      if (files.length <= _maxLocalBackups) return;
-      files.sort((a, b) => a.path.compareTo(b.path));
-      for (int i = 0; i < files.length - _maxLocalBackups; i++) {
-        try {
-          await files[i].delete();
-        } catch (_) {}
+      final albFiles = files
+          .where((f) => p.extension(f.path).toLowerCase() == '.alb')
+          .toList();
+      final dbFiles = files
+          .where((f) => p.extension(f.path).toLowerCase() == '.db')
+          .toList();
+
+      for (final group in [albFiles, dbFiles]) {
+        if (group.length <= _maxLocalBackups) continue;
+        group.sort((a, b) => a.path.compareTo(b.path));
+        for (int i = 0; i < group.length - _maxLocalBackups; i++) {
+          try {
+            await group[i].delete();
+          } catch (_) {}
+        }
       }
     } catch (e) {
       debugPrint('⚠️ خطأ في حذف النسخ المحلية القديمة: $e');
@@ -1199,7 +1224,7 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
       final bundle = await BackupBundleService.createBundle();
-      final error = await GoogleDriveService.uploadBackup(bundle);
+      final error = await GoogleDriveService.uploadBackupPair(bundle, await _getDatabaseFile());
       if (error == null) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
@@ -1229,6 +1254,7 @@ class AutoBackupService {
           .listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
+      .where((f) => p.extension(f.path).toLowerCase() == '.alb')
           .length;
     } catch (e) {
       return 0;
