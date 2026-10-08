@@ -225,7 +225,6 @@ void callbackDispatcher() {
 
       final settings = await AutoBackupService.getSettings();
       if (settings['driveEnabled'] == true) {
-        // متغيرات الذاكرة لا تنتقل إلى Isolate الخلفية؛ نعيد بناء جلسة Google بصمت.
         final signedIn = await GoogleDriveService.trySilentSignIn();
         if (signedIn) {
           final driveError = await AutoBackupService.checkAndRunDriveBackup();
@@ -239,6 +238,10 @@ void callbackDispatcher() {
           shouldRetry = true;
           debugPrint('⚠️ تعذر تسجيل الدخول إلى Google في المهمة الخلفية');
         }
+      }
+
+      if (!shouldRetry) {
+        await AutoBackupService._scheduleBackgroundBackup();
       }
       return !shouldRetry;
     } catch (e, st) {
@@ -899,7 +902,7 @@ class AutoBackupService {
     return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
-  // ============ جدولة المهام (Workmanager + الإشعارات) ============
+  // ============ جدولة المهام الخلفية ============
   static Future<void> _scheduleBackgroundBackup() async {
     final settings = await getSettings();
     final enabledTimes = <DateTime>[];
@@ -915,17 +918,15 @@ class AutoBackupService {
     }
     if (enabledTimes.isEmpty) return;
 
-    DateTime target = enabledTimes.reduce((a, b) => a.isBefore(b) ? a : b);
-    if (target.isBefore(now)) target = target.add(const Duration(days: 1));
+    DateTime target = enabledTimes.reduce((x, y) => x.isBefore(y) ? x : y);
+    if (!target.isAfter(now)) target = target.add(const Duration(days: 1));
     final delay = target.difference(now);
 
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-    await Workmanager().registerPeriodicTask(
+    await Workmanager().registerOneOffTask(
       _workManagerUniqueName,
       _workManagerTaskName,
       initialDelay: delay,
-      // WorkManager غير دقيق بالثانية؛ الفحص المتكرر يسمح بالوصول إلى نافذة الوقت المطلوبة.
-      frequency: const Duration(minutes: 15),
       constraints: Constraints(
         networkType: NetworkType.notRequired,
         requiresBatteryNotLow: false,
@@ -933,31 +934,22 @@ class AutoBackupService {
         requiresDeviceIdle: false,
         requiresStorageNotLow: false,
       ),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+      existingWorkPolicy: ExistingWorkPolicy.replace,
       backoffPolicy: BackoffPolicy.linear,
       backoffPolicyDelay: const Duration(minutes: 15),
     );
-    debugPrint('✅ تم جدولة فحص النسخ بالخلفية بعد ${delay.inMinutes} دقيقة');
+    debugPrint('تم جدولة النسخ الخلفي للموعد القادم بعد ' +
+        delay.inMinutes.toString() + ' دقيقة');
   }
 
   static Future<void> scheduleDailyBackup() async {
-    final settings = await getSettings();
-    final hour = settings['hour'] as int;
-    final minute = settings['minute'] as int;
     await _scheduleBackgroundBackup();
-    await NotificationService.showPersistentLocalNotification(
-        _formatTime(hour, minute));
   }
 
   static Future<void> cancelDailyBackup() async {
-    final settings = await getSettings();
-    if (settings['driveEnabled'] == true) {
-      await NotificationService.cancelLocalNotification();
-      return;
-    }
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     await NotificationService.cancelLocalNotification();
-    debugPrint('✅ تم إلغاء المهام اليومية');
+    debugPrint('تم إلغاء المهام اليومية');
   }
 
   static Future<bool> _isWritableDirectory(String path) async {
@@ -1081,7 +1073,13 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       if (!await _hasDataChanged()) return null;
 
-      return await performBackup(folderPath);
+      final error = await performBackup(folderPath);
+      if (error == null) {
+        await NotificationService.showTemporarySuccess(
+            '📁 تم النسخ الاحتياطي',
+            'تم إنشاء نسخة .alb ونسخة قاعدة البيانات .db بنجاح');
+      }
+      return error;
     } catch (e) {
       return null;
     }
@@ -1272,15 +1270,8 @@ class AutoBackupService {
 
   // ✅ جدولة Drive مع مهمة خلفية فعلية
   static Future<void> scheduleDriveBackup() async {
-    final settings = await getSettings();
-    final hour = settings['driveHour'] as int;
-    final minute = settings['driveMinute'] as int;
-
     await _scheduleBackgroundBackup();
-    await NotificationService.showPersistentDriveNotification(
-        _formatTime(hour, minute));
-
-    debugPrint('✅ تم جدولة فحص نسخ Drive بالخلفية');
+    debugPrint('تم جدولة نسخ Drive بالخلفية');
   }
 
   static Future<void> cancelDriveBackup() async {
@@ -2853,6 +2844,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   String searchQuery = '';
   bool isSearching = false;
+  Timer? _autoBackupTimer;
   TextEditingController? searchController;
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -2865,7 +2857,19 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAutoBackup();
       _loadDrawerLogo();
+      _autoBackupTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _checkAutoBackup();
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = null;
+    _tabController?.dispose();
+    searchController?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDrawerLogo() async {
