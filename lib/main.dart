@@ -6321,10 +6321,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ? '-${formatNumber(newFinalBal.abs())}'
             : formatNumber(newFinalBal);
 
+        final PdfColor balanceNumberColor = newFinalBal < 0
+            ? redTotal
+            : (newFinalBal > 0 ? greenTotal : black);
+
         dataRows.add(pw.TableRow(children: [
-          _pdfCell(balStr, fontRegular, 12, black),
-          _pdfCell(isGive ? formatNumber(amt) : '-', fontRegular, 12, black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), fontRegular, 12, black),
+          _pdfCell(balStr, fontBold, 12, balanceNumberColor),
+          _pdfCell(isGive ? formatNumber(amt) : '-', fontBold, 12, isGive ? greenTotal : black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), fontBold, 12, isGive ? black : redTotal),
           _pdfCell((tx['details'] ?? '').toString(), fontRegular, 12, black),
           _pdfCell(dateOnly, fontRegular, 12, black),
         ]));
@@ -6511,12 +6515,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       !isOnHim ? formatNumber(balanceValue) : '',
                       fontBold,
                       14,
-                      black),
+                      !isOnHim ? greenTotal : black),
                   _pdfCell(
                       isOnHim ? formatNumber(balanceValue) : '',
                       fontBold,
                       14,
-                      black),
+                      isOnHim ? redTotal : black),
                   _pdfCell(balanceText, fontBold, 14, black),
                   _pdfCell('', fontBold, 14, black),
                 ],
