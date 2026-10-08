@@ -5462,63 +5462,74 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  void _showSuggestionsDialog({
+  OverlayEntry? _showSuggestionsOverlay({
     required BuildContext parentContext,
+    required GlobalKey anchorKey,
     required List<String> suggestions,
     required TextEditingController controller,
     required VoidCallback onSelected,
   }) {
-    if (suggestions.isEmpty) return;
-    showDialog(
-      context: parentContext,
-      barrierDismissible: true,
-      builder: (suggestionCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.all(0),
-        title: const Row(children: [
-          Icon(Icons.history, color: AppColors.primary),
-          SizedBox(width: 8),
-          Text('الاقتراحات', style: TextStyle(fontWeight: FontWeight.bold)),
-        ]),
-        content: Container(
-          width: double.maxFinite,
-          constraints: const BoxConstraints(maxHeight: 300),
-          child: ListView.builder(
-            shrinkWrap: true,
-            padding: EdgeInsets.zero,
-            itemCount: suggestions.length,
-            itemBuilder: (ctx, i) {
-              return InkWell(
+    if (suggestions.isEmpty) return null;
+    final anchorContext = anchorKey.currentContext;
+    final overlay = Overlay.of(parentContext);
+    if (anchorContext == null) return null;
+    final renderObject = anchorContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    final fieldTop = renderObject.localToGlobal(Offset.zero).dy;
+    final fieldLeft = renderObject.localToGlobal(Offset.zero).dx;
+    final fieldWidth = renderObject.size.width;
+    final visibleCount = suggestions.length < 5 ? suggestions.length : 5;
+    final listHeight = visibleCount * 48.0;
+    final top = (fieldTop - listHeight - 6).clamp(8.0, double.infinity).toDouble();
+    final entry = OverlayEntry(builder: (overlayContext) {
+      return Positioned(
+        left: fieldLeft,
+        top: top,
+        width: fieldWidth,
+        child: Material(
+          elevation: 8,
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: listHeight),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: suggestions.length,
+              itemBuilder: (ctx, i) => InkWell(
                 onTap: () {
-                  controller.text = suggestions[i];
-                  controller.selection = TextSelection.fromPosition(
-                      TextPosition(offset: controller.text.length));
-                  Navigator.pop(suggestionCtx);
+                  controller.value = TextEditingValue(
+                    text: suggestions[i],
+                    selection: TextSelection.collapsed(offset: suggestions[i].length),
+                  );
                   onSelected();
                 },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
-                  child: Row(children: [
-                    Icon(Icons.history,
-                        size: 18, color: AppColors.primary.withOpacity(0.6)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        suggestions[i],
-                        style: const TextStyle(
-                            fontSize: 14, color: AppColors.textDark),
-                        overflow: TextOverflow.ellipsis,
+                child: SizedBox(
+                  height: 48,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(children: [
+                      Icon(Icons.history, size: 19,
+                          color: AppColors.primary.withOpacity(0.65)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(suggestions[i],
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ]),
+                    ]),
+                  ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    });
+    overlay.insert(entry);
+    return entry;
   }
 
   void _showEditTransactionDialog(BuildContext context, Map<String, dynamic> tx) {
@@ -5544,6 +5555,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
     Timer? suggestionDebounce;
     int suggestionRequest = 0;
+    OverlayEntry? suggestionsOverlay;
+    final detailsFieldKey = GlobalKey();
 
     showDialog(
       context: context,
@@ -5620,6 +5633,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Expanded(
                     child: TextField(
+                      key: detailsFieldKey,
                       controller: detailsCtrl,
                       textAlign: TextAlign.right,
                       decoration: const InputDecoration(
@@ -5639,12 +5653,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
                               .toList();
                           final combined = [...prefixMatches, ...containsMatches];
-                          if (combined.isNotEmpty && context.mounted) {
-                            _showSuggestionsDialog(
+                          if (!context.mounted) return;
+                          suggestionsOverlay?.remove();
+                          suggestionsOverlay = null;
+                          if (combined.isNotEmpty) {
+                            suggestionsOverlay = _showSuggestionsOverlay(
                               parentContext: context,
+                              anchorKey: detailsFieldKey,
                               suggestions: combined,
                               controller: detailsCtrl,
-                              onSelected: () { setDialogState(() {}); },
+                              onSelected: () {
+                                suggestionsOverlay?.remove();
+                                suggestionsOverlay = null;
+                                setDialogState(() {});
+                              },
                             );
                           }
                         });
