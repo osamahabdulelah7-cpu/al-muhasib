@@ -2560,7 +2560,44 @@ class AlMuhasibApp extends StatelessWidget {
   }
 }
 
-class GradientAppBar extends StatelessW
+class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final Widget? title;
+  final List<Widget>? actions;
+  final Widget? leading;
+  final PreferredSizeWidget? bottom;
+  final double toolbarHeight;
+  const GradientAppBar({
+    super.key,
+    this.title,
+    this.actions,
+    this.leading,
+    this.bottom,
+    this.toolbarHeight = kToolbarHeight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.solidBlue,
+      child: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: title,
+        actions: actions,
+        leading: leading,
+        bottom: bottom,
+        toolbarHeight: toolbarHeight,
+        foregroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
+}
+
 class LogoCropScreen extends StatefulWidget {
   final Uint8List imageBytes;
   final String shape;
