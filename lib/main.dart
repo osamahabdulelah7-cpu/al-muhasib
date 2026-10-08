@@ -2560,7 +2560,286 @@ class AlMuhasibApp extends StatelessWidget {
   }
 }
 
-class GradientAppBar extends StatelessWclass PersonalDataScreen extends StatefulWidget {
+class GradientAppBar extends StatelessW
+class LogoCropScreen extends StatefulWidget {
+  final Uint8List imageBytes;
+  final String shape;
+
+  const LogoCropScreen({
+    super.key,
+    required this.imageBytes,
+    required this.shape,
+  });
+
+  @override
+  State<LogoCropScreen> createState() => _LogoCropScreenState();
+}
+
+class _LogoCropScreenState extends State<LogoCropScreen> {
+  ui.Image? _image;
+  double _zoom = 1.0;
+  Offset _offset = Offset.zero;
+  double _startZoom = 1.0;
+  Offset _startOffset = Offset.zero;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _decodeImage();
+  }
+
+  Future<void> _decodeImage() async {
+    final codec = await ui.instantiateImageCodec(widget.imageBytes);
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    if (!mounted) {
+      frame.image.dispose();
+      return;
+    }
+    setState(() => _image = frame.image);
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
+  }
+
+  double _baseScale(Size size) {
+    final image = _image!;
+    return (size.width / image.width > size.height / image.height)
+        ? size.width / image.width
+        : size.height / image.height;
+  }
+
+  Offset _clampOffset(Offset value, Size size, double zoom) {
+    final image = _image!;
+    final scale = _baseScale(size) * zoom;
+    final width = image.width * scale;
+    final height = image.height * scale;
+    final maxX = (width - size.width) / 2;
+    final maxY = (height - size.height) / 2;
+    return Offset(
+      maxX <= 0 ? 0 : value.dx.clamp(-maxX, maxX).toDouble(),
+      maxY <= 0 ? 0 : value.dy.clamp(-maxY, maxY).toDouble(),
+    );
+  }
+
+  Future<void> _confirmCrop() async {
+    if (_image == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      const outputSize = 1024;
+      final renderSize = Size(outputSize.toDouble(), outputSize.toDouble());
+      final scale = _baseScale(renderSize) * _zoom;
+      final image = _image!;
+      final drawnWidth = image.width * scale;
+      final drawnHeight = image.height * scale;
+      final left = (outputSize - drawnWidth) / 2 + _offset.dx * (outputSize / _viewportSize);
+      final top = (outputSize - drawnHeight) / 2 + _offset.dy * (outputSize / _viewportSize);
+      final sourceRect = Rect.fromLTWH(
+        (0 - left) / scale,
+        (0 - top) / scale,
+        outputSize / scale,
+        outputSize / scale,
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final paint = Paint()..filterQuality = FilterQuality.high;
+      canvas.drawImageRect(
+        image,
+        sourceRect,
+        const Rect.fromLTWH(0, 0, outputSize.toDouble(), outputSize.toDouble()),
+        paint,
+      );
+      final picture = recorder.endRecording();
+      final cropped = await picture.toImage(outputSize, outputSize);
+      picture.dispose();
+      final data = await cropped.toByteData(format: ui.ImageByteFormat.png);
+      cropped.dispose();
+      if (data == null) throw Exception('تعذر تجهيز الصورة');
+      if (mounted) Navigator.of(context).pop(Uint8List.view(data.buffer));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر قص الصورة: $e')),
+      );
+    }
+  }
+
+  double get _viewportSize => 320;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _image;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('تحديد الشعار'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Text(
+                'حرّك الصورة بإصبعك، واستخدم إصبعين للتكبير والتصغير. ضع الجزء المطلوب داخل الإطار.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final side = constraints.maxWidth < constraints.maxHeight
+                        ? constraints.maxWidth - 28
+                        : constraints.maxHeight - 28;
+                    final size = side.clamp(220.0, 360.0).toDouble();
+                    if (image == null) {
+                      return const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+                    return SizedBox(
+                      width: size,
+                      height: size,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onScaleStart: (_) {
+                          _startZoom = _zoom;
+                          _startOffset = _offset;
+                        },
+                        onScaleUpdate: (details) {
+                          final nextZoom = (_startZoom * details.scale).clamp(1.0, 8.0).toDouble();
+                          setState(() {
+                            _zoom = nextZoom;
+                            _offset = _clampOffset(
+                              _startOffset + details.focalPointDelta,
+                              Size(size, size),
+                              nextZoom,
+                            );
+                          });
+                        },
+                        child: ClipRect(
+                          child: CustomPaint(
+                            painter: _LogoCropPainter(
+                              image: image,
+                              zoom: _zoom,
+                              offset: _offset,
+                              circular: widget.shape == 'circle',
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.gold,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _saving ? null : _confirmCrop,
+                      icon: _saving
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.check),
+                      label: const Text('تأكيد وحفظ'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogoCropPainter extends CustomPainter {
+  final ui.Image image;
+  final double zoom;
+  final Offset offset;
+  final bool circular;
+
+  _LogoCropPainter({
+    required this.image,
+    required this.zoom,
+    required this.offset,
+    required this.circular,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final baseScale = (size.width / image.width > size.height / image.height)
+        ? size.width / image.width
+        : size.height / image.height;
+    final scale = baseScale * zoom;
+    final width = image.width * scale;
+    final height = image.height * scale;
+    final imageRect = Rect.fromLTWH(
+      (size.width - width) / 2 + offset.dx,
+      (size.height - height) / 2 + offset.dy,
+      width,
+      height,
+    );
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      imageRect,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    canvas.restore();
+
+    final frame = circular
+        ? Path()..addOval(Offset.zero & size)
+        : Path()..addRect(Offset.zero & size);
+    final outside = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addPath(frame, Offset.zero);
+    canvas.drawPath(outside, Paint()..color = Colors.black.withValues(alpha: 0.56));
+    canvas.drawPath(
+      frame,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LogoCropPainter oldDelegate) =>
+      oldDelegate.image != image ||
+      oldDelegate.zoom != zoom ||
+      oldDelegate.offset != offset ||
+      oldDelegate.circular != circular;
+}
+
+class PersonalDataScreen extends StatefulWidget {
   const PersonalDataScreen({super.key});
 
   @override
@@ -2628,49 +2907,61 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
 
   Future<void> _pickLogo() async {
     final img = await ImagePicker().pickImage(
-        source: ImageSource.gallery, imageQuality: 80, maxWidth: 1600, maxHeight: 1600);
-    if (img == null) return;
-    final bytes = await img.readAsBytes();
-    final base64Data = base64Encode(bytes);
+      source: ImageSource.gallery,
+      imageQuality: 95,
+      maxWidth: 2400,
+      maxHeight: 2400,
+    );
+    if (img == null || !mounted) return;
 
-    if (!mounted) return;
-    showDialog(
+    final shape = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         title: const Text('شكل الشعار'),
-        content: const Text('هل تريد الشعار دائرياً أم مربعاً؟'),
+        content: const Text('اختر شكل إطار القص الذي تريد استخدامه للشعار.'),
         actions: [
           TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await PersonalDataService.saveLogoBase64(base64Data);
-              await PersonalDataService.saveData(logoShape: 'circle');
-              if (!mounted) return;
-              setState(() {
-                _logoBase64 = base64Data;
-                _logoShape = 'circle';
-              });
-            },
+            onPressed: () => Navigator.pop(ctx, 'circle'),
             child: const Text('دائري'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await PersonalDataService.saveLogoBase64(base64Data);
-              await PersonalDataService.saveData(logoShape: 'square');
-              if (!mounted) return;
-              setState(() {
-                _logoBase64 = base64Data;
-                _logoShape = 'square';
-              });
-            },
+            onPressed: () => Navigator.pop(ctx, 'square'),
             child: const Text('مربع'),
           ),
         ],
       ),
     );
+    if (shape == null || !mounted) return;
+
+    final sourceBytes = await img.readAsBytes();
+    if (!mounted) return;
+    final croppedBytes = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => LogoCropScreen(imageBytes: sourceBytes, shape: shape),
+      ),
+    );
+    if (croppedBytes == null || !mounted) return;
+
+    final base64Data = base64Encode(croppedBytes);
+    try {
+      await PersonalDataService.saveLogoBase64(base64Data);
+      await PersonalDataService.saveData(logoShape: shape);
+      if (!mounted) return;
+      setState(() {
+        _logoBase64 = base64Data;
+        _logoShape = shape;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ الشعار المحدد')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر حفظ الشعار: $e')),
+      );
+    }
   }
 
   Future<void> _deleteLogo() async {
