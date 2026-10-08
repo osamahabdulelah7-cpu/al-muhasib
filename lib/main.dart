@@ -2582,6 +2582,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
   double _startZoom = 1.0;
   Offset _startOffset = Offset.zero;
   bool _saving = false;
+  double _viewportSize = 320;
 
   @override
   void initState() {
@@ -2659,7 +2660,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
       final data = await cropped.toByteData(format: ui.ImageByteFormat.png);
       cropped.dispose();
       if (data == null) throw Exception('تعذر تجهيز الصورة');
-      if (mounted) Navigator.of(context).pop(Uint8List.view(data.buffer));
+      if (mounted) Navigator.of(context).pop(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -2669,7 +2670,6 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
     }
   }
 
-  double get _viewportSize => 320;
 
   @override
   Widget build(BuildContext context) {
@@ -2698,6 +2698,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
                         ? constraints.maxWidth - 28
                         : constraints.maxHeight - 28;
                     final size = side.clamp(220.0, 360.0).toDouble();
+                    _viewportSize = size;
                     if (image == null) {
                       return const SizedBox(
                         width: 48,
@@ -2821,7 +2822,7 @@ class _LogoCropPainter extends CustomPainter {
       ..fillType = PathFillType.evenOdd
       ..addRect(Offset.zero & size)
       ..addPath(frame, Offset.zero);
-    canvas.drawPath(outside, Paint()..color = Colors.black.withValues(alpha: 0.56));
+    canvas.drawPath(outside, Paint()..color = Colors.black.withOpacity(0.56));
     canvas.drawPath(
       frame,
       Paint()
