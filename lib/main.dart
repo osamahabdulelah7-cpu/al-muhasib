@@ -5646,13 +5646,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
                           final allDetails = await provider.getDistinctDetails(query: val.trim());
                           if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
-                          final prefixMatches = allDetails
-                              .where((d) => d.startsWith(val.trim()) && d != val.trim())
+                          // Preserve the original suggestion order while including
+                          // both prefix and partial-text matches.
+                          final combined = allDetails
+                              .where((d) => d.contains(val.trim()) && d != val.trim())
                               .toList();
-                          final containsMatches = allDetails
-                              .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
-                              .toList();
-                          final combined = [...prefixMatches, ...containsMatches];
                           if (!context.mounted) return;
                           suggestionsOverlay?.remove();
                           suggestionsOverlay = null;
@@ -5926,13 +5924,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         suggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
                           final allDetails = await provider.getDistinctDetails(query: val.trim());
                           if (request != suggestionRequest || detailsCtrl.text.trim() != val.trim()) return;
-                          final prefixMatches = allDetails
-                              .where((d) => d.startsWith(val.trim()) && d != val.trim())
+                          // Preserve the original suggestion order while including
+                          // both prefix and partial-text matches.
+                          final combined = allDetails
+                              .where((d) => d.contains(val.trim()) && d != val.trim())
                               .toList();
-                          final containsMatches = allDetails
-                              .where((d) => d.contains(val.trim()) && !d.startsWith(val.trim()) && d != val.trim())
-                              .toList();
-                          final combined = [...prefixMatches, ...containsMatches];
                           if (!context.mounted) return;
                           suggestionsOverlay?.remove();
                           suggestionsOverlay = null;
