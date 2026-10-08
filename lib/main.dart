@@ -5919,7 +5919,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.black),
+            tooltip: 'تصدير PDF',
             onPressed: () => _exportToPdf(
+                processedTransactions, totalGive, totalTake, finalBalance),
+          ),
+          IconButton(
+            icon: const Icon(Icons.table_view, color: Colors.green),
+            tooltip: 'تصدير Excel',
+            onPressed: () => _exportToExcel(
                 processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
@@ -6152,6 +6159,84 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
       ]),
     );
+  }
+
+  // ============ تصدير كشف الحساب إلى Excel ============
+  Future<void> _exportToExcel(
+      List<Map<String, dynamic>> txs,
+      double totalGive,
+      double totalTake,
+      double finalBal) async {
+    try {
+      final workbook = excel_lib.Excel.createExcel();
+      final sheet = workbook['كشف الحساب'];
+      sheet.appendRow([
+        excel_lib.TextCellValue('التاريخ'),
+        excel_lib.TextCellValue('التفاصيل'),
+        excel_lib.TextCellValue('له'),
+        excel_lib.TextCellValue('عليه'),
+        excel_lib.TextCellValue('الرصيد'),
+      ]);
+
+      double runningBalance = 0;
+      for (final tx in txs) {
+        final isGive = tx['type'] == 'give';
+        final amount = (tx['amount'] as num).toDouble();
+        runningBalance += isGive ? amount : -amount;
+        String dateOnly = (tx['date'] ?? '').toString().split(' ').first;
+        try {
+          final dt = DateTime.parse(tx['date'].toString());
+          dateOnly =
+              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+        } catch (_) {}
+        sheet.appendRow([
+          excel_lib.TextCellValue(dateOnly),
+          excel_lib.TextCellValue((tx['details'] ?? '').toString()),
+          isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
+          isGive ? excel_lib.TextCellValue('-') : excel_lib.DoubleCellValue(amount),
+          excel_lib.DoubleCellValue(runningBalance),
+        ]);
+      }
+
+      sheet.appendRow([
+        excel_lib.TextCellValue('إجمالي العمليات'),
+        excel_lib.TextCellValue(''),
+        excel_lib.DoubleCellValue(totalGive),
+        excel_lib.DoubleCellValue(totalTake),
+        excel_lib.DoubleCellValue(finalBal),
+      ]);
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('تعذر إنشاء ملف Excel');
+
+      final tempDir =
+          Directory(p.join((await getTemporaryDirectory()).path, 'excel'));
+      if (!await tempDir.exists()) await tempDir.create(recursive: true);
+      final safeName = widget.customer['name']
+          .toString()
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final file = File(p.join(
+        tempDir.path,
+        'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      ));
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'كشف حساب Excel - ${widget.customer['name']}',
+      );
+      Future.delayed(const Duration(minutes: 10), () async {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      });
+    } catch (e, st) {
+      debugPrint('Excel export error: $e\\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('تعذر تصدير Excel: $e'),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    }
   }
 
   // ============ PDF محسّن مع حذف تلقائي ============
