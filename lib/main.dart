@@ -2853,8 +2853,8 @@ class _LogoCropPainter extends CustomPainter {
     canvas.restore();
 
     final frame = circular
-        ? Path()..addOval(Offset.zero & size)
-        : Path()..addRect(Offset.zero & size);
+        ? (Path()..addOval(Offset.zero & size))
+        : (Path()..addRect(Offset.zero & size));
     final outside = Path()
       ..fillType = PathFillType.evenOdd
       ..addRect(Offset.zero & size)
