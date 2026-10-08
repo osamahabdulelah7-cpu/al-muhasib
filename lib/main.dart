@@ -2867,6 +2867,10 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _autoBackupTimer?.cancel();
     _autoBackupTimer = null;
+    AutoBackupService.checkAndRunBackup();
+    if (GoogleDriveService.isSignedIn) {
+      AutoBackupService.checkAndRunDriveBackup();
+    }
     _tabController?.dispose();
     searchController?.dispose();
     super.dispose();
@@ -3658,16 +3662,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  @override
-  void dispose() {
-    AutoBackupService.checkAndRunBackup();
-    if (GoogleDriveService.isSignedIn) {
-      AutoBackupService.checkAndRunDriveBackup();
-    }
-    _tabController?.dispose();
-    searchController?.dispose();
-    super.dispose();
-  }
+
 
   void _showCustomerOptionsModal(BuildContext context,
       AppAccountProvider provider, Map<String, dynamic> customer) {
