@@ -905,21 +905,35 @@ class AutoBackupService {
   // ============ جدولة المهام الخلفية ============
   static Future<void> _scheduleBackgroundBackup() async {
     final settings = await getSettings();
-    final enabledTimes = <DateTime>[];
     final now = DateTime.now();
+    final todayTargets = <DateTime>[];
 
     if (settings['enabled'] == true) {
-      enabledTimes.add(DateTime(now.year, now.month, now.day,
+      todayTargets.add(DateTime(now.year, now.month, now.day,
           settings['hour'] as int, settings['minute'] as int));
     }
     if (settings['driveEnabled'] == true) {
-      enabledTimes.add(DateTime(now.year, now.month, now.day,
+      todayTargets.add(DateTime(now.year, now.month, now.day,
           settings['driveHour'] as int, settings['driveMinute'] as int));
     }
-    if (enabledTimes.isEmpty) return;
+    if (todayTargets.isEmpty) {
+      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+      debugPrint('لم تتم جدولة النسخ لأن النسخ المحلي وDrive متوقفان');
+      return;
+    }
 
-    DateTime target = enabledTimes.reduce((x, y) => x.isBefore(y) ? x : y);
-    if (!target.isAfter(now)) target = target.add(const Duration(days: 1));
+    // اختر أقرب موعد لم يأتِ بعد اليوم. لا تُضف يوماً للموعد
+    // المنتهي إذا كان هناك موعد آخر لاحق اليوم.
+    final futureTargets = todayTargets.where((t) => t.isAfter(now)).toList();
+    final DateTime target;
+    if (futureTargets.isNotEmpty) {
+      target = futureTargets.reduce((x, y) => x.isBefore(y) ? x : y);
+    } else {
+      final tomorrowTargets = todayTargets
+          .map((t) => t.add(const Duration(days: 1)))
+          .toList();
+      target = tomorrowTargets.reduce((x, y) => x.isBefore(y) ? x : y);
+    }
     final delay = target.difference(now);
 
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
@@ -1080,8 +1094,9 @@ class AutoBackupService {
             'تم إنشاء نسخة .alb ونسخة قاعدة البيانات .db بنجاح');
       }
       return error;
-    } catch (e) {
-      return null;
+    } catch (e, st) {
+      debugPrint('❌ فشل النسخ التلقائي المحلي: $e\\n$st');
+      return 'فشل النسخ التلقائي المحلي: $e';
     }
   }
   static Future<String?> checkAndRunDriveBackup() async {
