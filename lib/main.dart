@@ -1184,10 +1184,10 @@ class AutoBackupService {
       try { await db.rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
       final backupDir = Directory(folderPath);
       if (!await backupDir.exists()) await backupDir.create(recursive: true);
-      final bundle = await BackupBundleService.createBundle(outputDirectory: backupDir);
+      await BackupBundleService.createBundle(outputDirectory: backupDir);
       // النسخ التلقائي يحفظ ملف ALB الكامل فقط؛ تصدير DB متاح يدوياً عند الحاجة.
       final now = DateTime.now();
-      final lastModified = (await dbFile.stat()).modified.toIso8601String();
+      final lastModified = (await _getDatabaseFile()).statSync().modified.toIso8601String();
       await saveSettings(
           lastBackup: now.toIso8601String(),
           lastDbModified: lastModified,
