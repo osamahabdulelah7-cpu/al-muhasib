@@ -6288,12 +6288,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               base: fontRegular, bold: fontBold));
 
       final darkBlue = PdfColor.fromHex("#1E3A5F");
-      final greenTotal = PdfColor.fromHex("#1B5E20");
-      final redTotal = PdfColor.fromHex("#B71C1C");
+      final greenTotal = PdfColor.fromHex("#00A000");
+      final redTotal = PdfColor.fromHex("#F00000");
       final headerBg = PdfColor.fromHex("#CCCCCC");
       final totalBg = PdfColor.fromHex("#E0E0E0");
-      final lightGreen = PdfColor.fromHex("#C8E6C9");
-      final lightRed = PdfColor.fromHex("#FFCDD2");
+      final lightGreen = PdfColor.fromHex("#D9F7D9");
+      final lightRed = PdfColor.fromHex("#FFE0E0");
       final black = PdfColors.black;
 
       final List<pw.TableRow> dataRows = [];
@@ -6317,9 +6317,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
 
-        final String balStr = newFinalBal < 0
-            ? '-${formatNumber(newFinalBal.abs())}'
-            : formatNumber(newFinalBal);
+        final String balStr = formatNumber(newFinalBal.abs());
 
         final PdfColor balanceNumberColor = newFinalBal < 0
             ? redTotal
