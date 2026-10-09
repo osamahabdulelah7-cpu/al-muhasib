@@ -1483,14 +1483,12 @@ class AutoBackupService {
   }
 
   static Future<String?> performBackup(String folderPath) async {
-    File? internalFile;
-    String? selected;
     try {
       final db = await AppDBHelper.instance.database;
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
       final internalDir = await internalBackupDirectory();
-      internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
+      final internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
       if (!await BackupBundleService.verifyBundle(internalFile)) {
         try { await internalFile.delete(); } catch (_) {}
         throw Exception('فشل التحقق من سلامة النسخة الداخلية');
@@ -1508,9 +1506,9 @@ class AutoBackupService {
         dbFingerprint: await _getDatabaseFingerprint(),
       );
 
-      selected = folderPath.trim();
+      final selected = folderPath.trim();
       try {
-        if (selected!.isNotEmpty && _isSafFolder(selected)) {
+        if (selected.isNotEmpty && _isSafFolder(selected)) {
           await _writeVerifiedSafBackup(internalFile, selected);
         } else if (selected.isNotEmpty &&
             p.normalize(selected) != p.normalize(internalDir.path)) {
