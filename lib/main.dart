@@ -5417,7 +5417,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark)),
             subtitle: Text(
-              _folderPath.isEmpty ? 'لم يتم تحديد مجلد' : '$_folderPath/',
+              _folderPath.isEmpty
+                  ? 'لم يتم تحديد مجلد'
+                  : (_folderPath.startsWith('saf:')
+                      ? 'بطاقة SD / مجلد خارجي (صلاحية مستمرة)'
+                      : '$_folderPath/'),
               style: TextStyle(
                   fontSize: 13,
                   color: _folderPath.isEmpty
@@ -5434,7 +5438,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                     title: const Text('مجلد حفظ البيانات'),
-                    content: SelectableText(_folderPath,
+                    content: SelectableText(
+                        _folderPath.startsWith('saf:')
+                            ? 'مجلد خارجي محدد عبر Android Storage Access Framework.\nتم حفظ صلاحية الوصول للاستخدام في مهام الخلفية.'
+                            : _folderPath,
                         style: const TextStyle(fontSize: 13)),
                     actions: [
                       TextButton(
