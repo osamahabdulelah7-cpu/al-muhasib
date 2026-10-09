@@ -1721,9 +1721,9 @@ class AutoBackupService {
           }
           await _cleanOldLocalBackups(selected);
         }
-        if (!internalOnly) {
-          await saveSettings(lastDestinationError: '');
-        }
+        // Clear stale external-destination errors when the user has
+        // switched back to internal-only backups as well.
+        await saveSettings(lastDestinationError: '');
       } catch (destinationError, destinationStack) {
         await saveSettings(lastDestinationError: destinationError.toString());
         debugPrint('النسخة الداخلية سليمة، لكن فشل النسخ إلى الوجهة المحددة: $destinationError\n$destinationStack');
