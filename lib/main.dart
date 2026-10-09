@@ -804,7 +804,7 @@ class GoogleDriveService {
     final ext = p.extension(backupFile.path).toLowerCase();
     final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
     final fileName =
-        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$safeExt';
+        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
     if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
       return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
     }
@@ -816,6 +816,25 @@ class GoogleDriveService {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
+        if (attempt > 0 && _driveApi != null) {
+          // A timed-out create request may have reached Drive even if its
+          // response was lost. Reconcile by unique operation name and size
+          // before uploading again, avoiding duplicate files on retry.
+          try {
+            final existing = await _driveApi!.files.list(
+              spaces: 'appDataFolder',
+              q: "name = '$fileName'",
+              $fields: 'files(id,name,size)',
+            ).timeout(const Duration(seconds: 20));
+            final confirmed = (existing.files ?? []).any((f) =>
+                (f.id ?? '').isNotEmpty &&
+                f.name == fileName &&
+                f.size == fileContent.length.toString());
+            if (confirmed) return null;
+          } catch (reconcileError) {
+            debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
+          }
+        }
         if (_driveApi == null) {
           final signedIn = await trySilentSignIn();
           if (!signedIn || _driveApi == null) {
