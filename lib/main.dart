@@ -751,6 +751,8 @@ class GoogleDriveService {
   static drive.DriveApi? _driveApi;
   static String? _lastListBackupsError;
   static String? get lastListBackupsError => _lastListBackupsError;
+  static String? _lastDownloadError;
+  static String? get lastDownloadError => _lastDownloadError;
   static bool get isSignedIn => _currentUser != null;
   static String? get userEmail => _currentUser?.email;
 
@@ -902,19 +904,35 @@ class GoogleDriveService {
   }
 
   static Future<File?> downloadBackup(String fileId, String fileName) async {
-    if (_driveApi == null) return null;
+    _lastDownloadError = null;
     try {
-      final result = await _driveApi!.files.get(fileId,
-          downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+      if (_driveApi == null && !await trySilentSignIn()) {
+        throw Exception('انتهت جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً.');
+      }
+      if (_driveApi == null) throw Exception('جلسة Google غير متاحة');
+      final result = await _driveApi!.files.get(
+        fileId,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      ).timeout(const Duration(seconds: 45)) as drive.Media;
       final dataStore = <int>[];
-      await for (final chunk in result.stream) {
+      await for (final chunk in result.stream.timeout(const Duration(seconds: 45))) {
         dataStore.addAll(chunk);
       }
+      if (dataStore.isEmpty) throw Exception('ملف النسخة الذي نُزّل فارغ');
+      final safeName = p.basename(fileName).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(dataStore);
+      final file = File(p.join(tempDir.path,
+          'drive_restore_${DateTime.now().microsecondsSinceEpoch}_$safeName'));
+      await file.writeAsBytes(dataStore, flush: true);
+      if (p.extension(safeName).toLowerCase() == '.alb' &&
+          !await BackupBundleService.verifyBundle(file)) {
+        try { await file.delete(); } catch (_) {}
+        throw Exception('النسخة التي نُزّلت من Drive تالفة أو غير مكتملة');
+      }
       return file;
     } catch (e) {
+      _lastDownloadError = 'تعذر تنزيل النسخة من Google Drive: $e';
+      debugPrint(_lastDownloadError);
       return null;
     }
   }
@@ -5475,7 +5493,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         backup['id'] as String,
         backup['name'] as String,
       );
-      if (file == null) throw Exception('فشل تنزيل النسخة من Google Drive');
+      if (file == null) {
+        throw Exception(GoogleDriveService.lastDownloadError ?? 'فشل تنزيل النسخة من Google Drive');
+      }
 
       if (p.extension(file.path).toLowerCase() == '.alb' &&
           !await BackupBundleService.verifyBundle(file)) {
