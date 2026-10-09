@@ -1481,11 +1481,23 @@ class AutoBackupService {
         lastBackup = DateTime.tryParse(lastBackupStr);
       }
 
-      if (now.isBefore(todayTarget)) return null;
+      final hasPendingDestinationError =
+          (settings['lastDestinationError'] as String? ?? '').isNotEmpty;
+      if (now.isBefore(todayTarget)) {
+        if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          return await _retryPendingDestination(selectedFolder);
+        }
+        return null;
+      }
       bool shouldBackup =
           lastBackup == null || lastBackup.isBefore(todayTarget);
 
-      if (!shouldBackup) return null;
+      if (!shouldBackup) {
+        if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          return await _retryPendingDestination(selectedFolder);
+        }
+        return null;
+      }
       // This is a daily schedule, not a change-only sync. Create a verified
       // snapshot even when the database fingerprint matches yesterday.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
