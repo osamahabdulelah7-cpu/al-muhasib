@@ -816,10 +816,16 @@ class GoogleDriveService {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        if (attempt > 0 && _driveApi != null) {
+        if (_driveApi == null) {
+          final signedIn = await trySilentSignIn();
+          if (!signedIn || _driveApi == null) {
+            throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
+          }
+        }
+        if (attempt > 0) {
           // A timed-out create request may have reached Drive even if its
           // response was lost. Reconcile by unique operation name and size
-          // before uploading again, avoiding duplicate files on retry.
+          // after restoring authentication, avoiding duplicate uploads.
           try {
             final existing = await _driveApi!.files.list(
               spaces: 'appDataFolder',
@@ -833,12 +839,6 @@ class GoogleDriveService {
             if (confirmed) return null;
           } catch (reconcileError) {
             debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
-          }
-        }
-        if (_driveApi == null) {
-          final signedIn = await trySilentSignIn();
-          if (!signedIn || _driveApi == null) {
-            throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
           }
         }
         final driveFile = drive.File()
