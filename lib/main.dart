@@ -5408,12 +5408,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 
   Future<void> _runBackupNow() async {
-    if (_folderPath.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('الرجاء اختيار مجلد أولاً'),
-          backgroundColor: AppColors.red));
-      return;
-    }
+    // A folder on shared storage is optional: the app always keeps a verified
+    // internal snapshot even if the user has not granted an external folder.
     showDialog(
         context: context,
         barrierDismissible: false,
