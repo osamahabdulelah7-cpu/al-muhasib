@@ -541,9 +541,41 @@ class BackupBundleService {
     }
   }
 
+  static Future<bool> verifyBundle(File file) async {
+    try {
+      if (!await file.exists() || await file.length() < 100) return false;
+      final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+      final byName = <String, ArchiveFile>{};
+      for (final entry in archive) {
+        if (entry.isFile) byName[entry.name] = entry;
+      }
+      final manifestEntry = byName['manifest.json'];
+      final databaseEntry = byName['database/al_muhasib_final_v6.db'];
+      if (manifestEntry == null || databaseEntry == null) return false;
+      final manifest = jsonDecode(utf8.decode(List<int>.from(manifestEntry.content as List<int>)));
+      if (manifest is! Map || manifest['format'] != 'al_muhasib_backup') return false;
+      final dbBytes = List<int>.from(databaseEntry.content as List<int>);
+      if (crypto.sha256.convert(dbBytes).toString() != manifest['databaseSha256']) return false;
+      final declared = manifest['files'];
+      if (declared is! List) return false;
+      for (final item in declared) {
+        if (item is! Map) return false;
+        final name = item['path']?.toString() ?? '';
+        final entry = byName[name];
+        if (entry == null) return false;
+        final bytes = List<int>.from(entry.content as List<int>);
+        if (bytes.length.toString() != item['size']?.toString() ||
+            crypto.sha256.convert(bytes).toString() != item['sha256']?.toString()) return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('فشل التحقق من النسخة الاحتياطية: $e');
+      return false;
+    }
+  }
+
   static Future<bool> isBundle(File file) async {
-    final ext = p.extension(file.path).toLowerCase();
-    if (ext == '.alb') return true;
+    if (p.extension(file.path).toLowerCase() == '.alb') return verifyBundle(file);
     try {
       final bytes = await file.openRead(0, 4).fold<List<int>>([], (a, b) => a..addAll(b));
       return bytes.length == 4 && bytes[0] == 0x50 && bytes[1] == 0x4b;
@@ -883,6 +915,11 @@ class AutoBackupService {
 
   static Future<String?> _getDatabaseFingerprint() async {
     try {
+      try {
+        await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (e) {
+        debugPrint('تعذر إكمال WAL checkpoint قبل حساب البصمة: $e');
+      }
       final entries = <String>[];
       final dbFile = await _getDatabaseFile();
       if (!await dbFile.exists()) return null;
@@ -913,14 +950,16 @@ class AutoBackupService {
     final fingerprint = await _getDatabaseFingerprint();
     if (fingerprint == null) return true;
     final settings = await getSettings();
-    return fingerprint != (settings['dbFingerprint'] as String);
+    final previous = settings['dbFingerprint'] as String? ?? '';
+    return previous.isEmpty || fingerprint != previous;
   }
 
   static Future<bool> _hasDataChangedForDrive() async {
     final fingerprint = await _getDatabaseFingerprint();
     if (fingerprint == null) return true;
     final settings = await getSettings();
-    return fingerprint != (settings['driveDbFingerprint'] as String);
+    final previous = settings['driveDbFingerprint'] as String? ?? '';
+    return previous.isEmpty || fingerprint != previous;
   }
 
   static String _formatTime(int hour, int minute) {
@@ -1203,24 +1242,51 @@ class AutoBackupService {
     }
   }
 
+  static Future<Directory> internalBackupDirectory() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(documents.path, 'AlMuhasib', 'Backups'));
+    await dir.create(recursive: true);
+    return dir;
+  }
+
   static Future<String?> performBackup(String folderPath) async {
     try {
       final db = await AppDBHelper.instance.database;
       await AppDBHelper.instance.syncPersonalDataToDatabase();
-      try { await db.rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
-      final backupDir = Directory(folderPath);
-      if (!await backupDir.exists()) await backupDir.create(recursive: true);
-      await BackupBundleService.createBundle(outputDirectory: backupDir);
-      // النسخ التلقائي يحفظ ملف ALB الكامل فقط؛ تصدير DB متاح يدوياً عند الحاجة.
+      await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final internalDir = await internalBackupDirectory();
+      final internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
+      if (!await BackupBundleService.verifyBundle(internalFile)) {
+        try { await internalFile.delete(); } catch (_) {}
+        throw Exception('فشل التحقق من سلامة النسخة الداخلية');
+      }
+      final selected = folderPath.trim();
+      if (selected.isNotEmpty && p.normalize(selected) != p.normalize(internalDir.path)) {
+        final targetDir = Directory(selected);
+        if (!await _isWritableDirectory(targetDir.path)) {
+          throw Exception('تم حفظ النسخة الداخلية، لكن المجلد المختار غير قابل للكتابة. أعد اختيار المجلد.');
+        }
+        final targetFile = File(p.join(targetDir.path, p.basename(internalFile.path)));
+        await internalFile.copy(targetFile.path);
+        if (!await BackupBundleService.verifyBundle(targetFile)) {
+          try { await targetFile.delete(); } catch (_) {}
+          throw Exception('تم حفظ النسخة الداخلية، لكن فشل التحقق من النسخة في المجلد المختار');
+        }
+      }
       final now = DateTime.now();
-      final lastModified = (await _getDatabaseFile()).statSync().modified.toIso8601String();
+      final dbFile = await _getDatabaseFile();
+      final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
           lastBackup: now.toIso8601String(),
           lastDbModified: lastModified,
           dbFingerprint: await _getDatabaseFingerprint());
-      await _cleanOldLocalBackups(folderPath);
+      await _cleanOldLocalBackups(internalDir.path);
+      if (selected.isNotEmpty && p.normalize(selected) != p.normalize(internalDir.path)) {
+        await _cleanOldLocalBackups(selected);
+      }
       return null;
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('فشل النسخ المحلي: $e\n$st');
       return '$e';
     }
   }
@@ -1261,18 +1327,13 @@ class AutoBackupService {
 
   static Future<int> countBackups() async {
     try {
-      final settings = await getSettings();
-      final folderPath = settings['folderPath'] as String;
-      if (folderPath.isEmpty) return 0;
-      final dir = Directory(folderPath);
-      if (!await dir.exists()) return 0;
-      return dir
-          .listSync()
+      final dir = await internalBackupDirectory();
+      return dir.listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
-      .where((f) => p.extension(f.path).toLowerCase() == '.alb')
+          .where((f) => p.extension(f.path).toLowerCase() == '.alb')
           .length;
-    } catch (e) {
+    } catch (_) {
       return 0;
     }
   }
@@ -4692,6 +4753,144 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
+  Future<void> _showRestoreOptionsDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('استعادة النسخة الاحتياطية'),
+        content: const Text('اختر مصدر النسخة التي تريد استعادتها.'),
+        actions: [
+          TextButton.icon(
+            onPressed: () { Navigator.pop(ctx); _showAppRestoreList(); },
+            icon: const Icon(Icons.storage),
+            label: const Text('من التطبيق'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () { Navigator.pop(ctx); _restoreFromPhone(); },
+            icon: const Icon(Icons.folder_open),
+            label: const Text('من الهاتف'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAppRestoreList() async {
+    final dir = await AutoBackupService.internalBackupDirectory();
+    final files = (await dir.list().where((entity) => entity is File).cast<File>().toList())
+        .where((file) => p.extension(file.path).toLowerCase() == '.alb')
+        .toList()
+      ..sort((a, b) => b.path.compareTo(a.path));
+    if (!mounted) return;
+    if (files.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('لا توجد نسخ محفوظة داخل التطبيق'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('النسخ المحفوظة داخل التطبيق'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 360,
+          child: ListView.builder(
+            itemCount: files.length,
+            itemBuilder: (ctx, index) {
+              final file = files[index];
+              return ListTile(
+                leading: const Icon(Icons.backup),
+                title: Text(p.basename(file.path)),
+                subtitle: FutureBuilder<int>(
+                  future: file.length(),
+                  builder: (ctx, snapshot) => Text(snapshot.hasData
+                      ? (snapshot.data! / 1024).toStringAsFixed(1) + ' KB'
+                      : 'جارٍ قراءة الحجم...'),
+                ),
+                onTap: () { Navigator.pop(ctx); _restoreLocalBackupFile(file); },
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء'))],
+      ),
+    );
+  }
+
+  Future<void> _restoreFromPhone() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['alb'],
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final path = picked.files.single.path;
+      if (path == null || path.isEmpty) throw Exception('تعذر الوصول إلى الملف المختار');
+      await _restoreLocalBackupFile(File(path));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('تعذرت قراءة النسخة: ' + e.toString()),
+        backgroundColor: AppColors.red,
+      ));
+    }
+  }
+
+  Future<void> _restoreLocalBackupFile(File file) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد الاستعادة'),
+        content: const Text('سيتم استبدال البيانات الحالية. هل تريد المتابعة؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('استعادة'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (!await BackupBundleService.verifyBundle(file)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('ملف النسخة غير صالح أو تالف؛ لم يتم تغيير البيانات.'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final safetyError = await AutoBackupService.runBackupNow();
+      if (safetyError != null) throw Exception('تعذر إنشاء نسخة أمان: ' + safetyError);
+      await BackupBundleService.restoreBundle(file);
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تمت الاستعادة بنجاح'),
+          backgroundColor: AppColors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('فشلت الاستعادة: ' + e.toString()),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    }
+  }
+
   Future<void> _runBackupNow() async {
     if (_folderPath.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -5330,6 +5529,23 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               label: const Text('نسخ محلي الآن',
                   style:
                       TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        if (_enabled && _folderPath.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ElevatedButton.icon(
+              onPressed: _showRestoreOptionsDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              icon: const Icon(Icons.restore),
+              label: const Text('استعادة',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
         if (_signedIn)
