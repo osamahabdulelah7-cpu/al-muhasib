@@ -890,9 +890,10 @@ class GoogleDriveService {
         final uploaded = await _driveApi!.files.create(driveFile,
             uploadMedia: media, $fields: 'id,name,size,createdTime')
             .timeout(const Duration(seconds: 45));
-        if (uploaded.id == null || uploaded.id!.isEmpty ||
-            (uploaded.size != null &&
-                uploaded.size != fileContent.length.toString())) {
+        if (uploaded.id == null ||
+            uploaded.id!.isEmpty ||
+            uploaded.size == null ||
+            uploaded.size != fileContent.length.toString()) {
           throw Exception('لم يؤكد Google Drive اكتمال رفع الملف وحجمه');
         }
         return null;
@@ -1475,10 +1476,11 @@ class AutoBackupService {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
     final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
-    final folderPath = await _resolveBackupFolder(selectedFolder);
     if (!await _hasDataChanged()) return null;
 
-    final result = await performBackup(folderPath);
+    // Preserve internal backup creation even when the selected destination
+    // is unavailable; performBackup records destination errors separately.
+    final result = await performBackup(selectedFolder);
     if (result == null) {
       await NotificationService.showTemporarySuccess(
           '✅ تم النسخ المحلي', 'تم إنشاء نسخة احتياطية بنجاح');
