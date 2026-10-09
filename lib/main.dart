@@ -1008,6 +1008,7 @@ class AutoBackupService {
   static const String _prefLastBackup = 'auto_backup_last_time';
   static const String _prefLastDbModified = 'auto_backup_last_db_modified';
   static const String _prefDbFingerprint = 'auto_backup_db_fingerprint';
+  static const String _prefLastDestinationError = 'auto_backup_last_destination_error';
   static const String _prefDriveEnabled = 'drive_backup_enabled';
   static const String _prefDriveHour = 'drive_backup_hour';
   static const String _prefDriveMinute = 'drive_backup_minute';
@@ -1032,6 +1033,7 @@ class AutoBackupService {
       'lastBackup': prefs.getString(_prefLastBackup) ?? '',
       'lastDbModified': prefs.getString(_prefLastDbModified) ?? '',
       'dbFingerprint': prefs.getString(_prefDbFingerprint) ?? '',
+      'lastDestinationError': prefs.getString(_prefLastDestinationError) ?? '',
       'driveEnabled': prefs.getBool(_prefDriveEnabled) ?? false,
       'driveHour': prefs.getInt(_prefDriveHour) ?? 4,
       'driveMinute': prefs.getInt(_prefDriveMinute) ?? 0,
@@ -1049,6 +1051,7 @@ class AutoBackupService {
     String? lastBackup,
     String? lastDbModified,
     String? dbFingerprint,
+    String? lastDestinationError,
     bool? driveEnabled,
     int? driveHour,
     int? driveMinute,
@@ -1067,6 +1070,9 @@ class AutoBackupService {
     }
     if (dbFingerprint != null) {
       await prefs.setString(_prefDbFingerprint, dbFingerprint);
+    }
+    if (lastDestinationError != null) {
+      await prefs.setString(_prefLastDestinationError, lastDestinationError);
     }
     if (driveEnabled != null) {
       await prefs.setBool(_prefDriveEnabled, driveEnabled);
