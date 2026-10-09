@@ -112,28 +112,34 @@ class NotificationService {
   static const int _driveNotificationId = 1002;
 
   static Future<void> initialize({bool requestPermission = true}) async {
-    const androidSettings =
-        AndroidInitializationSettings('ic_notification');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-    await _plugin.initialize(initSettings);
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('ic_notification');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _plugin.initialize(initSettings);
 
-    if (Platform.isAndroid && requestPermission) {
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      if (Platform.isAndroid && requestPermission) {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+      }
+    } catch (e, st) {
+      // Notifications are best-effort: failures must not stop backup work.
+      debugPrint('تعذر تهيئة الإشعارات (ستستمر مهمة النسخ): $e\n$st');
     }
   }
 
   static Future<void> showPersistentLocalNotification(String timeText) async {
+    try {
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -152,9 +158,13 @@ class NotificationService {
       'الموعد المستهدف للنسخ يومياً: $timeText',
       details,
     );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار النسخ المحلي: $e');
+    }
   }
 
   static Future<void> showPersistentDriveNotification(String timeText) async {
+    try {
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -173,14 +183,21 @@ class NotificationService {
       'الموعد المستهدف للرفع يومياً: $timeText',
       details,
     );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار النسخ على Drive: $e');
+    }
   }
 
   static Future<void> cancelLocalNotification() async {
-    await _plugin.cancel(_localNotificationId);
+    try { await _plugin.cancel(_localNotificationId); } catch (e) {
+      debugPrint('تعذر إلغاء إشعار النسخ المحلي: $e');
+    }
   }
 
   static Future<void> cancelDriveNotification() async {
-    await _plugin.cancel(_driveNotificationId);
+    try { await _plugin.cancel(_driveNotificationId); } catch (e) {
+      debugPrint('تعذر إلغاء إشعار Drive: $e');
+    }
   }
 
   static Future<void> showTemporarySuccess(String title, String body) async {
@@ -297,6 +314,9 @@ class ImageStorageService {
       return Uint8List.fromList(await file.readAsBytes());
     } catch (_) {
       return null;
+    }
+    } catch (e) {
+      debugPrint('تعذر عرض الإشعار (لن تتعطل مهمة النسخ): $e');
     }
   }
 
@@ -741,6 +761,9 @@ class GoogleDriveService {
     final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
     final fileName =
         'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$safeExt';
+    if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
+      return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
+    }
     final fileContent = await backupFile.readAsBytes();
 
     // Retry transient DNS/network/server failures. A new Drive file name is used
@@ -760,9 +783,14 @@ class GoogleDriveService {
           ..parents = ['appDataFolder'];
         final media = drive.Media(Stream.value(fileContent), fileContent.length,
             contentType: 'application/octet-stream');
-        await _driveApi!.files.create(driveFile,
+        final uploaded = await _driveApi!.files.create(driveFile,
             uploadMedia: media, $fields: 'id,name,size,createdTime')
             .timeout(const Duration(seconds: 45));
+        if (uploaded.id == null || uploaded.id!.isEmpty ||
+            (uploaded.size != null &&
+                uploaded.size != fileContent.length.toString())) {
+          throw Exception('لم يؤكد Google Drive اكتمال رفع الملف وحجمه');
+        }
         return null;
       } catch (e) {
         lastError = e;
@@ -1106,6 +1134,10 @@ class AutoBackupService {
 
     try {
       final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
       final error = await GoogleDriveService.uploadBackup(bundle);
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
@@ -1194,6 +1226,10 @@ class AutoBackupService {
       if (!await _hasDataChangedForDrive()) return null;
 
       final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
       final error = await GoogleDriveService.uploadBackup(bundle);
       try { await bundle.delete(); } catch (_) {}
       if (error == null) {
@@ -1330,6 +1366,10 @@ class AutoBackupService {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
       final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
       final error = await GoogleDriveService.uploadBackup(bundle);
       if (error == null) {
         final now = DateTime.now();
