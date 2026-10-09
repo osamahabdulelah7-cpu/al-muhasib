@@ -237,6 +237,32 @@ void callbackDispatcher() {
       await AppDBHelper.instance.database;
       bool shouldRetry = false;
 
+      // Queue a one-off snapshot when the UI is backgrounded/closed. This
+      // task runs independently of the daily schedule and survives process death.
+      if (task == AutoBackupService.workManagerExitTaskName) {
+        final settings = await AutoBackupService.getSettings();
+        if (settings['enabled'] == true) {
+          final localError = await AutoBackupService.runBackupNow();
+          if (localError != null) {
+            shouldRetry = true;
+            debugPrint('❌ فشل النسخ عند إغلاق الواجهة: $localError');
+          }
+        }
+        if (settings['driveEnabled'] == true) {
+          if (await GoogleDriveService.trySilentSignIn()) {
+            final driveError = await AutoBackupService.runDriveBackupNow();
+            if (driveError != null) {
+              shouldRetry = true;
+              debugPrint('❌ فشل نسخ Drive عند إغلاق الواجهة: $driveError');
+            }
+          } else {
+            shouldRetry = true;
+            debugPrint('⚠️ تعذر تسجيل الدخول إلى Google عند إغلاق الواجهة');
+          }
+        }
+        return !shouldRetry;
+      }
+
       final localError = await AutoBackupService.checkAndRunBackup();
       if (localError != null) {
         shouldRetry = true;
@@ -916,6 +942,9 @@ class AutoBackupService {
   static const int _maxDriveBackups = 5;
   static const String _workManagerTaskName = 'al_muhasib_daily_backup';
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
+  static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
+  static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
+  static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
 
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1077,6 +1106,38 @@ class AutoBackupService {
 
   static Future<void> scheduleDailyBackup() async {
     await _scheduleBackgroundBackup();
+  }
+
+  static Future<void> scheduleBackupOnExit() async {
+    try {
+      final settings = await getSettings();
+      if (settings['enabled'] != true && settings['driveEnabled'] != true) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final previous = prefs.getInt(_prefLastExitEnqueuedAt) ?? 0;
+      // Avoid generating repeated snapshots when users switch between apps.
+      if (now - previous < const Duration(hours: 6).inMilliseconds) return;
+
+      await Workmanager().registerOneOffTask(
+        _workManagerExitUniqueName,
+        workManagerExitTaskName,
+        existingWorkPolicy: ExistingWorkPolicy.keep,
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+          requiresBatteryNotLow: false,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        backoffPolicy: BackoffPolicy.linear,
+        backoffPolicyDelay: const Duration(minutes: 15),
+      );
+      await prefs.setInt(_prefLastExitEnqueuedAt, now);
+      debugPrint('تمت جدولة نسخة احتياطية عند خروج الواجهة');
+    } catch (e, st) {
+      debugPrint('تعذر جدولة النسخ عند خروج الواجهة: $e\n$st');
+    }
   }
 
   static Future<void> cancelDailyBackup() async {
@@ -2723,8 +2784,33 @@ class AppAccountProvider extends ChangeNotifier {
 }
 
 // ==================== AlMuhasibApp ====================
-class AlMuhasibApp extends StatelessWidget {
+class AlMuhasibApp extends StatefulWidget {
   const AlMuhasibApp({super.key});
+
+  @override
+  State<AlMuhasibApp> createState() => _AlMuhasibAppState();
+}
+
+class _AlMuhasibAppState extends State<AlMuhasibApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      unawaited(AutoBackupService.scheduleBackupOnExit());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
