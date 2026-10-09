@@ -1312,18 +1312,28 @@ class AutoBackupService {
     // name. Reuse it only if its contents verify; otherwise remove it first.
     final entries = await saf.list(folderUri);
     for (final entry in entries.where((e) => !e.isDir && e.name == fileName)) {
+      var copiedForVerification = false;
+      var validExistingCopy = false;
       try {
         await saf.copyToLocalFile(entry.uri, verificationCopy.path);
-        if (await BackupBundleService.verifyBundle(verificationCopy)) {
+        copiedForVerification = true;
+        validExistingCopy = await BackupBundleService.verifyBundle(verificationCopy);
+        if (validExistingCopy) {
           await _cleanOldSafBackups(folderUri);
           return;
         }
       } catch (e) {
-        debugPrint('النسخة الموجودة على SD غير قابلة للتحقق: $e');
+        debugPrint('تعذر التحقق من النسخة الموجودة على SD: $e');
       } finally {
         try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
       }
-      try { await saf.delete(entry.uri); } catch (_) {}
+      // Never delete an existing document merely because the provider failed
+      // to read it; delete only after a successful read proves it is corrupt.
+      if (copiedForVerification && !validExistingCopy) {
+        try { await saf.delete(entry.uri); } catch (_) {}
+      } else if (!copiedForVerification) {
+        rethrow;
+      }
     }
 
     SafDocumentFile? created;
