@@ -1547,6 +1547,18 @@ class AutoBackupService {
     }
   }
 
+  // Safety snapshots for restore must not depend on an optional SD-card or
+  // shared-folder destination being mounted and writable.
+  static Future<String?> runInternalBackupNow() async {
+    try {
+      final internalDir = await internalBackupDirectory();
+      return await performBackup(internalDir.path);
+    } catch (e, st) {
+      debugPrint('فشل إنشاء نسخة الأمان الداخلية: $e\n$st');
+      return 'تعذر إنشاء نسخة الأمان الداخلية: $e';
+    }
+  }
+
   static Future<String?> runDriveBackupNow() async {
     if (!GoogleDriveService.isSignedIn) {
       return 'الرجاء تسجيل الدخول إلى Google';
@@ -5172,7 +5184,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       builder: (ctx) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final safetyError = await AutoBackupService.runBackupNow();
+      final safetyError = await AutoBackupService.runInternalBackupNow();
       if (safetyError != null) throw Exception('تعذر إنشاء نسخة أمان: ' + safetyError);
       await BackupBundleService.restoreBundle(file);
       if (mounted) {
