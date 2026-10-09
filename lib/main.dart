@@ -1846,8 +1846,9 @@ class AutoBackupService {
   }
 
   static Future<String?> runDriveBackupNow() async {
-    if (!GoogleDriveService.isSignedIn) {
-      return 'الرجاء تسجيل الدخول إلى Google';
+    if (!GoogleDriveService.isSignedIn &&
+        !await GoogleDriveService.trySilentSignIn()) {
+      return 'انتهت جلسة Google أو لم تعد متاحة. افتح التطبيق وسجّل الدخول مجدداً.';
     }
     try {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
