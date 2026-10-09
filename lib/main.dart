@@ -1632,8 +1632,13 @@ class AutoBackupService {
         final ext = p.extension((b['name'] as String?) ?? '').toLowerCase();
         return ext == '.alb' || ext == '.db';
       }).toList()
-        ..sort((a, b) =>
-            (b['createdTime'] as String).compareTo(a['createdTime'] as String));
+        ..sort((a, b) {
+          final aTime = (a['createdTime'] as String?)?.trim() ?? '';
+          final bTime = (b['createdTime'] as String?)?.trim() ?? '';
+          final aKey = aTime.isNotEmpty ? aTime : (a['name'] as String? ?? '');
+          final bKey = bTime.isNotEmpty ? bTime : (b['name'] as String? ?? '');
+          return bKey.compareTo(aKey);
+        });
       for (final old in snapshots.skip(_maxDriveBackups)) {
         final id = old['id'] as String? ?? '';
         if (id.isNotEmpty) await GoogleDriveService.deleteBackup(id);
