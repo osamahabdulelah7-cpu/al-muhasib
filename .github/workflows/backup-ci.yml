@@ -1,4 +1,5 @@
 name: Backup CI
+# Validate the latest SD retry, Drive retry, and restore safety changes.
 # Final validation for backup scheduling, Drive retry handling, SAF, restore, and retention.
 
 on:
