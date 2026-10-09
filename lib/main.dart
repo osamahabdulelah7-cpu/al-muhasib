@@ -1369,6 +1369,52 @@ class AutoBackupService {
     }
   }
 
+  static Future<String?> _retryPendingDestination(String folderSetting) async {
+    try {
+      final internalDir = await internalBackupDirectory();
+      final candidates = internalDir
+          .listSync()
+          .whereType<File>()
+          .where((file) => p.extension(file.path).toLowerCase() == '.alb')
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+
+      File? verifiedSource;
+      for (final candidate in candidates) {
+        if (await BackupBundleService.verifyBundle(candidate)) {
+          verifiedSource = candidate;
+          break;
+        }
+      }
+      if (verifiedSource == null) {
+        throw Exception('لا توجد نسخة داخلية سليمة لإعادة نسخها إلى الوجهة المحددة');
+      }
+
+      final selected = await _resolveBackupFolder(folderSetting);
+      if (_isSafFolder(selected)) {
+        await _writeVerifiedSafBackup(verifiedSource, selected);
+      } else if (p.normalize(selected) != p.normalize(internalDir.path)) {
+        final targetDir = Directory(selected);
+        if (!await _isWritableDirectory(targetDir.path)) {
+          throw Exception('الوجهة المحددة غير قابلة للكتابة');
+        }
+        final targetFile = File(p.join(targetDir.path, p.basename(verifiedSource.path)));
+        await verifiedSource.copy(targetFile.path);
+        if (!await BackupBundleService.verifyBundle(targetFile)) {
+          try { await targetFile.delete(); } catch (_) {}
+          throw Exception('فشل التحقق من النسخة بعد إعادة نسخها إلى الوجهة المحددة');
+        }
+        await _cleanOldLocalBackups(selected);
+      }
+      await saveSettings(lastDestinationError: '');
+      return null;
+    } catch (e, st) {
+      debugPrint('فشل إعادة محاولة الوجهة الخارجية: $e\n$st');
+      await saveSettings(lastDestinationError: e.toString());
+      return 'تعذر إعادة النسخ إلى الوجهة المحددة: $e';
+    }
+  }
+
   static Future<String?> performScheduledBackup() async {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
