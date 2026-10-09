@@ -899,6 +899,7 @@ class GoogleDriveService {
       return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
     }
     final fileContent = await backupFile.readAsBytes();
+    final expectedMd5 = crypto.md5.convert(fileContent).toString();
 
     // Retry transient DNS/network/server failures. A new Drive file name is used
     // per operation, so retrying an interrupted upload may create a duplicate;
@@ -920,12 +921,13 @@ class GoogleDriveService {
             final existing = await _driveApi!.files.list(
               spaces: 'appDataFolder',
               q: "name = '$fileName'",
-              $fields: 'files(id,name,size)',
+              $fields: 'files(id,name,size,md5Checksum)',
             ).timeout(const Duration(seconds: 20));
             final confirmed = (existing.files ?? []).any((f) =>
                 (f.id ?? '').isNotEmpty &&
                 f.name == fileName &&
-                f.size == fileContent.length.toString());
+                f.size == fileContent.length.toString() &&
+                f.md5Checksum == expectedMd5);
             if (confirmed) return null;
           } catch (reconcileError) {
             debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
@@ -937,13 +939,15 @@ class GoogleDriveService {
         final media = drive.Media(Stream.value(fileContent), fileContent.length,
             contentType: 'application/octet-stream');
         final uploaded = await _driveApi!.files.create(driveFile,
-            uploadMedia: media, $fields: 'id,name,size,createdTime')
+            uploadMedia: media, $fields: 'id,name,size,createdTime,md5Checksum')
             .timeout(const Duration(seconds: 45));
         if (uploaded.id == null ||
             uploaded.id!.isEmpty ||
             uploaded.size == null ||
-            uploaded.size != fileContent.length.toString()) {
-          throw Exception('لم يؤكد Google Drive اكتمال رفع الملف وحجمه');
+            uploaded.size != fileContent.length.toString() ||
+            uploaded.md5Checksum == null ||
+            uploaded.md5Checksum != expectedMd5) {
+          throw Exception('لم يؤكد Google Drive اكتمال الرفع وسلامة الحجم وبصمة MD5');
         }
         return null;
       } catch (e) {
