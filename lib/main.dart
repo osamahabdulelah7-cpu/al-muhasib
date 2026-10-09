@@ -1219,8 +1219,10 @@ class AutoBackupService {
     // SAF returns content:// URIs, not filesystem paths. Keep the persisted
     // grant and never pass a document URI to Directory/File.
     if (_isSafFolder(selected)) {
-      if (await _isValidSafFolder(selected)) return selected;
-      throw Exception('صلاحية بطاقة SD غير متاحة. أعد اختيار مجلد النسخ من بطاقة SD.');
+      // Preserve the internal backup path even if an SD grant was revoked.
+      // performBackup will record the internal success and report the SD failure
+      // separately, instead of preventing all backups because one target failed.
+      return selected;
     }
     if (selected.isNotEmpty &&
         p.isAbsolute(selected) &&
@@ -1481,50 +1483,57 @@ class AutoBackupService {
   }
 
   static Future<String?> performBackup(String folderPath) async {
+    File? internalFile;
+    String? selected;
     try {
       final db = await AppDBHelper.instance.database;
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
       final internalDir = await internalBackupDirectory();
-      final internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
+      internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
       if (!await BackupBundleService.verifyBundle(internalFile)) {
         try { await internalFile.delete(); } catch (_) {}
         throw Exception('فشل التحقق من سلامة النسخة الداخلية');
       }
-      // The internal destination is independently verified. Enforce its
-      // retention even if an optional SD-card destination is unavailable.
+
+      // The internal copy is a complete destination in its own right. Record
+      // success only after its integrity check, before attempting optional targets.
       await _cleanOldLocalBackups(internalDir.path);
-      final selected = folderPath.trim();
-      if (selected.isNotEmpty && _isSafFolder(selected)) {
-        await _writeVerifiedSafBackup(internalFile, selected);
-      } else if (selected.isNotEmpty &&
-          p.normalize(selected) != p.normalize(internalDir.path)) {
-        final targetDir = Directory(selected);
-        if (!await _isWritableDirectory(targetDir.path)) {
-          throw Exception('تم حفظ النسخة الداخلية، لكن المجلد المختار غير قابل للكتابة. أعد اختيار المجلد.');
-        }
-        final targetFile = File(p.join(targetDir.path, p.basename(internalFile.path)));
-        await internalFile.copy(targetFile.path);
-        if (!await BackupBundleService.verifyBundle(targetFile)) {
-          try { await targetFile.delete(); } catch (_) {}
-          throw Exception('تم حفظ النسخة الداخلية، لكن فشل التحقق من النسخة في المجلد المختار');
-        }
-      }
       final now = DateTime.now();
       final dbFile = await _getDatabaseFile();
       final lastModified = (await dbFile.stat()).modified.toIso8601String();
       await saveSettings(
-          lastBackup: now.toIso8601String(),
-          lastDbModified: lastModified,
-          dbFingerprint: await _getDatabaseFingerprint());
-      if (selected.isNotEmpty && !_isSafFolder(selected) &&
-          p.normalize(selected) != p.normalize(internalDir.path)) {
-        await _cleanOldLocalBackups(selected);
+        lastBackup: now.toIso8601String(),
+        lastDbModified: lastModified,
+        dbFingerprint: await _getDatabaseFingerprint(),
+      );
+
+      selected = folderPath.trim();
+      try {
+        if (selected!.isNotEmpty && _isSafFolder(selected)) {
+          await _writeVerifiedSafBackup(internalFile, selected);
+        } else if (selected.isNotEmpty &&
+            p.normalize(selected) != p.normalize(internalDir.path)) {
+          final targetDir = Directory(selected);
+          if (!await _isWritableDirectory(targetDir.path)) {
+            throw Exception('المجلد المحدد غير قابل للكتابة');
+          }
+          final targetFile = File(p.join(targetDir.path, p.basename(internalFile.path)));
+          await internalFile.copy(targetFile.path);
+          if (!await BackupBundleService.verifyBundle(targetFile)) {
+            try { await targetFile.delete(); } catch (_) {}
+            throw Exception('فشل التحقق من النسخة في المجلد المحدد');
+          }
+          await _cleanOldLocalBackups(selected);
+        }
+      } catch (destinationError, destinationStack) {
+        debugPrint('النسخة الداخلية سليمة، لكن فشل النسخ إلى الوجهة المحددة: $destinationError\n$destinationStack');
+        return 'تم إنشاء نسخة داخلية سليمة والتحقق منها، لكن فشل الحفظ في الوجهة المحددة: $destinationError';
       }
       return null;
     } catch (e, st) {
       debugPrint('فشل النسخ المحلي: $e\n$st');
-      return '$e';
+      return 'فشل إنشاء أو التحقق من النسخة الداخلية: $e';
     }
   }
 
