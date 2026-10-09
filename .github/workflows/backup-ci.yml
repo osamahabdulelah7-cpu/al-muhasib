@@ -1,4 +1,5 @@
 name: Backup CI
+# CI validation run for the latest backup/restore implementation.
 # Final validation for backup scheduling, Drive retry handling, SAF, restore, and retention.
 
 on:
