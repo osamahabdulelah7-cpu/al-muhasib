@@ -1632,11 +1632,12 @@ class AutoBackupService {
       );
 
       final selected = folderPath.trim();
+      final internalOnly = selected.isEmpty ||
+          p.normalize(selected) == p.normalize(internalDir.path);
       try {
         if (selected.isNotEmpty && _isSafFolder(selected)) {
           await _writeVerifiedSafBackup(internalFile, selected);
-        } else if (selected.isNotEmpty &&
-            p.normalize(selected) != p.normalize(internalDir.path)) {
+        } else if (!internalOnly) {
           final targetDir = Directory(selected);
           if (!await _isWritableDirectory(targetDir.path)) {
             throw Exception('المجلد المحدد غير قابل للكتابة');
@@ -1649,7 +1650,11 @@ class AutoBackupService {
           }
           await _cleanOldLocalBackups(selected);
         }
+        if (!internalOnly) {
+          await saveSettings(lastDestinationError: '');
+        }
       } catch (destinationError, destinationStack) {
+        await saveSettings(lastDestinationError: destinationError.toString());
         debugPrint('النسخة الداخلية سليمة، لكن فشل النسخ إلى الوجهة المحددة: $destinationError\n$destinationStack');
         return 'تم إنشاء نسخة داخلية سليمة والتحقق منها، لكن فشل الحفظ في الوجهة المحددة: $destinationError';
       }
