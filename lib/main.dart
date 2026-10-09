@@ -963,36 +963,61 @@ class GoogleDriveService {
 
   static Future<File?> downloadBackup(String fileId, String fileName) async {
     _lastDownloadError = null;
-    try {
-      if (_driveApi == null && !await trySilentSignIn()) {
-        throw Exception('انتهت جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً.');
+    Object? lastError;
+    final safeName = p.basename(fileName).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final tempDir = await getTemporaryDirectory();
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      File? file;
+      try {
+        if (_driveApi == null) {
+          final signedIn = await trySilentSignIn();
+          if (!signedIn || _driveApi == null) {
+            throw Exception('انتهت جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً.');
+          }
+        }
+        final result = await _driveApi!.files.get(
+          fileId,
+          downloadOptions: drive.DownloadOptions.fullMedia,
+        ).timeout(const Duration(seconds: 45)) as drive.Media;
+        final dataStore = <int>[];
+        await for (final chunk in result.stream.timeout(const Duration(seconds: 45))) {
+          dataStore.addAll(chunk);
+        }
+        if (dataStore.isEmpty) throw Exception('ملف النسخة الذي نُزّل فارغ');
+        file = File(p.join(tempDir.path,
+            'drive_restore_${DateTime.now().microsecondsSinceEpoch}_$safeName'));
+        await file.writeAsBytes(dataStore, flush: true);
+        if (p.extension(safeName).toLowerCase() == '.alb' &&
+            !await BackupBundleService.verifyBundle(file)) {
+          throw Exception('النسخة التي نُزّلت من Drive تالفة أو غير مكتملة');
+        }
+        return file;
+      } catch (e) {
+        lastError = e;
+        if (file != null) {
+          try { if (await file.exists()) await file.delete(); } catch (_) {}
+        }
+        if (attempt < 2) {
+          final message = e.toString().toLowerCase();
+          final authError = message.contains('401') ||
+              message.contains('unauthorized') ||
+              message.contains('invalid credentials');
+          if (authError) {
+            await trySilentSignIn();
+          } else {
+            await Future.delayed(Duration(seconds: 2 << attempt));
+            // A connection may have dropped and invalidated the cached client.
+            if (_driveApi == null) await trySilentSignIn();
+          }
+        }
       }
-      if (_driveApi == null) throw Exception('جلسة Google غير متاحة');
-      final result = await _driveApi!.files.get(
-        fileId,
-        downloadOptions: drive.DownloadOptions.fullMedia,
-      ).timeout(const Duration(seconds: 45)) as drive.Media;
-      final dataStore = <int>[];
-      await for (final chunk in result.stream.timeout(const Duration(seconds: 45))) {
-        dataStore.addAll(chunk);
-      }
-      if (dataStore.isEmpty) throw Exception('ملف النسخة الذي نُزّل فارغ');
-      final safeName = p.basename(fileName).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-      final tempDir = await getTemporaryDirectory();
-      final file = File(p.join(tempDir.path,
-          'drive_restore_${DateTime.now().microsecondsSinceEpoch}_$safeName'));
-      await file.writeAsBytes(dataStore, flush: true);
-      if (p.extension(safeName).toLowerCase() == '.alb' &&
-          !await BackupBundleService.verifyBundle(file)) {
-        try { await file.delete(); } catch (_) {}
-        throw Exception('النسخة التي نُزّلت من Drive تالفة أو غير مكتملة');
-      }
-      return file;
-    } catch (e) {
-      _lastDownloadError = 'تعذر تنزيل النسخة من Google Drive: $e';
-      debugPrint(_lastDownloadError);
-      return null;
     }
+
+    _lastDownloadError =
+        'تعذر تنزيل النسخة من Google Drive بعد 3 محاولات: $lastError';
+    debugPrint(_lastDownloadError);
+    return null;
   }
 
   static Future<bool> deleteBackup(String fileId) async {
