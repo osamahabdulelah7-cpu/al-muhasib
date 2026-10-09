@@ -1550,8 +1550,12 @@ class AutoBackupService {
         try { await bundle.delete(); } catch (_) {}
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
-      final error = await GoogleDriveService.uploadBackup(bundle);
-      try { await bundle.delete(); } catch (_) {}
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
       if (error == null) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
@@ -1654,8 +1658,12 @@ class AutoBackupService {
         try { await bundle.delete(); } catch (_) {}
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
-      final error = await GoogleDriveService.uploadBackup(bundle);
-      try { await bundle.delete(); } catch (_) {}
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
       if (error == null) {
         final dbFile = await _getDatabaseFile();
         final lastModified = (await dbFile.stat()).modified.toIso8601String();
@@ -1842,7 +1850,12 @@ class AutoBackupService {
         try { await bundle.delete(); } catch (_) {}
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
-      final error = await GoogleDriveService.uploadBackup(bundle);
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
       if (error == null) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
