@@ -113,7 +113,7 @@ class NotificationService {
 
   static Future<void> initialize({bool requestPermission = true}) async {
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_notification');
+        AndroidInitializationSettings('ic_notification');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -143,7 +143,7 @@ class NotificationService {
       ongoing: true,
       autoCancel: false,
       showWhen: false,
-      icon: '@drawable/ic_notification',
+      icon: 'ic_notification',
     );
     const details = NotificationDetails(android: androidDetails);
     await _plugin.show(
@@ -164,7 +164,7 @@ class NotificationService {
       ongoing: true,
       autoCancel: false,
       showWhen: false,
-      icon: '@drawable/ic_notification',
+      icon: 'ic_notification',
     );
     const details = NotificationDetails(android: androidDetails);
     await _plugin.show(
@@ -190,7 +190,7 @@ class NotificationService {
       channelDescription: _channelDesc,
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_notification',
+      icon: 'ic_notification',
     );
     const details = NotificationDetails(android: androidDetails);
     await _plugin.show(
@@ -4822,14 +4822,22 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 
   Future<void> _restoreFromPhone() async {
     try {
+      // Avoid Android document-provider failures from FileType.custom filters.
+      // Pick first, then validate the extension and bundle before restoring.
       final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['alb'],
+        type: FileType.any,
         allowMultiple: false,
+        withData: false,
       );
       if (picked == null || picked.files.isEmpty) return;
-      final path = picked.files.single.path;
-      if (path == null || path.isEmpty) throw Exception('تعذر الوصول إلى الملف المختار');
+      final selected = picked.files.single;
+      final path = selected.path;
+      if (path == null || path.isEmpty) {
+        throw Exception('تعذر الوصول إلى الملف المختار. اختر ملفاً محفوظاً على الجهاز.');
+      }
+      if (p.extension(selected.name).toLowerCase() != '.alb') {
+        throw Exception('اختر ملف نسخة احتياطية بامتداد .alb');
+      }
       await _restoreLocalBackupFile(File(path));
     } catch (e) {
       if (!mounted) return;
