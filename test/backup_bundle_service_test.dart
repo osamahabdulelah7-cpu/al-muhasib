@@ -68,6 +68,18 @@ void main() {
       }
     });
 
+    test('refuses to restore a corrupt bundle before touching the database', () async {
+      final file = await _makeBundle(corruptPayload: true);
+      try {
+        await expectLater(
+          BackupBundleService.restoreBundle(file),
+          throwsA(isA<Exception>()),
+        );
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
     test('rejects a file that is not a ZIP backup', () async {
       final dir = await Directory.systemTemp.createTemp('al_muhasib_bad_');
       final file = File('${dir.path}/broken.alb');
