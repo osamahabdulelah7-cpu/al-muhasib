@@ -1780,8 +1780,22 @@ class AutoBackupService {
   // shared-folder destination being mounted and writable.
   static Future<String?> runInternalBackupNow() async {
     try {
+      // A restore safety snapshot must not advance the user's daily schedule
+      // or clear a pending SD-card error. Build and verify it independently.
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      try {
+        await (await AppDBHelper.instance.database)
+            .rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
       final internalDir = await internalBackupDirectory();
-      return await performBackup(internalDir.path);
+      final safetyBundle =
+          await BackupBundleService.createBundle(outputDirectory: internalDir);
+      if (!await BackupBundleService.verifyBundle(safetyBundle)) {
+        try { await safetyBundle.delete(); } catch (_) {}
+        throw Exception('فشل التحقق من نسخة الأمان الداخلية');
+      }
+      await _cleanOldLocalBackups(internalDir.path);
+      return null;
     } catch (e, st) {
       debugPrint('فشل إنشاء نسخة الأمان الداخلية: $e\n$st');
       return 'تعذر إنشاء نسخة الأمان الداخلية: $e';
