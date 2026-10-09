@@ -1427,20 +1427,17 @@ class AutoBackupService {
   static Future<void> _cleanOldDriveBackups() async {
     try {
       final backups = await GoogleDriveService.listBackups();
-      final alb = backups
-          .where((b) => p.extension((b['name'] as String?) ?? '').toLowerCase() == '.alb')
-          .toList();
-      final db = backups
-          .where((b) => p.extension((b['name'] as String?) ?? '').toLowerCase() == '.db')
-          .toList();
-
-      for (final group in [alb, db]) {
-        if (group.length <= _maxDriveBackups) continue;
-        group.sort((a, b) =>
+      // Retain five backup snapshots total per destination, regardless of
+      // whether an older snapshot used the legacy .db or current .alb format.
+      final snapshots = backups.where((b) {
+        final ext = p.extension((b['name'] as String?) ?? '').toLowerCase();
+        return ext == '.alb' || ext == '.db';
+      }).toList()
+        ..sort((a, b) =>
             (b['createdTime'] as String).compareTo(a['createdTime'] as String));
-        for (int i = _maxDriveBackups; i < group.length; i++) {
-          await GoogleDriveService.deleteBackup(group[i]['id'] as String);
-        }
+      for (final old in snapshots.skip(_maxDriveBackups)) {
+        final id = old['id'] as String? ?? '';
+        if (id.isNotEmpty) await GoogleDriveService.deleteBackup(id);
       }
     } catch (e) {
       debugPrint('⚠️ خطأ في حذف النسخ القديمة على Drive: $e');
@@ -1454,22 +1451,20 @@ class AutoBackupService {
       final files = dir
           .listSync()
           .whereType<File>()
-          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
-          .toList();
-      final albFiles = files
-          .where((f) => p.extension(f.path).toLowerCase() == '.alb')
-          .toList();
-      final dbFiles = files
-          .where((f) => p.extension(f.path).toLowerCase() == '.db')
-          .toList();
-
-      for (final group in [albFiles, dbFiles]) {
-        if (group.length <= _maxLocalBackups) continue;
-        group.sort((a, b) => a.path.compareTo(b.path));
-        for (int i = 0; i < group.length - _maxLocalBackups; i++) {
-          try {
-            await group[i].delete();
-          } catch (_) {}
+          .where((f) {
+            final name = p.basename(f.path);
+            final ext = p.extension(f.path).toLowerCase();
+            return name.startsWith('al_muhasib_') &&
+                (ext == '.alb' || ext == '.db');
+          })
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+      // The newly-created and verified snapshot is newest and must survive.
+      for (final old in files.skip(_maxLocalBackups)) {
+        try {
+          await old.delete();
+        } catch (e) {
+          debugPrint('تعذر حذف النسخة القديمة ${old.path}: $e');
         }
       }
     } catch (e) {
