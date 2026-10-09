@@ -1526,8 +1526,8 @@ class AutoBackupService {
     final settings = await getSettings();
     if (settings['enabled'] != true) return null;
     final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
-    if (!await _hasDataChanged()) return null;
 
+    // Scheduled backups are snapshots, not change-only syncs.
     // Preserve internal backup creation even when the selected destination
     // is unavailable; performBackup records destination errors separately.
     final result = await performBackup(selectedFolder);
@@ -1542,9 +1542,9 @@ class AutoBackupService {
     final settings = await getSettings();
     if (settings['driveEnabled'] != true) return null;
     if (!GoogleDriveService.isSignedIn) return null;
-    if (!await _hasDataChangedForDrive()) return null;
 
     try {
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
       final bundle = await BackupBundleService.createBundle();
       if (!await BackupBundleService.verifyBundle(bundle)) {
         try { await bundle.delete(); } catch (_) {}
