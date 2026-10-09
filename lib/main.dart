@@ -5332,6 +5332,23 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
+        if (_enabled && _folderPath.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ElevatedButton.icon(
+              onPressed: _showRestoreOptionsDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              icon: const Icon(Icons.restore),
+              label: const Text('استعادة',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
         if (_signedIn)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
