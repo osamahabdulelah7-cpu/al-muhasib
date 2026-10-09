@@ -745,12 +745,20 @@ class GoogleDriveService {
   static Future<bool> trySilentSignIn() async {
     try {
       final account = await _googleSignIn.signInSilently();
-      if (account == null) return false;
+      if (account == null) {
+        // Never keep an API client backed by a stale/expired account.
+        _currentUser = null;
+        _driveApi = null;
+        return false;
+      }
       _currentUser = account;
       final authHeaders = await account.authHeaders;
       _driveApi = drive.DriveApi(GoogleAuthClient(authHeaders));
       return true;
     } catch (e) {
+      _currentUser = null;
+      _driveApi = null;
+      debugPrint('تعذر تجديد جلسة Google في الخلفية: $e');
       return false;
     }
   }
