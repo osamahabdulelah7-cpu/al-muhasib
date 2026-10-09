@@ -720,6 +720,8 @@ class GoogleDriveService {
   );
   static GoogleSignInAccount? _currentUser;
   static drive.DriveApi? _driveApi;
+  static String? _lastListBackupsError;
+  static String? get lastListBackupsError => _lastListBackupsError;
   static bool get isSignedIn => _currentUser != null;
   static String? get userEmail => _currentUser?.email;
 
@@ -824,14 +826,18 @@ class GoogleDriveService {
   }
 
   static Future<List<Map<String, dynamic>>> listBackups() async {
-    if (_driveApi == null) return [];
+    if (_driveApi == null) {
+      _lastListBackupsError = 'جلسة Google غير متاحة. سجّل الدخول مجدداً.';
+      return [];
+    }
     try {
       final result = await _driveApi!.files.list(
         spaces: 'appDataFolder',
         q: "name contains 'al_muhasib_'",
         orderBy: 'createdTime desc',
         $fields: 'files(id,name,size,createdTime)',
-      );
+      ).timeout(const Duration(seconds: 30));
+      _lastListBackupsError = null;
       return (result.files ?? [])
           .map((f) => {
                 'id': f.id ?? '',
@@ -841,6 +847,8 @@ class GoogleDriveService {
               })
           .toList();
     } catch (e) {
+      _lastListBackupsError = 'تعذر الاتصال بـ Google Drive. تحقق من الإنترنت ثم أعد المحاولة. التفاصيل: $e';
+      debugPrint(_lastListBackupsError);
       return [];
     }
   }
@@ -4637,8 +4645,9 @@ class BackupOptionsScreen extends StatelessWidget {
 
     if (!context.mounted) return;
     if (backups.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('لا توجد نسخ احتياطية على Google Drive'),
+      final listError = GoogleDriveService.lastListBackupsError;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(listError ?? 'لا توجد نسخ احتياطية على Google Drive'),
         backgroundColor: AppColors.red,
       ));
       return;
@@ -5215,8 +5224,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     if (!mounted) return;
     Navigator.pop(context);
     if (backups.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('لا توجد نسخ على Drive'),
+      final listError = GoogleDriveService.lastListBackupsError;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(listError ?? 'لا توجد نسخ على Drive'),
           backgroundColor: AppColors.red));
       return;
     }
