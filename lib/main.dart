@@ -528,6 +528,9 @@ class BackupBundleService {
   }
 
   static Future<void> restoreBundle(File bundle) async {
+    if (!await verifyBundle(bundle)) {
+      throw Exception('ملف النسخة الاحتياطية تالف أو غير مكتمل؛ أُلغيت الاستعادة دون تغيير البيانات.');
+    }
     final dbFile = await _extractDatabase(bundle);
     final sourceMarker = File(p.join(p.dirname(dbFile.path), '.app_data_source'));
     Directory? source;
@@ -2379,7 +2382,10 @@ class AppAccountProvider extends ChangeNotifier {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       if (result != null && result.files.single.path != null) {
         final selected = File(result.files.single.path!);
-        if (await BackupBundleService.isBundle(selected)) {
+        if (p.extension(selected.path).toLowerCase() == '.alb') {
+          if (!await BackupBundleService.verifyBundle(selected)) {
+            throw Exception('ملف النسخة .alb تالف؛ لم يتم تغيير البيانات.');
+          }
           await BackupBundleService.restoreBundle(selected);
         } else {
           await AppDBHelper.instance.restoreDatabase(selected);
@@ -2395,7 +2401,8 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<bool> importBackupFromFile(File selectedFile) async {
     try {
-      if (await BackupBundleService.isBundle(selectedFile)) {
+      if (p.extension(selectedFile.path).toLowerCase() == '.alb') {
+        if (!await BackupBundleService.verifyBundle(selectedFile)) return false;
         await BackupBundleService.restoreBundle(selectedFile);
       } else {
         await AppDBHelper.instance.restoreDatabase(selectedFile);
