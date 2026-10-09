@@ -1219,9 +1219,11 @@ class AutoBackupService {
     // SAF returns content:// URIs, not filesystem paths. Keep the persisted
     // grant and never pass a document URI to Directory/File.
     if (_isSafFolder(selected)) {
-      // Preserve the internal backup path even if an SD grant was revoked.
-      // performBackup will record the internal success and report the SD failure
-      // separately, instead of preventing all backups because one target failed.
+      // Verify the persisted grant in the background. A revoked grant must not
+      // prevent the independent internal backup from being created.
+      if (!await _isValidSafFolder(selected)) {
+        debugPrint('صلاحية SD غير موجودة أو غير مستمرة؛ ستُحفظ النسخة الداخلية وتُسجّل مشكلة الوجهة الخارجية.');
+      }
       return selected;
     }
     if (selected.isNotEmpty &&
