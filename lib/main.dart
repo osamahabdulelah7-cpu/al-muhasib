@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:file_picker/file_picker.dart';
+import 'package:saf/saf.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:excel/excel.dart' as excel_lib;
 import 'package:http/http.dart' as http;
@@ -1097,22 +1098,89 @@ class AutoBackupService {
     return dir.path;
   }
 
+  static bool _isSafFolder(String value) => value.startsWith('saf:');
+
+  static String _safUri(String value) => value.substring(4);
+
+  static Future<bool> _isValidSafFolder(String value) async {
+    if (!_isSafFolder(value)) return false;
+    try {
+      final permissions = await Saf().persistedPermissions();
+      return permissions.any((grant) =>
+          grant.uri == _safUri(value) &&
+          (grant.isReadPermission || grant.isWritePermission));
+    } catch (e) {
+      debugPrint('تعذر التحقق من صلاحية مجلد SD: $e');
+      return false;
+    }
+  }
+
   static Future<String> _resolveBackupFolder(String? selectedFolder) async {
     final selected = selectedFolder?.trim() ?? '';
-
-    // المسار المحفوظ يجب أن يكون مساراً مطلقاً؛ المسارات النسبية القديمة
-    // قد تتحول إلى مسارات خاطئة مثل /المحاسب/... داخل عملية الخلفية.
+    // SAF returns content:// URIs, not filesystem paths. Keep the persisted
+    // grant and never pass a document URI to Directory/File.
+    if (_isSafFolder(selected)) {
+      if (await _isValidSafFolder(selected)) return selected;
+      throw Exception('صلاحية بطاقة SD غير متاحة. أعد اختيار مجلد النسخ من بطاقة SD.');
+    }
     if (selected.isNotEmpty &&
         p.isAbsolute(selected) &&
         await _isWritableDirectory(selected)) {
       return selected;
     }
-
     final fallback = await _defaultAutomaticBackupFolder();
-    if (selected != fallback) {
-      await saveSettings(folderPath: fallback);
-    }
+    if (selected != fallback) await saveSettings(folderPath: fallback);
     return fallback;
+  }
+
+  static Future<void> _writeVerifiedSafBackup(
+      File sourceFile, String folderSetting) async {
+    final saf = Saf();
+    final folderUri = _safUri(folderSetting);
+    final fileName = p.basename(sourceFile.path);
+    final created = await saf.writeFileStream(
+      folderUri,
+      fileName,
+      'application/octet-stream',
+      sourceFile.openRead(),
+      overwrite: false,
+    );
+    File? verificationCopy;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      verificationCopy = File(p.join(tempDir.path,
+          'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
+      await saf.copyToLocalFile(created.uri, verificationCopy.path);
+      if (!await BackupBundleService.verifyBundle(verificationCopy)) {
+        throw Exception('فشل التحقق من النسخة بعد كتابتها على بطاقة SD');
+      }
+    } catch (_) {
+      try { await saf.delete(created.uri); } catch (_) {}
+      rethrow;
+    } finally {
+      if (verificationCopy != null) {
+        try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
+      }
+    }
+    // Only verified new copies may trigger retention.
+    await _cleanOldSafBackups(folderUri);
+  }
+
+  static Future<void> _cleanOldSafBackups(String folderUri) async {
+    try {
+      final entries = await Saf().list(folderUri);
+      final backups = entries.where((entry) =>
+          entry.name.startsWith('al_muhasib_') &&
+          p.extension(entry.name).toLowerCase() == '.alb').toList()
+        ..sort((a, b) => b.name.compareTo(a.name));
+      for (final old in backups.skip(_maxLocalBackups)) {
+        try { await Saf().delete(old.uri); } catch (e) {
+          debugPrint('تعذر حذف نسخة SD قديمة ${old.name}: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('تعذر تنظيف النسخ القديمة على SD: $e');
+    }
   }
 
   static Future<String?> performScheduledBackup() async {
@@ -1325,7 +1393,10 @@ class AutoBackupService {
         throw Exception('فشل التحقق من سلامة النسخة الداخلية');
       }
       final selected = folderPath.trim();
-      if (selected.isNotEmpty && p.normalize(selected) != p.normalize(internalDir.path)) {
+      if (selected.isNotEmpty && _isSafFolder(selected)) {
+        await _writeVerifiedSafBackup(internalFile, selected);
+      } else if (selected.isNotEmpty &&
+          p.normalize(selected) != p.normalize(internalDir.path)) {
         final targetDir = Directory(selected);
         if (!await _isWritableDirectory(targetDir.path)) {
           throw Exception('تم حفظ النسخة الداخلية، لكن المجلد المختار غير قابل للكتابة. أعد اختيار المجلد.');
@@ -1345,7 +1416,8 @@ class AutoBackupService {
           lastDbModified: lastModified,
           dbFingerprint: await _getDatabaseFingerprint());
       await _cleanOldLocalBackups(internalDir.path);
-      if (selected.isNotEmpty && p.normalize(selected) != p.normalize(internalDir.path)) {
+      if (selected.isNotEmpty && !_isSafFolder(selected) &&
+          p.normalize(selected) != p.normalize(internalDir.path)) {
         await _cleanOldLocalBackups(selected);
       }
       return null;
@@ -4787,17 +4859,26 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
 
   Future<bool> _pickFolder() async {
     try {
-      String? dir = await FilePicker.platform.getDirectoryPath();
-      if (dir == null) return false;
-      await AutoBackupService.saveSettings(folderPath: dir);
-      setState(() => _folderPath = dir);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('✅ تم تحديد المجلد'),
-            backgroundColor: AppColors.green));
-      }
+      final selected = await Saf().pickDirectory(
+        writePermission: true,
+        persistablePermission: true,
+      );
+      if (selected == null) return false;
+      final setting = 'saf:${selected.uri}';
+      await AutoBackupService.saveSettings(folderPath: setting);
+      if (!mounted) return true;
+      setState(() => _folderPath = setting);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ تم منح صلاحية مستمرة لمجلد النسخ المحدد'),
+          backgroundColor: AppColors.green));
       return true;
     } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('تعذر تحديد مجلد بطاقة SD: $e'),
+          backgroundColor: AppColors.red,
+        ));
+      }
       return false;
     }
   }
@@ -4892,21 +4973,23 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     try {
       // Avoid Android document-provider failures from FileType.custom filters.
       // Pick first, then validate the extension and bundle before restoring.
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: false,
-        withData: false,
+      final selected = await Saf().pickFile(
+        mimeTypes: ['application/octet-stream', 'application/zip'],
+        persistablePermission: false,
       );
-      if (picked == null || picked.files.isEmpty) return;
-      final selected = picked.files.single;
-      final path = selected.path;
-      if (path == null || path.isEmpty) {
-        throw Exception('تعذر الوصول إلى الملف المختار. اختر ملفاً محفوظاً على الجهاز.');
-      }
+      if (selected == null) return;
       if (p.extension(selected.name).toLowerCase() != '.alb') {
         throw Exception('اختر ملف نسخة احتياطية بامتداد .alb');
       }
-      await _restoreLocalBackupFile(File(path));
+      final tempDir = await getTemporaryDirectory();
+      final localCopy = File(p.join(tempDir.path,
+          'restore_${DateTime.now().microsecondsSinceEpoch}_${p.basename(selected.name)}'));
+      await Saf().copyToLocalFile(selected.uri, localCopy.path);
+      try {
+        await _restoreLocalBackupFile(localCopy);
+      } finally {
+        try { if (await localCopy.exists()) await localCopy.delete(); } catch (_) {}
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
