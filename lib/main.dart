@@ -1448,10 +1448,15 @@ class AutoBackupService {
   }
 
   static Future<String?> runBackupNow() async {
-    final settings = await getSettings();
-    final folderPath =
-        await _resolveBackupFolder(settings['folderPath'] as String?);
-    return await performBackup(folderPath);
+    try {
+      final settings = await getSettings();
+      final folderPath =
+          await _resolveBackupFolder(settings['folderPath'] as String?);
+      return await performBackup(folderPath);
+    } catch (e, st) {
+      debugPrint('فشل تشغيل النسخ اليدوي: $e\n$st');
+      return 'تعذر تشغيل النسخ الاحتياطي: $e';
+    }
   }
 
   static Future<String?> runDriveBackupNow() async {
