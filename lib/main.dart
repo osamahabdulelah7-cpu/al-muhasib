@@ -2710,15 +2710,29 @@ class AppAccountProvider extends ChangeNotifier {
 
   Future<bool> importBackupFromFile(File selectedFile) async {
     try {
-      if (p.extension(selectedFile.path).toLowerCase() == '.alb') {
-        if (!await BackupBundleService.verifyBundle(selectedFile)) return false;
+      final isBundle = p.extension(selectedFile.path).toLowerCase() == '.alb';
+      if (isBundle && !await BackupBundleService.verifyBundle(selectedFile)) {
+        // Reject damaged bundles before touching the current database.
+        return false;
+      }
+
+      // Preserve a verified rollback snapshot before any restore path,
+      // including Google Drive restores and legacy raw database imports.
+      final safetyError = await AutoBackupService.runInternalBackupNow();
+      if (safetyError != null) {
+        debugPrint('تعذر إنشاء نسخة أمان قبل الاستعادة: $safetyError');
+        return false;
+      }
+
+      if (isBundle) {
         await BackupBundleService.restoreBundle(selectedFile);
       } else {
         await AppDBHelper.instance.restoreDatabase(selectedFile);
       }
       await loadInitialData();
       return true;
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('فشل استيراد/استعادة النسخة: $e\n$st');
       return false;
     }
   }
