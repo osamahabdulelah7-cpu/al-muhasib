@@ -608,33 +608,51 @@ class BackupBundleService {
     final stamp = DateTime.now().microsecondsSinceEpoch;
     final stagedTarget = Directory(p.join(parent.path, 'app_data_restore_$stamp'));
     final safetyTarget = Directory(p.join(parent.path, 'app_data_pre_restore_$stamp'));
-
-    // جهّز ملفات الصور/البيانات المساندة قبل استبدال القاعدة.
-    if (source != null && await source.exists()) {
-      await _copyDirectory(source, stagedTarget);
-    }
+    var newTargetInstalled = false;
 
     try {
-      if (await target.exists()) await target.rename(safetyTarget.path);
-      await AppDBHelper.instance.restoreDatabase(dbFile);
+      // Stage every auxiliary file before touching the live database or files.
+      if (source != null && await source.exists()) {
+        await _copyDirectory(source, stagedTarget);
+      }
+
+      if (await target.exists()) {
+        await target.rename(safetyTarget.path);
+      }
       if (await stagedTarget.exists()) {
         await stagedTarget.rename(target.path);
       } else {
         await Directory(target.path).create(recursive: true);
       }
-      if (await safetyTarget.exists()) await safetyTarget.delete(recursive: true);
+      newTargetInstalled = true;
+
+      // The database restore performs its own staged validation and rollback.
+      // Install app_data first so any database failure can roll the whole restore back.
+      await AppDBHelper.instance.restoreDatabase(dbFile);
+
+      if (await safetyTarget.exists()) {
+        try {
+          await safetyTarget.delete(recursive: true);
+        } catch (cleanupError) {
+          // Cleanup must not turn a successful restore into a reported failure.
+          debugPrint('تعذر حذف ملفات app_data القديمة بعد الاستعادة: $cleanupError');
+        }
+      }
     } catch (e) {
       if (await stagedTarget.exists()) {
         try { await stagedTarget.delete(recursive: true); } catch (_) {}
       }
-      // Roll back the app_data tree even if the newly restored target already
-      // exists; the previous condition missed that partial-restore case.
       if (await safetyTarget.exists()) {
         try {
           if (await target.exists()) await target.delete(recursive: true);
           await safetyTarget.rename(target.path);
         } catch (rollbackError) {
           debugPrint('تعذر التراجع عن استعادة ملفات app_data: $rollbackError');
+        }
+      } else if (newTargetInstalled && await target.exists()) {
+        // There was no previous app_data tree to restore.
+        try { await target.delete(recursive: true); } catch (rollbackError) {
+          debugPrint('تعذر إزالة ملفات app_data الجزئية: $rollbackError');
         }
       }
       rethrow;
