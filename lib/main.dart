@@ -1541,7 +1541,10 @@ class AutoBackupService {
   static Future<String?> performScheduledDriveBackup() async {
     final settings = await getSettings();
     if (settings['driveEnabled'] != true) return null;
-    if (!GoogleDriveService.isSignedIn) return null;
+    if (!GoogleDriveService.isSignedIn &&
+        !await GoogleDriveService.trySilentSignIn()) {
+      return 'تعذر تسجيل الدخول إلى Google في الخلفية. افتح التطبيق وسجّل الدخول مجدداً.';
+    }
 
     try {
       await AppDBHelper.instance.syncPersonalDataToDatabase();
