@@ -731,25 +731,49 @@ class GoogleDriveService {
   }
 
   static Future<String?> uploadBackup(File backupFile) async {
-    if (_driveApi == null) return 'الرجاء تسجيل الدخول أولاً';
-    try {
-      final now = DateTime.now();
-      final ext = p.extension(backupFile.path).toLowerCase();
-      final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
-      final fileName =
-          'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$safeExt';
-      final fileContent = await backupFile.readAsBytes();
-      final driveFile = drive.File()
-        ..name = fileName
-        ..parents = ['appDataFolder'];
-      final media = drive.Media(Stream.value(fileContent), fileContent.length,
-          contentType: 'application/octet-stream');
-      await _driveApi!.files.create(driveFile,
-          uploadMedia: media, $fields: 'id,name,size,createdTime');
-      return null;
-    } catch (e) {
-      return 'فشل الرفع: $e';
+    if (_driveApi == null) {
+      final signedIn = await trySilentSignIn();
+      if (!signedIn || _driveApi == null) return 'الرجاء تسجيل الدخول إلى Google مجدداً';
     }
+    if (!await backupFile.exists()) return 'ملف النسخة الاحتياطية غير موجود';
+    final now = DateTime.now();
+    final ext = p.extension(backupFile.path).toLowerCase();
+    final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
+    final fileName =
+        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}$safeExt';
+    final fileContent = await backupFile.readAsBytes();
+
+    // Retry transient DNS/network/server failures. A new Drive file name is used
+    // per operation, so retrying an interrupted upload may create a duplicate;
+    // old-backup retention removes excess copies after a confirmed upload.
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (_driveApi == null) {
+          final signedIn = await trySilentSignIn();
+          if (!signedIn || _driveApi == null) {
+            throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
+          }
+        }
+        final driveFile = drive.File()
+          ..name = fileName
+          ..parents = ['appDataFolder'];
+        final media = drive.Media(Stream.value(fileContent), fileContent.length,
+            contentType: 'application/octet-stream');
+        await _driveApi!.files.create(driveFile,
+            uploadMedia: media, $fields: 'id,name,size,createdTime')
+            .timeout(const Duration(seconds: 45));
+        return null;
+      } catch (e) {
+        lastError = e;
+        if (attempt < 2) {
+          await Future.delayed(Duration(seconds: 2 << attempt));
+          // Refresh authentication before retrying a failed request.
+          await trySilentSignIn();
+        }
+      }
+    }
+    return 'فشل الرفع إلى Google Drive بعد 3 محاولات. تحقق من الإنترنت وDNS، ثم افتح التطبيق وأعد تسجيل الدخول. التفاصيل: $lastError';
   }
 
   static Future<String?> uploadBackupPair(File bundle, File dbFile) async {
