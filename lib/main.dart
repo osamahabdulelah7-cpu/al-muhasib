@@ -222,6 +222,27 @@ class NotificationService {
       debugPrint('تعذر عرض الإشعار (لن تتعطل مهمة النسخ): $e');
     }
   }
+
+  static Future<void> showTemporaryFailure(String title, String body) async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+      );
+      await _plugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار فشل النسخ؛ ستستمر مهام الخلفية: $e');
+    }
+  }
 }
 
 // ====================================================
@@ -267,6 +288,10 @@ void callbackDispatcher() {
       if (localError != null) {
         shouldRetry = true;
         debugPrint('❌ فشل النسخ المحلي بالخلفية: $localError');
+        await NotificationService.showTemporaryFailure(
+          'تعذر إكمال النسخ المحلي',
+          localError,
+        );
       } else {
         debugPrint('✅ فحص النسخ المحلي بالخلفية اكتمل');
       }
@@ -279,6 +304,10 @@ void callbackDispatcher() {
           if (driveError != null) {
             shouldRetry = true;
             debugPrint('❌ فشل نسخ Drive بالخلفية: $driveError');
+            await NotificationService.showTemporaryFailure(
+              'تعذر النسخ إلى Google Drive',
+              driveError,
+            );
           } else {
             debugPrint('☁️ فحص نسخ Drive بالخلفية اكتمل');
           }
