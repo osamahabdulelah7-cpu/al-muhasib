@@ -915,31 +915,50 @@ class GoogleDriveService {
   }
 
   static Future<List<Map<String, dynamic>>> listBackups() async {
-    if (_driveApi == null) {
+    _lastListBackupsError = null;
+    if (_driveApi == null && !await trySilentSignIn()) {
       _lastListBackupsError = 'جلسة Google غير متاحة. سجّل الدخول مجدداً.';
       return [];
     }
-    try {
-      final result = await _driveApi!.files.list(
-        spaces: 'appDataFolder',
-        q: "name contains 'al_muhasib_'",
-        orderBy: 'createdTime desc',
-        $fields: 'files(id,name,size,createdTime)',
-      ).timeout(const Duration(seconds: 30));
-      _lastListBackupsError = null;
-      return (result.files ?? [])
-          .map((f) => {
-                'id': f.id ?? '',
-                'name': f.name ?? '',
-                'size': f.size ?? '0',
-                'createdTime': f.createdTime?.toIso8601String() ?? '',
-              })
-          .toList();
-    } catch (e) {
-      _lastListBackupsError = 'تعذر الاتصال بـ Google Drive. تحقق من الإنترنت ثم أعد المحاولة. التفاصيل: $e';
-      debugPrint(_lastListBackupsError);
-      return [];
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (_driveApi == null) {
+          _lastListBackupsError = 'جلسة Google غير متاحة. سجّل الدخول مجدداً.';
+          return [];
+        }
+        final result = await _driveApi!.files.list(
+          spaces: 'appDataFolder',
+          q: "name contains 'al_muhasib_'",
+          orderBy: 'createdTime desc',
+          $fields: 'files(id,name,size,createdTime)',
+        ).timeout(const Duration(seconds: 30));
+        _lastListBackupsError = null;
+        return (result.files ?? [])
+            .map((f) => {
+                  'id': f.id ?? '',
+                  'name': f.name ?? '',
+                  'size': f.size ?? '0',
+                  'createdTime': f.createdTime?.toIso8601String() ?? '',
+                })
+            .toList();
+      } catch (e) {
+        final textError = e.toString();
+        final looksLikeExpiredSession = textError.contains('401') ||
+            textError.toLowerCase().contains('unauthorized') ||
+            textError.toLowerCase().contains('invalid credentials');
+        if (attempt == 0 && looksLikeExpiredSession &&
+            await trySilentSignIn()) {
+          continue;
+        }
+        _lastListBackupsError =
+            'تعذر الاتصال بـ Google Drive. تحقق من الإنترنت ثم أعد المحاولة. التفاصيل: $e';
+        debugPrint(_lastListBackupsError);
+        return [];
+      }
     }
+    _lastListBackupsError = 'تعذر الاتصال بـ Google Drive.';
+    return [];
   }
 
   static Future<File?> downloadBackup(String fileId, String fileName) async {
