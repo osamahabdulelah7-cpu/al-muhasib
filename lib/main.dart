@@ -1410,6 +1410,9 @@ class AutoBackupService {
         try { await internalFile.delete(); } catch (_) {}
         throw Exception('فشل التحقق من سلامة النسخة الداخلية');
       }
+      // The internal destination is independently verified. Enforce its
+      // retention even if an optional SD-card destination is unavailable.
+      await _cleanOldLocalBackups(internalDir.path);
       final selected = folderPath.trim();
       if (selected.isNotEmpty && _isSafFolder(selected)) {
         await _writeVerifiedSafBackup(internalFile, selected);
@@ -1433,7 +1436,6 @@ class AutoBackupService {
           lastBackup: now.toIso8601String(),
           lastDbModified: lastModified,
           dbFingerprint: await _getDatabaseFingerprint());
-      await _cleanOldLocalBackups(internalDir.path);
       if (selected.isNotEmpty && !_isSafFolder(selected) &&
           p.normalize(selected) != p.normalize(internalDir.path)) {
         await _cleanOldLocalBackups(selected);
