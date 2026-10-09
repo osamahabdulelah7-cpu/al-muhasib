@@ -6,16 +6,17 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<File> _makeBundle({bool corruptPayload = false}) async {
+Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false}) async {
   final database = <int>[1, 2, 3, 4, 5, 6];
   final payload = <int>[10, 20, 30, 40];
+  final payloadPath = unsafePath ? '../outside.bin' : 'app_data/example.bin';
   final archive = Archive()
     ..addFile(ArchiveFile(
       'database/al_muhasib_final_v6.db',
       database.length,
       database,
     ))
-    ..addFile(ArchiveFile('app_data/example.bin', payload.length, payload));
+    ..addFile(ArchiveFile(payloadPath, payload.length, payload));
 
   final manifest = <String, dynamic>{
     'format': 'al_muhasib_backup',
@@ -31,7 +32,7 @@ Future<File> _makeBundle({bool corruptPayload = false}) async {
         'sha256': sha256.convert(database).toString(),
       },
       {
-        'path': 'app_data/example.bin',
+        'path': payloadPath,
         'size': payload.length,
         'sha256': sha256.convert(corruptPayload ? <int>[99, 20, 30, 40] : payload).toString(),
       },
@@ -88,6 +89,15 @@ void main() {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
       } finally {
         await dir.delete(recursive: true);
+      }
+    });
+
+    test('rejects a bundle containing an unsafe relative path', () async {
+      final file = await _makeBundle(unsafePath: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
       }
     });
   });
