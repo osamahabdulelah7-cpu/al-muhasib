@@ -394,9 +394,6 @@ class ImageStorageService {
     } catch (_) {
       return null;
     }
-    } catch (e) {
-      debugPrint('تعذر عرض الإشعار (لن تتعطل مهمة النسخ): $e');
-    }
   }
 
   static Future<void> deleteRelative(String? relativePath) async {
