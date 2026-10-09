@@ -1314,6 +1314,7 @@ class AutoBackupService {
     for (final entry in entries.where((e) => !e.isDir && e.name == fileName)) {
       var copiedForVerification = false;
       var validExistingCopy = false;
+      Object? readError;
       try {
         await saf.copyToLocalFile(entry.uri, verificationCopy.path);
         copiedForVerification = true;
@@ -1323,6 +1324,7 @@ class AutoBackupService {
           return;
         }
       } catch (e) {
+        readError = e;
         debugPrint('تعذر التحقق من النسخة الموجودة على SD: $e');
       } finally {
         try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
@@ -1332,7 +1334,7 @@ class AutoBackupService {
       if (copiedForVerification && !validExistingCopy) {
         try { await saf.delete(entry.uri); } catch (_) {}
       } else if (!copiedForVerification) {
-        rethrow;
+        throw Exception('تعذر قراءة النسخة الموجودة على بطاقة SD؛ لم يتم حذفها: $readError');
       }
     }
 
