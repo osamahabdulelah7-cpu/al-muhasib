@@ -1557,8 +1557,9 @@ class AutoBackupService {
       // This is a daily schedule, not a change-only sync. Create a verified
       // snapshot even when the database fingerprint matches yesterday.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
-      final folderPath = await _resolveBackupFolder(selectedFolder);
-      final error = await performBackup(folderPath);
+      // Let performBackup commit and verify the internal snapshot first.
+      // A stale SD permission must not prevent the internal daily backup.
+      final error = await performBackup(selectedFolder);
       if (error == null) {
         await NotificationService.showTemporarySuccess(
             '📁 تم النسخ الاحتياطي',
@@ -1736,8 +1737,9 @@ class AutoBackupService {
   static Future<String?> runBackupNow() async {
     try {
       final settings = await getSettings();
-      final folderPath =
-          await _resolveBackupFolder(settings['folderPath'] as String?);
+      final folderPath = (settings['folderPath'] as String? ?? '').trim();
+      // Destination failures are handled after the internal backup is safely
+      // created and verified, rather than aborting the entire operation.
       return await performBackup(folderPath);
     } catch (e, st) {
       debugPrint('فشل تشغيل النسخ اليدوي: $e\n$st');
