@@ -43,6 +43,9 @@ dependencies:
   # حزمة المهام الخلفية
   workmanager: ^0.10.10
 
+  # Android Storage Access Framework: persistent SD-card permissions
+  saf: ^2.1.2
+
   # الإشعارات
   flutter_local_notifications: ^17.2.2
 
