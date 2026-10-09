@@ -627,8 +627,15 @@ class BackupBundleService {
       if (await stagedTarget.exists()) {
         try { await stagedTarget.delete(recursive: true); } catch (_) {}
       }
-      if (!await target.exists() && await safetyTarget.exists()) {
-        await safetyTarget.rename(target.path);
+      // Roll back the app_data tree even if the newly restored target already
+      // exists; the previous condition missed that partial-restore case.
+      if (await safetyTarget.exists()) {
+        try {
+          if (await target.exists()) await target.delete(recursive: true);
+          await safetyTarget.rename(target.path);
+        } catch (rollbackError) {
+          debugPrint('تعذر التراجع عن استعادة ملفات app_data: $rollbackError');
+        }
       }
       rethrow;
     }
