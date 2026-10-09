@@ -454,7 +454,7 @@ class BackupBundleService {
     final outDir = outputDirectory ?? await getTemporaryDirectory();
     if (!await outDir.exists()) await outDir.create(recursive: true);
     final now = DateTime.now();
-    final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}.alb';
+    final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
     final file = File(p.join(outDir.path, name));
     await file.writeAsBytes(encoded, flush: true);
     return file;
@@ -1239,7 +1239,6 @@ class AutoBackupService {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
       final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
-      final folderPath = await _resolveBackupFolder(selectedFolder);
 
       final now = DateTime.now();
       final todayTarget = DateTime(now.year, now.month, now.day,
@@ -1255,9 +1254,10 @@ class AutoBackupService {
           lastBackup == null || lastBackup.isBefore(todayTarget);
 
       if (!shouldBackup) return null;
+      // This is a daily schedule, not a change-only sync. Create a verified
+      // snapshot even when the database fingerprint matches yesterday.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
-      if (!await _hasDataChanged()) return null;
-
+      final folderPath = await _resolveBackupFolder(selectedFolder);
       final error = await performBackup(folderPath);
       if (error == null) {
         await NotificationService.showTemporarySuccess(
@@ -1294,9 +1294,8 @@ class AutoBackupService {
           lastBackup == null || lastBackup.isBefore(todayTarget);
 
       if (!shouldBackup) return null;
+      // Daily Drive backups must not silently skip days with unchanged data.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
-      if (!await _hasDataChangedForDrive()) return null;
-
       final bundle = await BackupBundleService.createBundle();
       if (!await BackupBundleService.verifyBundle(bundle)) {
         try { await bundle.delete(); } catch (_) {}
