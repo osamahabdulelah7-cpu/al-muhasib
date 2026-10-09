@@ -1304,29 +1304,48 @@ class AutoBackupService {
     final saf = Saf();
     final folderUri = _safUri(folderSetting);
     final fileName = p.basename(sourceFile.path);
-    final created = await saf.writeFileStream(
-      folderUri,
-      fileName,
-      'application/octet-stream',
-      sourceFile.openRead(),
-      overwrite: false,
-    );
-    File? verificationCopy;
+    final tempDir = await getTemporaryDirectory();
+    final verificationCopy = File(p.join(tempDir.path,
+        'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
+
+    // A prior interrupted write can leave a partial document with the same
+    // name. Reuse it only if its contents verify; otherwise remove it first.
+    final entries = await saf.list(folderUri);
+    for (final entry in entries.where((e) => !e.isDir && e.name == fileName)) {
+      try {
+        await saf.copyToLocalFile(entry.uri, verificationCopy.path);
+        if (await BackupBundleService.verifyBundle(verificationCopy)) {
+          await _cleanOldSafBackups(folderUri);
+          return;
+        }
+      } catch (e) {
+        debugPrint('النسخة الموجودة على SD غير قابلة للتحقق: $e');
+      } finally {
+        try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
+      }
+      try { await saf.delete(entry.uri); } catch (_) {}
+    }
+
+    SafDocumentFile? created;
     try {
-      final tempDir = await getTemporaryDirectory();
-      verificationCopy = File(p.join(tempDir.path,
-          'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
+      created = await saf.writeFileStream(
+        folderUri,
+        fileName,
+        'application/octet-stream',
+        sourceFile.openRead(),
+        overwrite: false,
+      );
       await saf.copyToLocalFile(created.uri, verificationCopy.path);
       if (!await BackupBundleService.verifyBundle(verificationCopy)) {
         throw Exception('فشل التحقق من النسخة بعد كتابتها على بطاقة SD');
       }
     } catch (_) {
-      try { await saf.delete(created.uri); } catch (_) {}
+      if (created != null) {
+        try { await saf.delete(created.uri); } catch (_) {}
+      }
       rethrow;
     } finally {
-      if (verificationCopy != null) {
-        try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
-      }
+      try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
     }
     // Only verified new copies may trigger retention.
     await _cleanOldSafBackups(folderUri);
