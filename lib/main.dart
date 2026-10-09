@@ -5442,17 +5442,19 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           Text('تحذير'),
         ]),
         content: const Text(
-            'سيتم استبدال البيانات الحالية بالنسخة المحددة.\n\nهل أنت متأكد؟',
-            style: TextStyle(height: 1.5)),
+          'سيتم استبدال البيانات الحالية بالنسخة المحددة.\n\nهل أنت متأكد؟',
+          style: TextStyle(height: 1.5),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child:
-                  const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.red,
-                foregroundColor: Colors.white),
+              backgroundColor: AppColors.red,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('استعادة'),
           ),
@@ -5460,30 +5462,54 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(
-            child: CircularProgressIndicator(color: AppColors.drive)));
-    final file = await GoogleDriveService.downloadBackup(
-        backup['id'] as String, backup['name'] as String);
-    if (!mounted) return;
-    if (file == null) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('❌ فشل التنزيل'), backgroundColor: AppColors.red));
-      return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: AppColors.drive),
+      ),
+    );
+    File? file;
+    var message = '❌ فشل الاستعادة';
+    var success = false;
+    try {
+      file = await GoogleDriveService.downloadBackup(
+        backup['id'] as String,
+        backup['name'] as String,
+      );
+      if (file == null) throw Exception('فشل تنزيل النسخة من Google Drive');
+
+      if (p.extension(file.path).toLowerCase() == '.alb' &&
+          !await BackupBundleService.verifyBundle(file)) {
+        throw Exception('النسخة الموجودة على Google Drive تالفة؛ لم يتم تغيير البيانات.');
+      }
+
+      final safetyError = await AutoBackupService.runInternalBackupNow();
+      if (safetyError != null) {
+        throw Exception('تعذر إنشاء نسخة أمان قبل الاستعادة: $safetyError');
+      }
+
+      final provider = Provider.of<AppAccountProvider>(context, listen: false);
+      success = await provider.importBackupFromFile(file);
+      if (!success) throw Exception('رفض التطبيق النسخة أو فشل التحقق منها');
+      message = '✅ تمت الاستعادة من Drive';
+    } catch (e, st) {
+      debugPrint('فشل الاستعادة من Drive: $e\n$st');
+      message = '❌ فشل الاستعادة: $e';
+    } finally {
+      if (file != null) {
+        try { if (await file.exists()) await file.delete(); } catch (_) {}
+      }
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(message),
+          backgroundColor: success ? AppColors.green : AppColors.red,
+        ));
+        if (success) await _loadSettings();
+      }
     }
-    final provider = Provider.of<AppAccountProvider>(context, listen: false);
-    final success = await provider.importBackupFromFile(file);
-    if (!mounted) return;
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content:
-          Text(success ? '✅ تمت الاستعادة من Drive' : '❌ فشل الاستعادة'),
-      backgroundColor: success ? AppColors.green : AppColors.red,
-    ));
-    if (success) await _loadSettings();
   }
 
   String _formatDate(String s) {
