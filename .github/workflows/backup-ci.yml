@@ -1,4 +1,5 @@
 name: Backup CI
+# Validates backup integrity, Dart analysis, tests, and an unsigned Android build.
 
 on:
   push:
