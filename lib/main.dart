@@ -298,10 +298,15 @@ void callbackDispatcher() {
       if (localError != null) {
         shouldRetry = true;
         debugPrint('❌ فشل النسخ المحلي بالخلفية: $localError');
-        await NotificationService.showTemporaryFailure(
-          'تعذر إكمال النسخ المحلي',
-          localError,
-        );
+        try {
+          await NotificationService.showTemporaryFailure(
+            'تعذر إكمال النسخ المحلي',
+            localError,
+          );
+        } catch (notificationError) {
+          // Notification failures must never abort backup execution/retry.
+          debugPrint('تعذر عرض إشعار فشل النسخ المحلي: $notificationError');
+        }
       } else {
         debugPrint('✅ فحص النسخ المحلي بالخلفية اكتمل');
       }
@@ -314,10 +319,14 @@ void callbackDispatcher() {
           if (driveError != null) {
             shouldRetry = true;
             debugPrint('❌ فشل نسخ Drive بالخلفية: $driveError');
-            await NotificationService.showTemporaryFailure(
-              'تعذر النسخ إلى Google Drive',
-              driveError,
-            );
+            try {
+              await NotificationService.showTemporaryFailure(
+                'تعذر النسخ إلى Google Drive',
+                driveError,
+              );
+            } catch (notificationError) {
+              debugPrint('تعذر عرض إشعار فشل Drive: $notificationError');
+            }
           } else {
             debugPrint('☁️ فحص نسخ Drive بالخلفية اكتمل');
           }
@@ -1300,6 +1309,7 @@ class AutoBackupService {
         backoffPolicy: BackoffPolicy.linear,
         backoffPolicyDelay: const Duration(minutes: 15),
       );
+      // Only throttle after WorkManager accepts the request.
       await prefs.setInt(_prefLastExitEnqueuedAt, now);
       debugPrint('تمت جدولة نسخة احتياطية عند خروج الواجهة');
     } catch (e, st) {
