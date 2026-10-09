@@ -201,21 +201,25 @@ class NotificationService {
   }
 
   static Future<void> showTemporarySuccess(String title, String body) async {
-    const androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDesc,
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: 'ic_notification',
-    );
-    const details = NotificationDetails(android: androidDetails);
-    await _plugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title,
-      body,
-      details,
-    );
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+      );
+      const details = NotificationDetails(android: androidDetails);
+      await _plugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        details,
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض الإشعار (لن تتعطل مهمة النسخ): $e');
+    }
   }
 }
 
