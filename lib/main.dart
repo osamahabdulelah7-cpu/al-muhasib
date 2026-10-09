@@ -640,7 +640,10 @@ class BackupBundleService {
       final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
       final byName = <String, ArchiveFile>{};
       for (final entry in archive) {
-        if (entry.isFile) byName[entry.name] = entry;
+        if (!entry.isFile) continue;
+        // Duplicate ZIP paths make the effective payload ambiguous.
+        if (byName.containsKey(entry.name)) return false;
+        byName[entry.name] = entry;
       }
       final manifestEntry = byName['manifest.json'];
       final databaseEntry = byName['database/al_muhasib_final_v6.db'];
@@ -651,15 +654,27 @@ class BackupBundleService {
       if (crypto.sha256.convert(dbBytes).toString() != manifest['databaseSha256']) return false;
       final declared = manifest['files'];
       if (declared is! List) return false;
+      var declaresDatabase = false;
       for (final item in declared) {
         if (item is! Map) return false;
         final name = item['path']?.toString() ?? '';
+        final segments = name.split('/');
+        if (name.isEmpty ||
+            p.isAbsolute(name) ||
+            name.contains('\\') ||
+            segments.any((segment) => segment == '..' || segment.isEmpty)) {
+          return false;
+        }
+        if (name == 'database/al_muhasib_final_v6.db') declaresDatabase = true;
         final entry = byName[name];
         if (entry == null) return false;
         final bytes = List<int>.from(entry.content as List<int>);
         if (bytes.length.toString() != item['size']?.toString() ||
-            crypto.sha256.convert(bytes).toString() != item['sha256']?.toString()) return false;
+            crypto.sha256.convert(bytes).toString() != item['sha256']?.toString()) {
+          return false;
+        }
       }
+      if (!declaresDatabase) return false;
       return true;
     } catch (e) {
       debugPrint('فشل التحقق من النسخة الاحتياطية: $e');
