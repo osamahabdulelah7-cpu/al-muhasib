@@ -1250,6 +1250,7 @@ class AutoBackupService {
     try {
       final entries = await Saf().list(folderUri);
       final backups = entries.where((entry) =>
+          !entry.isDir &&
           entry.name.startsWith('al_muhasib_') &&
           p.extension(entry.name).toLowerCase() == '.alb').toList()
         ..sort((a, b) => b.name.compareTo(a.name));
