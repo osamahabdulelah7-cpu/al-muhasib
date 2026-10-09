@@ -1108,7 +1108,7 @@ class AutoBackupService {
       final permissions = await Saf().persistedPermissions();
       return permissions.any((grant) =>
           grant.uri == _safUri(value) &&
-          (grant.isReadPermission || grant.isWritePermission));
+          (grant.read && grant.write));
     } catch (e) {
       debugPrint('تعذر التحقق من صلاحية مجلد SD: $e');
       return false;
@@ -4974,7 +4974,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       // Avoid Android document-provider failures from FileType.custom filters.
       // Pick first, then validate the extension and bundle before restoring.
       final selected = await Saf().pickFile(
-        mimeTypes: ['application/octet-stream', 'application/zip'],
+        mimeTypes: ['*/*'],
         persistablePermission: false,
       );
       if (selected == null) return;
