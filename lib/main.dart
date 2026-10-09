@@ -5489,8 +5489,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       if (safetyError != null) throw Exception('تعذر إنشاء نسخة أمان: ' + safetyError);
       await BackupBundleService.restoreBundle(file);
       if (mounted) {
-        await Provider.of<AppAccountProvider>(context, listen: false)
-            .loadInitialData();
+        try {
+          await Provider.of<AppAccountProvider>(context, listen: false)
+              .loadInitialData();
+        } catch (refreshError) {
+          debugPrint('تمت الاستعادة لكن تعذر تحديث واجهة البيانات: $refreshError');
+        }
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('تمت الاستعادة بنجاح'),
