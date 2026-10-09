@@ -262,14 +262,24 @@ void callbackDispatcher() {
       // task runs independently of the daily schedule and survives process death.
       if (task == AutoBackupService.workManagerExitTaskName) {
         final settings = await AutoBackupService.getSettings();
-        if (settings['enabled'] == true) {
+        final now = DateTime.now();
+        final lastLocal = DateTime.tryParse(settings['lastBackup'] as String? ?? '');
+        final localAlreadyDone = lastLocal != null &&
+            now.difference(lastLocal).inHours < 6 &&
+            !now.isBefore(lastLocal);
+        if (settings['enabled'] == true && !localAlreadyDone) {
           final localError = await AutoBackupService.runBackupNow();
           if (localError != null) {
             shouldRetry = true;
             debugPrint('❌ فشل النسخ عند إغلاق الواجهة: $localError');
           }
         }
-        if (settings['driveEnabled'] == true) {
+
+        final lastDrive = DateTime.tryParse(settings['driveLastBackup'] as String? ?? '');
+        final driveAlreadyDone = lastDrive != null &&
+            now.difference(lastDrive).inHours < 6 &&
+            !now.isBefore(lastDrive);
+        if (settings['driveEnabled'] == true && !driveAlreadyDone) {
           if (await GoogleDriveService.trySilentSignIn()) {
             final driveError = await AutoBackupService.runDriveBackupNow();
             if (driveError != null) {
