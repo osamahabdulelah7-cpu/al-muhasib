@@ -2305,8 +2305,6 @@ class AppDBHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
     }
     if (oldVersion < 7) {
       await db.execute('''
