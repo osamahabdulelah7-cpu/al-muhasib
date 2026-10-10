@@ -2,13 +2,17 @@ name: Backup CI
 # Final validation for backup scheduling, Drive retry handling, SAF, restore, and retention.
 
 on:
-  push:
-    branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * *'
+
+# Push builds are handled by build.yml to avoid running the same full checks twice.
+# Keep PR, scheduled, and manual backup-focused validation.
+concurrency:
+  group: backup-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
