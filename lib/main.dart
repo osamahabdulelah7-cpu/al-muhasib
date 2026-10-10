@@ -1367,8 +1367,15 @@ class AutoBackupService {
     targets.sort();
     final permission = await Permission.scheduleExactAlarm.status;
     if (!permission.isGranted) {
-      debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ سيبقى WorkManager كخيار احتياطي');
-      return;
+      // Android 12+ may deny exact alarms by default. Request the special
+      // access while scheduling from the foreground; if still denied, keep
+      // WorkManager as a fallback and do not pretend the exact alarm is set.
+      final requested = await Permission.scheduleExactAlarm.request();
+      if (!requested.isGranted) {
+        await AndroidAlarmManager.cancel(_exactAlarmId);
+        debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ يلزم السماح بها من إعدادات Android');
+        return;
+      }
     }
 
     final scheduled = await AndroidAlarmManager.oneShotAt(
@@ -2129,11 +2136,10 @@ void main() {
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
       final settings = await AutoBackupService.getSettings();
-      if (settings['enabled'] == true) {
+      if (settings['enabled'] == true || settings['driveEnabled'] == true) {
+        // Both destinations share one scheduler and one exact alarm. Calling
+        // both methods here reschedules the same jobs twice at every startup.
         await AutoBackupService.scheduleDailyBackup();
-      }
-      if (settings['driveEnabled'] == true) {
-        await AutoBackupService.scheduleDriveBackup();
       }
     } catch (e, st) {
       debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
@@ -3303,9 +3309,8 @@ class _AlMuhasibAppState extends State<AlMuhasibApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      unawaited(AutoBackupService.scheduleBackupOnExit());
-    }
+    // Do not enqueue a second backup merely because the app is backgrounded.
+    // The configured-time alarm and WorkManager own the backup schedule.
   }
 
   @override
@@ -4072,10 +4077,8 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _autoBackupTimer?.cancel();
     _autoBackupTimer = null;
-    AutoBackupService.checkAndRunBackup();
-    if (GoogleDriveService.isSignedIn) {
-      AutoBackupService.checkAndRunDriveBackup();
-    }
+    // Disposing a screen is not a backup trigger. Running backups here races
+    // the minute timer, startup checks, WorkManager, and the exact alarm.
     _tabController?.dispose();
     searchController?.dispose();
     super.dispose();
