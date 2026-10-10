@@ -26,6 +26,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:image_picker/image_picker.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // ====================================================
@@ -249,6 +251,46 @@ class NotificationService {
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
 @pragma('vm:entry-point')
+@pragma('vm:entry-point')
+Future<void> exactBackupAlarmCallback() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  ui.DartPluginRegistrant.ensureInitialized();
+  try {
+    await NotificationService.initialize(requestPermission: false);
+    await AppDBHelper.instance.database;
+    final localError = await AutoBackupService.checkAndRunBackup();
+    if (localError != null) {
+      await NotificationService.showTemporaryFailure('تعذر إكمال النسخ المحلي', localError);
+    }
+    final settings = await AutoBackupService.getSettings();
+    if (settings['driveEnabled'] == true) {
+      if (await GoogleDriveService.trySilentSignIn()) {
+        final driveError = await AutoBackupService.checkAndRunDriveBackup();
+        if (driveError != null) {
+          await NotificationService.showTemporaryFailure('تعذر النسخ إلى Google Drive', driveError);
+        }
+      } else {
+        await NotificationService.showTemporaryFailure(
+          'تعذر النسخ إلى Google Drive',
+          'يلزم فتح التطبيق وتجديد تسجيل الدخول إلى Google.',
+        );
+      }
+    }
+  } catch (e, st) {
+    debugPrint('فشل المنبّه الدقيق للنسخ: $e\\n$st');
+    try {
+      await NotificationService.showTemporaryFailure('فشل النسخ الاحتياطي', '$e');
+    } catch (_) {}
+  } finally {
+    try {
+      await AutoBackupService._scheduleNextExactBackup();
+      await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
+    } catch (e) {
+      debugPrint('تعذر إعادة جدولة النسخ بعد المنبّه: $e');
+    }
+  }
+}
+
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -1121,6 +1163,7 @@ class AutoBackupService {
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
   static const String _workManagerTimedTaskName = 'al_muhasib_backup_at_time';
   static const String _workManagerTimedUniqueName = 'al_muhasib_backup_at_time_unique';
+  static const int _exactAlarmId = 7042026;
   static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
   static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
   static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
@@ -1286,7 +1329,62 @@ class AutoBackupService {
       backoffPolicyDelay: const Duration(minutes: 15),
     );
     await _scheduleNextTimedBackup(replacePending: true);
-    debugPrint('تم تسجيل النسخ الدوري وفحص موعد النسخ المحدد');
+    try { await _scheduleNextExactBackup(); } catch (e) { debugPrint('تعذر جدولة المنبّه الدقيق: $e'); }
+    debugPrint('تم تسجيل النسخ الدوري والمنبّه المحدد');
+  }
+
+  // Exact Android alarm complements WorkManager. It is used only when
+  // Android grants exact-alarm access; otherwise WorkManager remains fallback.
+  static Future<void> _scheduleNextExactBackup() async {
+    final settings = await getSettings();
+    final now = DateTime.now();
+    final targets = <DateTime>[];
+
+    void addTarget(bool enabled, int hour, int minute, String lastText) {
+      if (!enabled) return;
+      final target = DateTime(now.year, now.month, now.day, hour, minute);
+      final last = DateTime.tryParse(lastText);
+      final doneToday = last != null && !last.isBefore(target) && !last.isAfter(now);
+      if (now.isBefore(target)) {
+        targets.add(target);
+      } else if (!doneToday) {
+        targets.add(now.add(const Duration(minutes: 1)));
+      } else {
+        targets.add(target.add(const Duration(days: 1)));
+      }
+    }
+
+    addTarget(settings['enabled'] == true, settings['hour'] as int,
+        settings['minute'] as int, settings['lastBackup'] as String? ?? '');
+    addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
+        settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
+
+    if (targets.isEmpty) {
+      await AndroidAlarmManager.cancel(_exactAlarmId);
+      return;
+    }
+
+    targets.sort();
+    final permission = await Permission.scheduleExactAlarm.status;
+    if (!permission.isGranted) {
+      debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ سيبقى WorkManager كخيار احتياطي');
+      return;
+    }
+
+    final scheduled = await AndroidAlarmManager.oneShotAt(
+      targets.first,
+      _exactAlarmId,
+      exactBackupAlarmCallback,
+      exact: true,
+      wakeup: true,
+      allowWhileIdle: true,
+      rescheduleOnReboot: true,
+    );
+    if (!scheduled) {
+      debugPrint('تعذر تسجيل المنبّه الدقيق؛ سيبقى WorkManager كخيار احتياطي');
+    } else {
+      debugPrint('تم تسجيل منبّه النسخ عند ${targets.first}');
+    }
   }
 
   // Periodic work is best-effort. Add a one-off request aimed at the next
@@ -1379,6 +1477,7 @@ class AutoBackupService {
   static Future<void> cancelDailyBackup() async {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
     await NotificationService.cancelLocalNotification();
     debugPrint('تم إلغاء المهام اليومية');
   }
@@ -1970,6 +2069,7 @@ class AutoBackupService {
     final settings = await getSettings();
     await NotificationService.cancelDriveNotification();
     if (settings['enabled'] != true) {
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     }
     debugPrint('✅ تم إلغاء نسخ Drive');
@@ -2007,6 +2107,7 @@ void main() {
 
     try {
       await Workmanager().initialize(callbackDispatcher);
+      await AndroidAlarmManager.initialize();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
     }
