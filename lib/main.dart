@@ -283,8 +283,13 @@ Future<void> exactBackupAlarmCallback() async {
     } catch (_) {}
   } finally {
     try {
-      await AutoBackupService._scheduleNextExactBackup();
-      await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
+      final exactScheduled = await AutoBackupService._scheduleNextExactBackup();
+      if (exactScheduled) {
+        await Workmanager().cancelByUniqueName(
+            AutoBackupService._workManagerTimedUniqueName);
+      } else {
+        await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
+      }
     } catch (e) {
       debugPrint('تعذر إعادة جدولة النسخ بعد المنبّه: $e');
     }
@@ -381,7 +386,13 @@ void callbackDispatcher() {
       // Keep the next configured-time request alive even when this run was
       // triggered by the periodic fallback.
       try {
-        await AutoBackupService._scheduleNextTimedBackup();
+        final exactScheduled = await AutoBackupService._scheduleNextExactBackup();
+        if (exactScheduled) {
+          await Workmanager().cancelByUniqueName(
+              AutoBackupService._workManagerTimedUniqueName);
+        } else {
+          await AutoBackupService._scheduleNextTimedBackup();
+        }
       } catch (scheduleError) {
         debugPrint('تعذر إعادة جدولة موعد النسخ القادم: $scheduleError');
       }
@@ -1328,14 +1339,23 @@ class AutoBackupService {
       backoffPolicy: BackoffPolicy.linear,
       backoffPolicyDelay: const Duration(minutes: 15),
     );
-    await _scheduleNextTimedBackup(replacePending: true);
-    try { await _scheduleNextExactBackup(requestPermission: true); } catch (e) { debugPrint('تعذر جدولة المنبّه الدقيق: $e'); }
+    var exactScheduled = false;
+    try {
+      exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
+    } catch (e) {
+      debugPrint('تعذر جدولة المنبّه الدقيق: $e');
+    }
+    if (exactScheduled) {
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    } else {
+      await _scheduleNextTimedBackup(replacePending: true);
+    }
     debugPrint('تم تسجيل النسخ الدوري والمنبّه المحدد');
   }
 
   // Exact Android alarm complements WorkManager. It is used only when
   // Android grants exact-alarm access; otherwise WorkManager remains fallback.
-  static Future<void> _scheduleNextExactBackup({bool requestPermission = false}) async {
+  static Future<bool> _scheduleNextExactBackup({bool requestPermission = false}) async {
     final settings = await getSettings();
     final now = DateTime.now();
     final targets = <DateTime>[];
@@ -1361,7 +1381,7 @@ class AutoBackupService {
 
     if (targets.isEmpty) {
       await AndroidAlarmManager.cancel(_exactAlarmId);
-      return;
+      return false;
     }
 
     targets.sort();
@@ -1373,12 +1393,12 @@ class AutoBackupService {
       if (!requested.isGranted) {
         await AndroidAlarmManager.cancel(_exactAlarmId);
         debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ يلزم السماح بها من إعدادات Android');
-        return;
+        return false;
       }
     } else if (!permission.isGranted) {
       await AndroidAlarmManager.cancel(_exactAlarmId);
       debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ سيعمل WorkManager كخيار احتياطي');
-      return;
+      return false;
     }
 
     final scheduled = await AndroidAlarmManager.oneShotAt(
@@ -1392,9 +1412,10 @@ class AutoBackupService {
     );
     if (!scheduled) {
       debugPrint('تعذر تسجيل المنبّه الدقيق؛ سيبقى WorkManager كخيار احتياطي');
-    } else {
-      debugPrint('تم تسجيل منبّه النسخ عند ${targets.first}');
+      return false;
     }
+    debugPrint('تم تسجيل منبّه النسخ عند ${targets.first}');
+    return true;
   }
 
   // Periodic work is best-effort. Add a one-off request aimed at the next
