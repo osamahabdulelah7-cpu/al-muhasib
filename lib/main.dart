@@ -2335,6 +2335,7 @@ class AppDBHelper {
       }
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+    }
     if (oldVersion < 10) {
       // توحيد جميع تواريخ العمليات القديمة إلى ISO محلي: YYYY-MM-DD HH:mm:ss
       final rows = await db.query('transactions', columns: ['id', 'date']);
@@ -2385,10 +2386,9 @@ class AppDBHelper {
         );
       }
     }
-    }
   }
 
-  Future<String?> getLogoRelativePath() async {
+  Future<String?> getLogoRelativePath async {
     final db = await database;
     final rows = await db.query('personal_logo', columns: ['logo_path'], orderBy: 'id DESC', limit: 1);
     if (rows.isEmpty) return null;
