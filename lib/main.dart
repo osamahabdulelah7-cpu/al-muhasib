@@ -1329,13 +1329,13 @@ class AutoBackupService {
       backoffPolicyDelay: const Duration(minutes: 15),
     );
     await _scheduleNextTimedBackup(replacePending: true);
-    try { await _scheduleNextExactBackup(); } catch (e) { debugPrint('تعذر جدولة المنبّه الدقيق: $e'); }
+    try { await _scheduleNextExactBackup(requestPermission: true); } catch (e) { debugPrint('تعذر جدولة المنبّه الدقيق: $e'); }
     debugPrint('تم تسجيل النسخ الدوري والمنبّه المحدد');
   }
 
   // Exact Android alarm complements WorkManager. It is used only when
   // Android grants exact-alarm access; otherwise WorkManager remains fallback.
-  static Future<void> _scheduleNextExactBackup() async {
+  static Future<void> _scheduleNextExactBackup({bool requestPermission = false}) async {
     final settings = await getSettings();
     final now = DateTime.now();
     final targets = <DateTime>[];
@@ -1366,16 +1366,19 @@ class AutoBackupService {
 
     targets.sort();
     final permission = await Permission.scheduleExactAlarm.status;
-    if (!permission.isGranted) {
-      // Android 12+ may deny exact alarms by default. Request the special
-      // access while scheduling from the foreground; if still denied, keep
-      // WorkManager as a fallback and do not pretend the exact alarm is set.
+    if (!permission.isGranted && requestPermission) {
+      // Only request special access from the foreground scheduling path;
+      // alarm/worker callbacks must never try to launch Android settings.
       final requested = await Permission.scheduleExactAlarm.request();
       if (!requested.isGranted) {
         await AndroidAlarmManager.cancel(_exactAlarmId);
         debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ يلزم السماح بها من إعدادات Android');
         return;
       }
+    } else if (!permission.isGranted) {
+      await AndroidAlarmManager.cancel(_exactAlarmId);
+      debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ سيعمل WorkManager كخيار احتياطي');
+      return;
     }
 
     final scheduled = await AndroidAlarmManager.oneShotAt(
