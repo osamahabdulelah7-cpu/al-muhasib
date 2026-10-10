@@ -4085,7 +4085,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadDrawerLogo() async {
     final logo = await PersonalDataService.getLogoBase64();
-    final data = await PersonalDataService.getData();
     if (!mounted) return;
     setState(() {
       _drawerLogoBase64 = logo;
