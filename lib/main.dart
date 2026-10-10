@@ -251,7 +251,6 @@ class NotificationService {
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
 @pragma('vm:entry-point')
-@pragma('vm:entry-point')
 Future<void> exactBackupAlarmCallback() async {
   WidgetsFlutterBinding.ensureInitialized();
   ui.DartPluginRegistrant.ensureInitialized();
