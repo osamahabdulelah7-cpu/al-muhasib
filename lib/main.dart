@@ -741,6 +741,7 @@ class BackupBundleService {
       final declared = manifest['files'];
       if (declared is! List) return false;
       var declaresDatabase = false;
+      final declaredPaths = <String>{};
       for (final item in declared) {
         if (item is! Map) return false;
         final name = item['path']?.toString() ?? '';
@@ -748,7 +749,8 @@ class BackupBundleService {
         if (name.isEmpty ||
             p.isAbsolute(name) ||
             name.contains('\\') ||
-            segments.any((segment) => segment == '..' || segment.isEmpty)) {
+            segments.any((segment) => segment == '..' || segment.isEmpty) ||
+            !declaredPaths.add(name)) {
           return false;
         }
         if (name == 'database/al_muhasib_final_v6.db') declaresDatabase = true;
@@ -760,7 +762,17 @@ class BackupBundleService {
           return false;
         }
       }
-      if (!declaresDatabase) return false;
+      // Every payload file must be covered by the manifest; otherwise restore
+      // could import unverified app_data files that were never checksummed.
+      if (!declaresDatabase ||
+          declaredPaths.length != byName.keys.where((name) => name != 'manifest.json').length ||
+          byName.keys.any((name) => name != 'manifest.json' && !declaredPaths.contains(name))) {
+        return false;
+      }
+      if (manifest['databaseSize']?.toString() !=
+          List<int>.from(databaseEntry.content as List<int>).length.toString()) {
+        return false;
+      }
       return true;
     } catch (e) {
       debugPrint('فشل التحقق من النسخة الاحتياطية: $e');
