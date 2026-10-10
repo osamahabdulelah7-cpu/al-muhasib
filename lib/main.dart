@@ -336,8 +336,13 @@ void callbackDispatcher() {
         }
       }
 
-      // This worker is periodic and remains registered by Android.
-      // Do not cancel/re-register it from inside its own execution.
+      // Keep the next configured-time request alive even when this run was
+      // triggered by the periodic fallback.
+      try {
+        await AutoBackupService._scheduleNextTimedBackup();
+      } catch (scheduleError) {
+        debugPrint('تعذر إعادة جدولة موعد النسخ القادم: $scheduleError');
+      }
       return !shouldRetry;
     } catch (e, st) {
       debugPrint('❌ خطأ في المهمة الخلفية: $e\n$st');
@@ -1114,6 +1119,8 @@ class AutoBackupService {
   static const int _maxDriveBackups = 5;
   static const String _workManagerTaskName = 'al_muhasib_daily_backup';
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
+  static const String _workManagerTimedTaskName = 'al_muhasib_backup_at_time';
+  static const String _workManagerTimedUniqueName = 'al_muhasib_backup_at_time_unique';
   static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
   static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
   static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
@@ -1278,7 +1285,58 @@ class AutoBackupService {
       backoffPolicy: BackoffPolicy.linear,
       backoffPolicyDelay: const Duration(minutes: 15),
     );
-    debugPrint('تم تسجيل فحص النسخ الاحتياطي الدوري كل 15 دقيقة');
+    await _scheduleNextTimedBackup(replacePending: true);
+    debugPrint('تم تسجيل النسخ الدوري وفحص موعد النسخ المحدد');
+  }
+
+  // Periodic work is best-effort. Add a one-off request aimed at the next
+  // configured time, keeping the periodic worker as a fallback.
+  static Future<void> _scheduleNextTimedBackup({bool replacePending = false}) async {
+    final settings = await getSettings();
+    final now = DateTime.now();
+    final candidates = <DateTime>[];
+
+    void addTarget(bool enabled, int hour, int minute, String lastText) {
+      if (!enabled) return;
+      final target = DateTime(now.year, now.month, now.day, hour, minute);
+      final last = DateTime.tryParse(lastText);
+      final completedToday = last != null && !last.isBefore(target) && !last.isAfter(now);
+      if (!now.isBefore(target) && !completedToday) {
+        candidates.add(now.add(const Duration(minutes: 1)));
+      } else if (now.isBefore(target)) {
+        candidates.add(target);
+      } else {
+        candidates.add(target.add(const Duration(days: 1)));
+      }
+    }
+
+    addTarget(settings['enabled'] == true, settings['hour'] as int,
+        settings['minute'] as int, settings['lastBackup'] as String? ?? '');
+    addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
+        settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
+
+    if (candidates.isEmpty) {
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+      return;
+    }
+    candidates.sort();
+    final delay = candidates.first.difference(now);
+    await Workmanager().registerOneOffTask(
+      _workManagerTimedUniqueName,
+      _workManagerTimedTaskName,
+      initialDelay: delay.isNegative ? Duration.zero : delay,
+      existingWorkPolicy: replacePending ? ExistingWorkPolicy.replace : ExistingWorkPolicy.keep,
+      constraints: Constraints(
+        networkType: NetworkType.notRequired,
+        requiresBatteryNotLow: false,
+        requiresCharging: false,
+        requiresDeviceIdle: false,
+        requiresStorageNotLow: false,
+      ),
+      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicyDelay: const Duration(minutes: 15),
+    );
+    debugPrint('تمت جدولة فحص النسخ القادم بعد ${delay.inMinutes} دقيقة');
   }
 
   static Future<void> scheduleDailyBackup() async {
@@ -1320,6 +1378,7 @@ class AutoBackupService {
 
   static Future<void> cancelDailyBackup() async {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
     await NotificationService.cancelLocalNotification();
     debugPrint('تم إلغاء المهام اليومية');
   }
