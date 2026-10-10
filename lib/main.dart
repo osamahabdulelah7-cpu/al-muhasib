@@ -2388,7 +2388,7 @@ class AppDBHelper {
     }
   }
 
-  Future<String?> getLogoRelativePath async {
+  Future<String?> getLogoRelativePath() async {
     final db = await database;
     final rows = await db.query('personal_logo', columns: ['logo_path'], orderBy: 'id DESC', limit: 1);
     if (rows.isEmpty) return null;
