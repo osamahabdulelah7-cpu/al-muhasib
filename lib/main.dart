@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -637,7 +636,6 @@ class BackupBundleService {
     final dbOut = File(p.join(dir.path, 'al_muhasib_final_v6.db'));
     await dbOut.writeAsBytes(dbBytes, flush: true);
 
-    final root = await _appDataRoot();
     final stagingRoot = Directory(p.join(dir.path, 'app_data'));
     for (final entry in archive) {
       if (!entry.isFile || !entry.name.startsWith('app_data/')) continue;
@@ -1286,26 +1284,6 @@ class AutoBackupService {
     } catch (_) {
       return null;
     }
-  }
-
-  static Future<bool> _hasDataChanged() async {
-    final fingerprint = await _getDatabaseFingerprint();
-    if (fingerprint == null) return true;
-    final settings = await getSettings();
-    final previous = settings['dbFingerprint'] as String? ?? '';
-    return previous.isEmpty || fingerprint != previous;
-  }
-
-  static Future<bool> _hasDataChangedForDrive() async {
-    final fingerprint = await _getDatabaseFingerprint();
-    if (fingerprint == null) return true;
-    final settings = await getSettings();
-    final previous = settings['driveDbFingerprint'] as String? ?? '';
-    return previous.isEmpty || fingerprint != previous;
-  }
-
-  static String _formatTime(int hour, int minute) {
-    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
   // ============ جدولة المهام الخلفية ============
@@ -4082,7 +4060,6 @@ class _HomeScreenState extends State<HomeScreen>
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String? _drawerLogoBase64;
-  String _drawerLogoShape = 'circle';
 
   @override
   void initState() {
@@ -4113,7 +4090,6 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     setState(() {
       _drawerLogoBase64 = logo;
-      _drawerLogoShape = data['logoShape'] as String;
     });
   }
 
@@ -7194,7 +7170,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final String details = tx['details']?.toString() ?? '';
     final String dateStr = tx['date'].toString();
     String? imageData = tx['image_data']?.toString();
-    if ((imageData == null || imageData!.isEmpty) &&
+    if ((imageData == null || imageData.isEmpty) &&
         (tx['image_path']?.toString().isNotEmpty ?? false)) {
       final bytes = await ImageStorageService.readRelative(tx['image_path']?.toString());
       if (bytes != null) imageData = base64Encode(bytes);
