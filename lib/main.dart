@@ -3752,6 +3752,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
   }
 
   Future<void> _loadData() async {
+    final data = await PersonalDataService.getData();
     final logo = await PersonalDataService.getLogoBase64();
     if (!mounted) return;
     setState(() {
