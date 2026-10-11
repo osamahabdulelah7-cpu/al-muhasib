@@ -3780,7 +3780,6 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
   String? _logoBase64;
   String _logoShape = 'circle';
   bool _loading = true;
-  bool _hasExactAlarm = false;
 
   String _sideKey(int index) => index < 3 ? 'right' : 'left';
   int _lineNumber(int index) => index < 3 ? index + 1 : index - 2;
@@ -3814,7 +3813,6 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
       }
       _logoShape = data['logoShape'] as String;
       _logoBase64 = logo;
-      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
@@ -5480,6 +5478,5487 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   int _driveBackupCount = 0;
   bool _signedIn = false;
   String? _userEmail;
+import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:open_file/open_file.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:file_picker/file_picker.dart';
+import 'package:saf/saf.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:excel/excel.dart' as excel_lib;
+import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:archive/archive.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:image_picker/image_picker.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// ====================================================
+// ✅ دالة تنسيق الأرقام
+// ====================================================
+String formatNumber(double value) {
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
+  String str = value.toStringAsFixed(2);
+  str = str.replaceAll(RegExp(r'0+$'), '');
+  str = str.replaceAll(RegExp(r'\.$'), '');
+  return str;
+}
+
+// ====================================================
+// ✅ دالة تنظيف ملفات PDF المؤقتة
+// ====================================================
+Future<void> cleanTemporaryArtifacts() async {
+  try {
+    final tempRoot = await getTemporaryDirectory();
+    if (!await tempRoot.exists()) return;
+
+    // احذف فقط الملفات التي ينشئها التطبيق في التخزين المؤقت.
+    // لا نحذف ملفات plugins أو ملفات النظام الأخرى.
+    await for (final entity in tempRoot.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      final lower = name.toLowerCase();
+      final isOurBackup = name.startsWith('al_muhasib_') &&
+          (lower.endsWith('.alb') || lower.endsWith('.db'));
+      final isOurPdf = lower.endsWith('.pdf') &&
+          (name.startsWith('كشف_') || name.startsWith('statement_'));
+      if (isOurBackup || isOurPdf) {
+        try { await entity.delete(); } catch (_) {}
+      }
+    }
+
+    // احذف مجلد PDF بعد تفريغه إن أصبح فارغاً.
+    final pdfDir = Directory(p.join(tempRoot.path, 'pdf'));
+    if (await pdfDir.exists()) {
+      try { await pdfDir.delete(recursive: false); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+// توافق مع أي استدعاء قديم.
+Future<void> cleanTempPdfFiles() => cleanTemporaryArtifacts();
+
+// ====================================================
+// ✅ الألوان
+// ====================================================
+class AppColors {
+  static const Color primary = Color(0xFF1E3A5F);
+  static const Color primaryLight = Color(0xFF3B7CB8);
+  static const Color gold = Color(0xFFD4A017);
+  static const Color goldDark = Color(0xFFB8860B);
+  static const Color green = Color(0xFF2E7D32);
+  static const Color greenLight = Color(0xFFE8F5E9);
+  static const Color greenDark = Color(0xFF1B5E20);
+  static const Color red = Color(0xFFC62828);
+  static const Color redLight = Color(0xFFFFEBEE);
+  static const Color redDark = Color(0xFFB71C1C);
+  static const Color greyArrow = Color(0xFF9E9E9E);
+  static const Color textDarkest = Color(0xFF0D1F3F);
+  static const Color whatsapp = Color(0xFF25D366);
+  static const Color drive = Color(0xFF4285F4);
+  static const Color background = Color(0xFFE0E0E0);
+  static const Color solidBlue = Color(0xFF7EB8E8);
+  static const Color textDark = Color(0xFF1F2937);
+  static const Color textMuted = Color(0xFF6B7280);
+}
+
+// ====================================================
+// ✅ خدمة الإشعارات
+// ====================================================
+class NotificationService {
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
+
+  static const String _channelId = 'al_muhasib_backup_channel';
+  static const String _channelName = 'النسخ الاحتياطي';
+  static const String _channelDesc = 'إشعارات النسخ الاحتياطي التلقائي';
+  static const int _localNotificationId = 1001;
+  static const int _driveNotificationId = 1002;
+
+  static Future<void> initialize({bool requestPermission = true}) async {
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('ic_notification');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _plugin.initialize(initSettings);
+
+      if (Platform.isAndroid && requestPermission) {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+      }
+    } catch (e, st) {
+      // Notifications are best-effort: failures must not stop backup work.
+      debugPrint('تعذر تهيئة الإشعارات (ستستمر مهمة النسخ): $e\n$st');
+    }
+  }
+
+  static Future<void> showPersistentLocalNotification(String timeText) async {
+    try {
+    const androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: false,
+      icon: 'ic_notification',
+    );
+    const details = NotificationDetails(android: androidDetails);
+    await _plugin.show(
+      _localNotificationId,
+      '📁 النسخ الاحتياطي المحلي',
+      'الموعد المستهدف للنسخ يومياً: $timeText',
+      details,
+    );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار النسخ المحلي: $e');
+    }
+  }
+
+  static Future<void> showPersistentDriveNotification(String timeText) async {
+    try {
+    const androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: false,
+      icon: 'ic_notification',
+    );
+    const details = NotificationDetails(android: androidDetails);
+    await _plugin.show(
+      _driveNotificationId,
+      '☁️ النسخ الاحتياطي على Drive',
+      'الموعد المستهدف للرفع يومياً: $timeText',
+      details,
+    );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار النسخ على Drive: $e');
+    }
+  }
+
+  static Future<void> cancelLocalNotification() async {
+    try { await _plugin.cancel(_localNotificationId); } catch (e) {
+      debugPrint('تعذر إلغاء إشعار النسخ المحلي: $e');
+    }
+  }
+
+  static Future<void> cancelDriveNotification() async {
+    try { await _plugin.cancel(_driveNotificationId); } catch (e) {
+      debugPrint('تعذر إلغاء إشعار Drive: $e');
+    }
+  }
+
+  static Future<void> showTemporarySuccess(String title, String body) async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+      );
+      const details = NotificationDetails(android: androidDetails);
+      await _plugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        details,
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض الإشعار (لن تتعطل مهمة النسخ): $e');
+    }
+  }
+
+  static Future<void> showTemporaryFailure(String title, String body) async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+      );
+      await _plugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار فشل النسخ؛ ستستمر مهام الخلفية: $e');
+    }
+  }
+}
+
+// ====================================================
+// ✅ دالة معالجة المهام في الخلفية (Workmanager)
+// ====================================================
+@pragma('vm:entry-point')
+@pragma('vm:entry-point')
+Future<void> exactBackupAlarmCallback() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  ui.DartPluginRegistrant.ensureInitialized();
+  try {
+    await NotificationService.initialize(requestPermission: false);
+  } catch (e) {
+    debugPrint('تعذر تهيئة الإشعارات: $e');
+  }
+  try {
+    await AppDBHelper.instance.database;
+  } catch (e) {
+    debugPrint('تعذر فتح قاعدة البيانات: $e');
+  }
+  try {
+    final settings = await AutoBackupService.getSettings();
+    if (settings['enabled'] == true) {
+      final err = await AutoBackupService.checkAndRunBackup();
+      if (err != null) {
+        try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', err); } catch (_) {}
+      } else {
+        try { await NotificationService.showTemporarySuccess('📁 النسخ المحلي', 'تم بنجاح'); } catch (_) {}
+      }
+    }
+    if (settings['driveEnabled'] == true && await GoogleDriveService.trySilentSignIn()) {
+      final err = await AutoBackupService.checkAndRunDriveBackup();
+      if (err != null) {
+        try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', err); } catch (_) {}
+      }
+    }
+  } catch (e, st) {
+    debugPrint('فشل المنبّه: $e\n$st');
+  } finally {
+    try {
+      final exact = await AutoBackupService._scheduleNextExactBackup();
+      if (!exact) await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
+    } catch (e) {
+      debugPrint('تعذر إعادة الجدولة: $e');
+    }
+  }
+}
+
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    ui.DartPluginRegistrant.ensureInitialized();
+    try {
+      await NotificationService.initialize(requestPermission: false);
+    } catch (e) {
+      debugPrint('تعذر تهيئة الإشعارات: $e');
+    }
+    try {
+      await AppDBHelper.instance.database;
+    } catch (e) {
+      debugPrint('تعذر فتح قاعدة البيانات: $e');
+      return false;
+    }
+    var shouldRetry = false;
+    try {
+      if (task == AutoBackupService.workManagerExitTaskName) {
+        final settings = await AutoBackupService.getSettings();
+        final now = DateTime.now();
+        final lastLocal = DateTime.tryParse(settings['lastBackup'] as String? ?? '');
+        final localDone = lastLocal != null && now.difference(lastLocal).inHours < 6 && !now.isBefore(lastLocal);
+        if (settings['enabled'] == true && !localDone) {
+          final err = await AutoBackupService.runBackupNow();
+          if (err != null) shouldRetry = true;
+        }
+        final lastDrive = DateTime.tryParse(settings['driveLastBackup'] as String? ?? '');
+        final driveDone = lastDrive != null && now.difference(lastDrive).inHours < 6 && !now.isBefore(lastDrive);
+        if (settings['driveEnabled'] == true && !driveDone) {
+          if (await GoogleDriveService.trySilentSignIn()) {
+            final err = await AutoBackupService.runDriveBackupNow();
+            if (err != null) shouldRetry = true;
+          } else {
+            shouldRetry = true;
+          }
+        }
+        return !shouldRetry;
+      }
+      final localError = await AutoBackupService.checkAndRunBackup();
+      if (localError != null) {
+        shouldRetry = true;
+        try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', localError); } catch (_) {}
+      }
+      final settings = await AutoBackupService.getSettings();
+      if (settings['driveEnabled'] == true) {
+        if (await GoogleDriveService.trySilentSignIn()) {
+          final driveError = await AutoBackupService.checkAndRunDriveBackup();
+          if (driveError != null) {
+            shouldRetry = true;
+            try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', driveError); } catch (_) {}
+          }
+        } else {
+          shouldRetry = true;
+        }
+      }
+      try {
+        final exact = await AutoBackupService._scheduleNextExactBackup();
+        if (!exact) await AutoBackupService._scheduleNextTimedBackup();
+      } catch (e) {
+        debugPrint('تعذر إعادة الجدولة: $e');
+      }
+      return !shouldRetry;
+    } catch (e, st) {
+      debugPrint('خطأ في WorkManager: $e\n$st');
+      return false;
+    }
+  });
+}
+
+// ====================================================
+// ✅ تخزين الصور كملفات خاصة بالتطبيق (بدلاً من Base64 داخل SQLite)
+// ====================================================
+class ImageStorageService {
+  static Future<Directory> get _root async {
+    final dir = await getApplicationDocumentsDirectory();
+    final root = Directory(p.join(dir.path, 'app_data'));
+    if (!await root.exists()) await root.create(recursive: true);
+    return root;
+  }
+
+  static Future<Directory> get imagesDirectory async {
+    final root = await _root;
+    final dir = Directory(p.join(root.path, 'images'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  static Future<String?> saveBase64(String? base64Data, String prefix) async {
+    if (base64Data == null || base64Data.trim().isEmpty) return null;
+    try {
+      final clean = base64Data.contains(',')
+          ? base64Data.substring(base64Data.indexOf(',') + 1)
+          : base64Data;
+      final bytes = base64Decode(clean);
+      if (bytes.isEmpty) return null;
+      final dir = await imagesDirectory;
+      final name = '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${crypto.sha256.convert(bytes).toString().substring(0, 12)}.bin';
+      final file = File(p.join(dir.path, name));
+      await file.writeAsBytes(bytes, flush: true);
+      return p.join('images', name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<Uint8List?> readRelative(String? relativePath) async {
+    if (relativePath == null || relativePath.trim().isEmpty) return null;
+    try {
+      final root = await _root;
+      final normalized = p.normalize(relativePath);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) return null;
+      final file = File(p.join(root.path, normalized));
+      if (!await file.exists()) return null;
+      return Uint8List.fromList(await file.readAsBytes());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> deleteRelative(String? relativePath) async {
+    if (relativePath == null || relativePath.isEmpty) return;
+    try {
+      final root = await _root;
+      final normalized = p.normalize(relativePath);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) return;
+      final file = File(p.join(root.path, normalized));
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  static Future<void> migrateLegacyTransactionImages(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(transactions)');
+    final names = columns.map((e) => e['name'].toString()).toSet();
+    if (!names.contains('image_path') || !names.contains('image_data')) return;
+    final rows = await db.query('transactions', columns: ['id', 'image_data', 'image_path']);
+    for (final row in rows) {
+      final legacy = row['image_data']?.toString() ?? '';
+      final pathValue = row['image_path']?.toString() ?? '';
+      if (legacy.isEmpty || pathValue.isNotEmpty) continue;
+      final saved = await saveBase64(legacy, 'tx_${row['id']}');
+      if (saved != null) {
+        await db.update('transactions', {'image_path': saved, 'image_data': null},
+            where: 'id = ?', whereArgs: [row['id']]);
+      }
+    }
+  }
+
+  static Future<void> migrateLegacyLogo(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(personal_logo)');
+    final names = columns.map((e) => e['name'].toString()).toSet();
+    if (!names.contains('logo_path') || !names.contains('logo_data')) return;
+    final rows = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    if (rows.isEmpty) return;
+    final legacy = rows.first['logo_data']?.toString() ?? '';
+    final pathValue = rows.first['logo_path']?.toString() ?? '';
+    if (legacy.isEmpty || pathValue.isNotEmpty) return;
+    final saved = await saveBase64(legacy, 'logo');
+    if (saved != null) {
+      await db.update('personal_logo', {'logo_path': saved, 'logo_data': null},
+          where: 'id = ?', whereArgs: [rows.first['id']]);
+    }
+  }
+}
+
+// ====================================================
+// ✅ حزمة النسخ الاحتياطي الموحدة: قاعدة البيانات + الصور + البيانات المساندة
+// ====================================================
+class BackupBundleService {
+  static const int formatVersion = 1;
+
+  static Future<Directory> _appDataRoot() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return Directory(p.join(dir.path, 'app_data'));
+  }
+
+  static Future<Directory> appDataRootForFingerprint() => _appDataRoot();
+
+  static Future<void> _copyDirectory(Directory source, Directory target) async {
+    if (!await source.exists()) return;
+    await target.create(recursive: true);
+    await for (final entity in source.list(recursive: true, followLinks: false)) {
+      final relative = p.relative(entity.path, from: source.path);
+      final destination = p.join(target.path, relative);
+      if (entity is Directory) {
+        await Directory(destination).create(recursive: true);
+      } else if (entity is File) {
+        await File(destination).parent.create(recursive: true);
+        await entity.copy(destination);
+      }
+    }
+  }
+
+  static Future<void> _addDirectoryToArchive(
+      Archive archive, Directory dir, String prefix) async {
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        final rel = p.relative(entity.path, from: dir.path).replaceAll('\\', '/');
+        final bytes = await entity.readAsBytes();
+        archive.addFile(ArchiveFile('$prefix/$rel', bytes.length, bytes));
+      }
+    }
+  }
+
+  static Future<File> createBundle({Directory? outputDirectory}) async {
+    await AppDBHelper.instance.syncPersonalDataToDatabase();
+    try {
+      await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+    } catch (_) {}
+    final dbPath = p.join(await getDatabasesPath(), 'al_muhasib_final_v6.db');
+    final dbFile = File(dbPath);
+    if (!await dbFile.exists()) throw Exception('قاعدة البيانات غير موجودة');
+
+    final archive = Archive();
+    final dbBytes = await dbFile.readAsBytes();
+    final dbHash = crypto.sha256.convert(dbBytes).toString();
+    archive.addFile(ArchiveFile('database/al_muhasib_final_v6.db', dbBytes.length, dbBytes));
+
+    final root = await _appDataRoot();
+    await _addDirectoryToArchive(archive, root, 'app_data');
+
+    final fileChecksums = <Map<String, dynamic>>[];
+    for (final entry in archive) {
+      if (!entry.isFile) continue;
+      final content = List<int>.from(entry.content as List<int>);
+      fileChecksums.add({
+        'path': entry.name,
+        'size': content.length,
+        'sha256': crypto.sha256.convert(content).toString(),
+      });
+    }
+    final manifest = jsonEncode({
+      'format': 'al_muhasib_backup',
+      'formatVersion': formatVersion,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'databaseSha256': dbHash,
+      'databaseSize': dbBytes.length,
+      'schemaVersion': 10,
+      'files': fileChecksums,
+    });
+    final manifestBytes = utf8.encode(manifest);
+    archive.addFile(ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+
+    final encoded = ZipEncoder().encode(archive);
+    if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
+    final outDir = outputDirectory ?? await getTemporaryDirectory();
+    if (!await outDir.exists()) await outDir.create(recursive: true);
+    final now = DateTime.now();
+    final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
+    final file = File(p.join(outDir.path, name));
+    await file.writeAsBytes(encoded, flush: true);
+    return file;
+  }
+
+  static Future<File> _extractDatabase(File bundle) async {
+    final bytes = await bundle.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    ArchiveFile? manifestFile;
+    ArchiveFile? databaseFile;
+    for (final entry in archive) {
+      if (entry.name == 'manifest.json') manifestFile = entry;
+      if (entry.name == 'database/al_muhasib_final_v6.db') databaseFile = entry;
+    }
+    if (manifestFile == null || databaseFile == null) {
+      throw Exception('النسخة الاحتياطية غير مكتملة');
+    }
+    final manifest = jsonDecode(utf8.decode(manifestFile.content as List<int>));
+    if (manifest is! Map || manifest['format'] != 'al_muhasib_backup') {
+      throw Exception('صيغة النسخة الاحتياطية غير معروفة');
+    }
+    final dbBytes = List<int>.from(databaseFile.content as List<int>);
+    final expected = manifest['databaseSha256']?.toString() ?? '';
+    final actual = crypto.sha256.convert(dbBytes).toString();
+    if (expected.isEmpty || expected != actual) throw Exception('فشل التحقق من سلامة قاعدة البيانات');
+
+    final declaredFiles = manifest['files'];
+    if (declaredFiles is List) {
+      final archiveByName = <String, ArchiveFile>{};
+      for (final entry in archive) {
+        if (entry.isFile) archiveByName[entry.name] = entry;
+      }
+      for (final item in declaredFiles) {
+        if (item is! Map) throw Exception('سجل ملفات النسخة الاحتياطية غير صالح');
+        final name = item['path']?.toString() ?? '';
+        if (name.isEmpty || p.isAbsolute(name) || p.normalize(name).startsWith('..')) {
+          throw Exception('مسار ملف غير آمن داخل النسخة الاحتياطية');
+        }
+        final entry = archiveByName[name];
+        if (entry == null) throw Exception('ملف مفقود من النسخة الاحتياطية: $name');
+        final content = List<int>.from(entry.content as List<int>);
+        final hash = crypto.sha256.convert(content).toString();
+        if (hash != item['sha256']?.toString() || content.length.toString() != item['size']?.toString()) {
+          throw Exception('فشل التحقق من سلامة الملف: $name');
+        }
+      }
+    }
+
+    final temp = await getTemporaryDirectory();
+    final dir = Directory(p.join(temp.path, 'al_muhasib_restore_${DateTime.now().microsecondsSinceEpoch}'));
+    await dir.create(recursive: true);
+    final dbOut = File(p.join(dir.path, 'al_muhasib_final_v6.db'));
+    await dbOut.writeAsBytes(dbBytes, flush: true);
+
+    final stagingRoot = Directory(p.join(dir.path, 'app_data'));
+    for (final entry in archive) {
+      if (!entry.isFile || !entry.name.startsWith('app_data/')) continue;
+      final relative = entry.name.substring('app_data/'.length);
+      final normalized = p.normalize(relative);
+      if (p.isAbsolute(normalized) || normalized.startsWith('..')) {
+        throw Exception('ملف داخل النسخة الاحتياطية غير آمن');
+      }
+      final out = File(p.join(stagingRoot.path, normalized));
+      await out.parent.create(recursive: true);
+      await out.writeAsBytes(List<int>.from(entry.content as List<int>), flush: true);
+    }
+    // يتم وضع مسار app_data المستخرج مؤقتاً في ملف نصي خاص بالاستعادة.
+    await File(p.join(dir.path, '.app_data_source')).writeAsString(stagingRoot.path);
+    return dbOut;
+  }
+
+  static Future<void> restoreBundle(File bundle) async {
+    if (!await verifyBundle(bundle)) {
+      throw Exception('ملف النسخة الاحتياطية تالف أو غير مكتمل؛ أُلغيت الاستعادة دون تغيير البيانات.');
+    }
+    final dbFile = await _extractDatabase(bundle);
+    final sourceMarker = File(p.join(p.dirname(dbFile.path), '.app_data_source'));
+    Directory? source;
+    if (await sourceMarker.exists()) {
+      source = Directory((await sourceMarker.readAsString()).trim());
+    }
+
+    final target = await _appDataRoot();
+    final parent = target.parent;
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final stagedTarget = Directory(p.join(parent.path, 'app_data_restore_$stamp'));
+    final safetyTarget = Directory(p.join(parent.path, 'app_data_pre_restore_$stamp'));
+    var newTargetInstalled = false;
+
+    try {
+      // Stage every auxiliary file before touching the live database or files.
+      if (source != null && await source.exists()) {
+        await _copyDirectory(source, stagedTarget);
+      }
+
+      if (await target.exists()) {
+        await target.rename(safetyTarget.path);
+      }
+      if (await stagedTarget.exists()) {
+        await stagedTarget.rename(target.path);
+      } else {
+        await Directory(target.path).create(recursive: true);
+      }
+      newTargetInstalled = true;
+
+      // The database restore performs its own staged validation and rollback.
+      // Install app_data first so any database failure can roll the whole restore back.
+      await AppDBHelper.instance.restoreDatabase(dbFile);
+
+      if (await safetyTarget.exists()) {
+        try {
+          await safetyTarget.delete(recursive: true);
+        } catch (cleanupError) {
+          // Cleanup must not turn a successful restore into a reported failure.
+          debugPrint('تعذر حذف ملفات app_data القديمة بعد الاستعادة: $cleanupError');
+        }
+      }
+    } catch (e) {
+      if (await stagedTarget.exists()) {
+        try { await stagedTarget.delete(recursive: true); } catch (_) {}
+      }
+      if (await safetyTarget.exists()) {
+        try {
+          if (await target.exists()) await target.delete(recursive: true);
+          await safetyTarget.rename(target.path);
+        } catch (rollbackError) {
+          debugPrint('تعذر التراجع عن استعادة ملفات app_data: $rollbackError');
+        }
+      } else if (newTargetInstalled && await target.exists()) {
+        // There was no previous app_data tree to restore.
+        try { await target.delete(recursive: true); } catch (rollbackError) {
+          debugPrint('تعذر إزالة ملفات app_data الجزئية: $rollbackError');
+        }
+      }
+      rethrow;
+    }
+  }
+
+  static Future<bool> verifyBundle(File file) async {
+    try {
+      if (!await file.exists() || await file.length() < 100) return false;
+      final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+      final byName = <String, ArchiveFile>{};
+      for (final entry in archive) {
+        if (!entry.isFile) continue;
+        // Duplicate ZIP paths make the effective payload ambiguous.
+        if (byName.containsKey(entry.name)) return false;
+        byName[entry.name] = entry;
+      }
+      final manifestEntry = byName['manifest.json'];
+      final databaseEntry = byName['database/al_muhasib_final_v6.db'];
+      if (manifestEntry == null || databaseEntry == null) return false;
+      final manifest = jsonDecode(utf8.decode(List<int>.from(manifestEntry.content as List<int>)));
+      if (manifest is! Map || manifest['format'] != 'al_muhasib_backup') return false;
+      final dbBytes = List<int>.from(databaseEntry.content as List<int>);
+      if (crypto.sha256.convert(dbBytes).toString() != manifest['databaseSha256']) return false;
+      final declared = manifest['files'];
+      if (declared is! List) return false;
+      var declaresDatabase = false;
+      final declaredPaths = <String>{};
+      for (final item in declared) {
+        if (item is! Map) return false;
+        final name = item['path']?.toString() ?? '';
+        final segments = name.split('/');
+        if (name.isEmpty ||
+            p.isAbsolute(name) ||
+            name.contains('\\') ||
+            segments.any((segment) => segment == '..' || segment.isEmpty) ||
+            !declaredPaths.add(name)) {
+          return false;
+        }
+        if (name == 'database/al_muhasib_final_v6.db') declaresDatabase = true;
+        final entry = byName[name];
+        if (entry == null) return false;
+        final bytes = List<int>.from(entry.content as List<int>);
+        if (bytes.length.toString() != item['size']?.toString() ||
+            crypto.sha256.convert(bytes).toString() != item['sha256']?.toString()) {
+          return false;
+        }
+      }
+      // Every payload file must be covered by the manifest; otherwise restore
+      // could import unverified app_data files that were never checksummed.
+      if (!declaresDatabase ||
+          declaredPaths.length != byName.keys.where((name) => name != 'manifest.json').length ||
+          byName.keys.any((name) => name != 'manifest.json' && !declaredPaths.contains(name))) {
+        return false;
+      }
+      if (manifest['databaseSize']?.toString() !=
+          List<int>.from(databaseEntry.content as List<int>).length.toString()) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('فشل التحقق من النسخة الاحتياطية: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> isBundle(File file) async {
+    if (p.extension(file.path).toLowerCase() == '.alb') return verifyBundle(file);
+    try {
+      final bytes = await file.openRead(0, 4).fold<List<int>>([], (a, b) => a..addAll(b));
+      return bytes.length == 4 && bytes[0] == 0x50 && bytes[1] == 0x4b;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+// ====================================================
+// ✅ خدمة البيانات الشخصية
+// ====================================================
+class PersonalDataService {
+  static const String _prefNameAr = 'personal_name_ar';
+  static const String _prefNameEn = 'personal_name_en';
+  static const String _prefTitleAr = 'personal_title_ar';
+  static const String _prefTitleEn = 'personal_title_en';
+  static const String _prefPhone = 'personal_phone';
+  static const String _prefEmail = 'personal_email';
+  static const String _prefLogoShape = 'personal_logo_shape';
+
+  static Future<Map<String, dynamic>> getData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = <String, dynamic>{
+      'nameAr': prefs.getString(_prefNameAr) ?? '',
+      'nameEn': prefs.getString(_prefNameEn) ?? '',
+      'titleAr': prefs.getString(_prefTitleAr) ?? '',
+      'titleEn': prefs.getString(_prefTitleEn) ?? '',
+      'phone': prefs.getString(_prefPhone) ?? '',
+      'email': prefs.getString(_prefEmail) ?? '',
+      'logoShape': prefs.getString(_prefLogoShape) ?? 'circle',
+    };
+    for (final side in ['right', 'left']) {
+      for (var i = 1; i <= 3; i++) {
+        data['${side}Line$i'] = prefs.getString('personal_${side}Line$i') ?? '';
+        data['${side}Color$i'] = prefs.getString('personal_${side}Color$i') ?? '#000000';
+        data['${side}Size$i'] = prefs.getDouble('personal_${side}Size$i') ?? 10.0;
+      }
+    }
+    return data;
+  }
+
+  static Future<void> saveData({
+    String? nameAr,
+    String? nameEn,
+    String? titleAr,
+    String? titleEn,
+    String? phone,
+    String? email,
+    String? logoShape,
+    Map<String, String>? lineTexts,
+    Map<String, String>? lineColors,
+    Map<String, double>? lineSizes,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (nameAr != null) await prefs.setString(_prefNameAr, nameAr);
+    if (nameEn != null) await prefs.setString(_prefNameEn, nameEn);
+    if (titleAr != null) await prefs.setString(_prefTitleAr, titleAr);
+    if (titleEn != null) await prefs.setString(_prefTitleEn, titleEn);
+    if (phone != null) await prefs.setString(_prefPhone, phone);
+    if (email != null) await prefs.setString(_prefEmail, email);
+    if (logoShape != null) await prefs.setString(_prefLogoShape, logoShape);
+    if (lineTexts != null) {
+      for (final entry in lineTexts.entries) {
+        await prefs.setString('personal_${entry.key}', entry.value);
+      }
+    }
+    if (lineColors != null) {
+      for (final entry in lineColors.entries) {
+        await prefs.setString('personal_${entry.key}', entry.value);
+      }
+    }
+    if (lineSizes != null) {
+      for (final entry in lineSizes.entries) {
+        await prefs.setDouble('personal_${entry.key}', entry.value);
+      }
+    }
+  }
+
+  static Future<String?> getLogoBase64() async {
+    final db = await AppDBHelper.instance.database;
+    final result = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    if (result.isEmpty) return null;
+    final pathValue = result.first['logo_path']?.toString();
+    if (pathValue != null && pathValue.isNotEmpty) {
+      final bytes = await ImageStorageService.readRelative(pathValue);
+      if (bytes != null) return base64Encode(bytes);
+    }
+    return result.first['logo_data']?.toString();
+  }
+
+  static Future<void> saveLogoBase64(String? base64) async {
+    final db = await AppDBHelper.instance.database;
+    final old = await db.query('personal_logo', orderBy: 'id DESC', limit: 1);
+    final oldPath = old.isNotEmpty ? old.first['logo_path']?.toString() : null;
+    String? newPath;
+    if (base64 != null && base64.trim().isNotEmpty) {
+      newPath = await ImageStorageService.saveBase64(base64, 'logo');
+      if (newPath == null) throw Exception('تعذر حفظ الشعار');
+    }
+    await db.transaction((txn) async {
+      await txn.delete('personal_logo');
+      if (newPath != null) {
+        await txn.insert('personal_logo', {'logo_data': null, 'logo_path': newPath});
+      }
+    });
+    if (oldPath != null && oldPath != newPath) {
+      await ImageStorageService.deleteRelative(oldPath);
+    }
+  }
+}
+
+class DeleteAccountResult {
+  final bool success;
+  final List<String> errors;
+  DeleteAccountResult({required this.success, required this.errors});
+}
+
+// ==================== Google Drive Service ====================
+class GoogleDriveService {
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  );
+  static GoogleSignInAccount? _currentUser;
+  static drive.DriveApi? _driveApi;
+  static String? _lastListBackupsError;
+  static String? get lastListBackupsError => _lastListBackupsError;
+  static String? _lastDownloadError;
+  static String? get lastDownloadError => _lastDownloadError;
+  static bool get isSignedIn => _currentUser != null;
+  static String? get userEmail => _currentUser?.email;
+
+  static Future<bool> signIn() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) return false;
+      _currentUser = account;
+      final authHeaders = await account.authHeaders;
+      _driveApi = drive.DriveApi(GoogleAuthClient(authHeaders));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<void> signOut() async {
+    await _googleSignIn.signOut();
+    _currentUser = null;
+    _driveApi = null;
+  }
+
+  static Future<bool> trySilentSignIn() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account == null) {
+        // Never keep an API client backed by a stale/expired account.
+        _currentUser = null;
+        _driveApi = null;
+        return false;
+      }
+      _currentUser = account;
+      final authHeaders = await account.authHeaders;
+      _driveApi = drive.DriveApi(GoogleAuthClient(authHeaders));
+      return true;
+    } catch (e) {
+      _currentUser = null;
+      _driveApi = null;
+      debugPrint('تعذر تجديد جلسة Google في الخلفية: $e');
+      return false;
+    }
+  }
+
+  static Future<String?> uploadBackup(File backupFile) async {
+    if (_driveApi == null) {
+      final signedIn = await trySilentSignIn();
+      if (!signedIn || _driveApi == null) return 'الرجاء تسجيل الدخول إلى Google مجدداً';
+    }
+    if (!await backupFile.exists()) return 'ملف النسخة الاحتياطية غير موجود';
+    final now = DateTime.now();
+    final ext = p.extension(backupFile.path).toLowerCase();
+    final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
+    final fileName =
+        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
+    if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
+      return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
+    }
+    final fileContent = await backupFile.readAsBytes();
+    final expectedMd5 = crypto.md5.convert(fileContent).toString();
+
+    // Retry transient DNS/network/server failures. A new Drive file name is used
+    // per operation, so retrying an interrupted upload may create a duplicate;
+    // old-backup retention removes excess copies after a confirmed upload.
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (_driveApi == null) {
+          final signedIn = await trySilentSignIn();
+          if (!signedIn || _driveApi == null) {
+            throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
+          }
+        }
+        if (attempt > 0) {
+          // A timed-out create request may have reached Drive even if its
+          // response was lost. Reconcile by unique operation name and size
+          // after restoring authentication, avoiding duplicate uploads.
+          try {
+            final existing = await _driveApi!.files.list(
+              spaces: 'appDataFolder',
+              q: "name = '$fileName'",
+              $fields: 'files(id,name,size,md5Checksum)',
+            ).timeout(const Duration(seconds: 20));
+            final confirmed = (existing.files ?? []).any((f) =>
+                (f.id ?? '').isNotEmpty &&
+                f.name == fileName &&
+                f.size == fileContent.length.toString() &&
+                f.md5Checksum == expectedMd5);
+            if (confirmed) return null;
+          } catch (reconcileError) {
+            debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
+          }
+        }
+        final driveFile = drive.File()
+          ..name = fileName
+          ..parents = ['appDataFolder'];
+        final media = drive.Media(Stream.value(fileContent), fileContent.length,
+            contentType: 'application/octet-stream');
+        final uploaded = await _driveApi!.files.create(driveFile,
+            uploadMedia: media, $fields: 'id,name,size,createdTime,md5Checksum')
+            .timeout(const Duration(seconds: 45));
+        if (uploaded.id == null ||
+            uploaded.id!.isEmpty ||
+            uploaded.size == null ||
+            uploaded.size != fileContent.length.toString() ||
+            uploaded.md5Checksum == null ||
+            uploaded.md5Checksum != expectedMd5) {
+          throw Exception('لم يؤكد Google Drive اكتمال الرفع وسلامة الحجم وبصمة MD5');
+        }
+        return null;
+      } catch (e) {
+        lastError = e;
+        if (attempt < 2) {
+          await Future.delayed(Duration(seconds: 2 << attempt));
+          // Refresh authentication before retrying a failed request.
+          await trySilentSignIn();
+        }
+      }
+    }
+    return 'فشل الرفع إلى Google Drive بعد 3 محاولات. تحقق من الإنترنت وDNS، ثم افتح التطبيق وأعد تسجيل الدخول. التفاصيل: $lastError';
+  }
+
+  static Future<String?> uploadBackupPair(File bundle, File dbFile) async {
+    final albError = await uploadBackup(bundle);
+    if (albError != null) return albError;
+    return await uploadBackup(dbFile);
+  }
+
+  static Future<List<Map<String, dynamic>>> listBackups() async {
+    _lastListBackupsError = null;
+    if (_driveApi == null && !await trySilentSignIn()) {
+      _lastListBackupsError = 'جلسة Google غير متاحة. سجّل الدخول مجدداً.';
+      return [];
+    }
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (_driveApi == null) {
+          _lastListBackupsError = 'جلسة Google غير متاحة. سجّل الدخول مجدداً.';
+          return [];
+        }
+        final result = await _driveApi!.files.list(
+          spaces: 'appDataFolder',
+          q: "name contains 'al_muhasib_'",
+          orderBy: 'createdTime desc',
+          $fields: 'files(id,name,size,createdTime)',
+        ).timeout(const Duration(seconds: 30));
+        _lastListBackupsError = null;
+        return (result.files ?? [])
+            .map((f) => {
+                  'id': f.id ?? '',
+                  'name': f.name ?? '',
+                  'size': f.size ?? '0',
+                  'createdTime': f.createdTime?.toIso8601String() ?? '',
+                })
+            .toList();
+      } catch (e) {
+        final textError = e.toString();
+        final looksLikeExpiredSession = textError.contains('401') ||
+            textError.toLowerCase().contains('unauthorized') ||
+            textError.toLowerCase().contains('invalid credentials');
+        if (attempt == 0 && looksLikeExpiredSession &&
+            await trySilentSignIn()) {
+          continue;
+        }
+        _lastListBackupsError =
+            'تعذر الاتصال بـ Google Drive. تحقق من الإنترنت ثم أعد المحاولة. التفاصيل: $e';
+        debugPrint(_lastListBackupsError);
+        return [];
+      }
+    }
+    _lastListBackupsError = 'تعذر الاتصال بـ Google Drive.';
+    return [];
+  }
+
+  static Future<File?> downloadBackup(String fileId, String fileName) async {
+    _lastDownloadError = null;
+    Object? lastError;
+    final safeName = p.basename(fileName).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final tempDir = await getTemporaryDirectory();
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      File? file;
+      try {
+        if (_driveApi == null) {
+          final signedIn = await trySilentSignIn();
+          if (!signedIn || _driveApi == null) {
+            throw Exception('انتهت جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً.');
+          }
+        }
+        final result = await _driveApi!.files.get(
+          fileId,
+          downloadOptions: drive.DownloadOptions.fullMedia,
+        ).timeout(const Duration(seconds: 45)) as drive.Media;
+        final dataStore = <int>[];
+        await for (final chunk in result.stream.timeout(const Duration(seconds: 45))) {
+          dataStore.addAll(chunk);
+        }
+        if (dataStore.isEmpty) throw Exception('ملف النسخة الذي نُزّل فارغ');
+        file = File(p.join(tempDir.path,
+            'drive_restore_${DateTime.now().microsecondsSinceEpoch}_$safeName'));
+        await file.writeAsBytes(dataStore, flush: true);
+        if (p.extension(safeName).toLowerCase() == '.alb' &&
+            !await BackupBundleService.verifyBundle(file)) {
+          throw Exception('النسخة التي نُزّلت من Drive تالفة أو غير مكتملة');
+        }
+        return file;
+      } catch (e) {
+        lastError = e;
+        if (file != null) {
+          try { if (await file.exists()) await file.delete(); } catch (_) {}
+        }
+        if (attempt < 2) {
+          final message = e.toString().toLowerCase();
+          final authError = message.contains('401') ||
+              message.contains('unauthorized') ||
+              message.contains('invalid credentials');
+          if (authError) {
+            await trySilentSignIn();
+          } else {
+            await Future.delayed(Duration(seconds: 2 << attempt));
+            // A connection may have dropped and invalidated the cached client.
+            if (_driveApi == null) await trySilentSignIn();
+          }
+        }
+      }
+    }
+
+    _lastDownloadError =
+        'تعذر تنزيل النسخة من Google Drive بعد 3 محاولات: $lastError';
+    debugPrint(_lastDownloadError);
+    return null;
+  }
+
+  static Future<bool> deleteBackup(String fileId) async {
+    if (_driveApi == null) return false;
+    try {
+      await _driveApi!.files.delete(fileId);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<DeleteAccountResult> deleteAccountAndData({
+    bool deleteLocalData = true,
+  }) async {
+    final errors = <String>[];
+    if (_driveApi != null || await trySilentSignIn()) {
+      try {
+        final backups = await listBackups();
+        for (final backup in backups) {
+          final id = backup['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          final ok = await deleteBackup(id);
+          if (!ok) errors.add('تعذر حذف الملف: ${backup['name']}');
+        }
+      } catch (e) {
+        errors.add('تعذر حذف النسخ من Drive: $e');
+      }
+    }
+    if (deleteLocalData) {
+      try {
+        await AppDBHelper.instance.deleteAllLocalData();
+      } catch (e) {
+        errors.add('تعذر حذف البيانات المحلية: $e');
+      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+      } catch (e) {
+        errors.add('تعذر حذف التفضيلات: $e');
+      }
+      try {
+        await AutoBackupService.cancelDailyBackup();
+        await AutoBackupService.cancelDriveBackup();
+      } catch (e) {
+        errors.add('تعذر إلغاء الجدولة: $e');
+      }
+    }
+    try {
+      await signOut();
+    } catch (e) {
+      errors.add('تعذر تسجيل الخروج: $e');
+    }
+    return DeleteAccountResult(success: errors.isEmpty, errors: errors);
+  }
+}
+
+class GoogleAuthClient extends http.BaseClient {
+  final Map<String, String> _headers;
+  final http.Client _client = http.Client();
+  GoogleAuthClient(this._headers);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers.addAll(_headers);
+    return _client.send(request);
+  }
+}
+
+// ==================== AutoBackupService ====================
+class AutoBackupService {
+  static const String _prefEnabled = 'auto_backup_enabled';
+  static const String _prefHour = 'auto_backup_hour';
+  static const String _prefMinute = 'auto_backup_minute';
+  static const String _prefFolderPath = 'auto_backup_folder_path';
+  static const String _prefLastBackup = 'auto_backup_last_time';
+  static const String _prefLastDbModified = 'auto_backup_last_db_modified';
+  static const String _prefDbFingerprint = 'auto_backup_db_fingerprint';
+  static const String _prefLastDestinationError = 'auto_backup_last_destination_error';
+  static const String _prefDriveEnabled = 'drive_backup_enabled';
+  static const String _prefDriveHour = 'drive_backup_hour';
+  static const String _prefDriveMinute = 'drive_backup_minute';
+  static const String _prefDriveLastBackup = 'drive_backup_last_time';
+  static const String _prefDriveLastDbModified = 'drive_backup_last_db_modified';
+  static const String _prefDriveDbFingerprint = 'drive_backup_db_fingerprint';
+  static const int _maxLocalBackups = 5;
+  static const int _maxDriveBackups = 5;
+  static const String _workManagerTaskName = 'al_muhasib_daily_backup';
+  static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
+  static const String _workManagerTimedTaskName = 'al_muhasib_backup_at_time';
+  static const String _workManagerTimedUniqueName = 'al_muhasib_backup_at_time_unique';
+  static const int _exactAlarmId = 7042026;
+  static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
+  static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
+  static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
+
+  static Future<Map<String, dynamic>> getSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'enabled': prefs.getBool(_prefEnabled) ?? false,
+      'hour': prefs.getInt(_prefHour) ?? 3,
+      'minute': prefs.getInt(_prefMinute) ?? 0,
+      'folderPath': prefs.getString(_prefFolderPath) ?? '',
+      'lastBackup': prefs.getString(_prefLastBackup) ?? '',
+      'lastDbModified': prefs.getString(_prefLastDbModified) ?? '',
+      'dbFingerprint': prefs.getString(_prefDbFingerprint) ?? '',
+      'lastDestinationError': prefs.getString(_prefLastDestinationError) ?? '',
+      'driveEnabled': prefs.getBool(_prefDriveEnabled) ?? false,
+      'driveHour': prefs.getInt(_prefDriveHour) ?? 4,
+      'driveMinute': prefs.getInt(_prefDriveMinute) ?? 0,
+      'driveLastBackup': prefs.getString(_prefDriveLastBackup) ?? '',
+      'driveLastDbModified': prefs.getString(_prefDriveLastDbModified) ?? '',
+      'driveDbFingerprint': prefs.getString(_prefDriveDbFingerprint) ?? '',
+    };
+  }
+
+  static Future<void> saveSettings({
+    bool? enabled,
+    int? hour,
+    int? minute,
+    String? folderPath,
+    String? lastBackup,
+    String? lastDbModified,
+    String? dbFingerprint,
+    String? lastDestinationError,
+    bool? driveEnabled,
+    int? driveHour,
+    int? driveMinute,
+    String? driveLastBackup,
+    String? driveLastDbModified,
+    String? driveDbFingerprint,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (enabled != null) await prefs.setBool(_prefEnabled, enabled);
+    if (hour != null) await prefs.setInt(_prefHour, hour);
+    if (minute != null) await prefs.setInt(_prefMinute, minute);
+    if (folderPath != null) await prefs.setString(_prefFolderPath, folderPath);
+    if (lastBackup != null) await prefs.setString(_prefLastBackup, lastBackup);
+    if (lastDbModified != null) {
+      await prefs.setString(_prefLastDbModified, lastDbModified);
+    }
+    if (dbFingerprint != null) {
+      await prefs.setString(_prefDbFingerprint, dbFingerprint);
+    }
+    if (lastDestinationError != null) {
+      await prefs.setString(_prefLastDestinationError, lastDestinationError);
+    }
+    if (driveEnabled != null) {
+      await prefs.setBool(_prefDriveEnabled, driveEnabled);
+    }
+    if (driveHour != null) await prefs.setInt(_prefDriveHour, driveHour);
+    if (driveMinute != null) await prefs.setInt(_prefDriveMinute, driveMinute);
+    if (driveLastBackup != null) {
+      await prefs.setString(_prefDriveLastBackup, driveLastBackup);
+    }
+    if (driveLastDbModified != null) {
+      await prefs.setString(_prefDriveLastDbModified, driveLastDbModified);
+    }
+    if (driveDbFingerprint != null) {
+      await prefs.setString(_prefDriveDbFingerprint, driveDbFingerprint);
+    }
+  }
+
+  // اختيار المجلد يتم عبر Storage Access Framework/FilePicker؛ لا نطلب MANAGE_EXTERNAL_STORAGE.
+  static Future<bool> requestStoragePermission() async => true;
+
+  static Future<bool> hasStoragePermission() async => true;
+
+  static Future<File> _getDatabaseFile() async {
+    final dbPath = await getDatabasesPath();
+    return File(p.join(dbPath, 'al_muhasib_final_v6.db'));
+  }
+
+  static Future<String?> _getDatabaseFingerprint() async {
+    try {
+      try {
+        await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (e) {
+        debugPrint('تعذر إكمال WAL checkpoint قبل حساب البصمة: $e');
+      }
+      final entries = <String>[];
+      final dbFile = await _getDatabaseFile();
+      if (!await dbFile.exists()) return null;
+      final dbBytes = await dbFile.readAsBytes();
+      entries.add('database/al_muhasib_final_v6.db:${dbBytes.length}:${crypto.sha256.convert(dbBytes)}');
+
+      final root = await BackupBundleService.appDataRootForFingerprint();
+      if (await root.exists()) {
+        final files = <String>[];
+        await for (final entity in root.list(recursive: true, followLinks: false)) {
+          if (entity is File) files.add(entity.path);
+        }
+        files.sort();
+        for (final filePath in files) {
+          final bytes = await File(filePath).readAsBytes();
+          final rel = p.relative(filePath, from: root.path).replaceAll('\\', '/');
+          entries.add('app_data/$rel:${bytes.length}:${crypto.sha256.convert(bytes)}');
+        }
+      }
+      final stable = entries.join('\n');
+      return crypto.sha256.convert(utf8.encode(stable)).toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ============ جدولة المهام الخلفية ============
+  static Future<void> _scheduleBackgroundBackup() async {
+    final settings = await getSettings();
+    final localEnabled = settings['enabled'] == true;
+    final driveEnabled = settings['driveEnabled'] == true;
+    if (!localEnabled && !driveEnabled) {
+      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+      return;
+    }
+    try {
+      await Workmanager().registerPeriodicTask(
+        _workManagerUniqueName,
+        _workManagerTaskName,
+        frequency: const Duration(minutes: 15),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+          requiresBatteryNotLow: false,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        backoffPolicy: BackoffPolicy.linear,
+        backoffPolicyDelay: const Duration(minutes: 15),
+      );
+    } catch (e) {
+      debugPrint('تعذر تسجيل WorkManager الدوري: $e');
+    }
+    var exactScheduled = false;
+    try {
+      exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
+    } catch (e) {
+      debugPrint('تعذر جدولة المنبّه: $e');
+    }
+    if (!exactScheduled) {
+      try {
+        await _scheduleNextTimedBackup(replacePending: true);
+      } catch (e) {
+        debugPrint('تعذر جدولة WorkManager one-off: $e');
+      }
+    } else {
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    }
+  }
+
+  static Future<bool> _scheduleNextExactBackup({bool requestPermission = false}) async {
+    final settings = await getSettings();
+    final now = DateTime.now();
+    final targets = <DateTime>[];
+    void addTarget(bool enabled, int hour, int minute, String lastText) {
+      if (!enabled) return;
+      final target = DateTime(now.year, now.month, now.day, hour, minute);
+      final last = DateTime.tryParse(lastText);
+      final doneToday = last != null && !last.isBefore(target) && !last.isAfter(now);
+      if (now.isBefore(target)) {
+        targets.add(target);
+      } else if (!doneToday) {
+        targets.add(now.add(const Duration(minutes: 1)));
+      } else {
+        targets.add(target.add(const Duration(days: 1)));
+      }
+    }
+    addTarget(settings['enabled'] == true, settings['hour'] as int,
+        settings['minute'] as int, settings['lastBackup'] as String? ?? '');
+    addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
+        settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
+    if (targets.isEmpty) {
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+      return false;
+    }
+    targets.sort();
+    final canSchedule = await ensureExactAlarmPermission(requestPermission: requestPermission);
+    if (!canSchedule) {
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+      return false;
+    }
+    try {
+      final scheduled = await AndroidAlarmManager.oneShotAt(
+        targets.first, _exactAlarmId, exactBackupAlarmCallback,
+        exact: true, wakeup: true, allowWhileIdle: true, rescheduleOnReboot: true,
+      );
+      if (!scheduled) return false;
+      debugPrint('✅ تم تسجيل منبّه النسخ عند ${targets.first}');
+      return true;
+    } catch (e, st) {
+      debugPrint('خطأ في المنبّه الدقيق: $e\n$st');
+      return false;
+    }
+  }
+
+  static Future<bool> ensureExactAlarmPermission({bool requestPermission = false}) async {
+    try {
+      final status = await Permission.scheduleExactAlarm.status;
+      if (status.isGranted) return true;
+      if (!requestPermission) return false;
+      final requested = await Permission.scheduleExactAlarm.request();
+      if (requested.isGranted) return true;
+      if (requested.isPermanentlyDenied) {
+        try { await openAppSettings(); } catch (_) {}
+      }
+      return false;
+    } catch (e) {
+      debugPrint('خطأ في صلاحية Exact Alarm: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> requestExactAlarmPermissionFromUI() async {
+    final granted = await ensureExactAlarmPermission(requestPermission: true);
+    if (granted) await scheduleDailyBackup();
+    return granted;
+  }
+
+  static Future<bool> hasExactAlarmPermission() async {
+    try {
+      final status = await Permission.scheduleExactAlarm.status;
+      return status.isGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Periodic work is best-effort. Add a one-off request aimed at the next
+  // configured time, keeping the periodic worker as a fallback.
+  static Future<void> _scheduleNextTimedBackup({bool replacePending = false}) async {
+    final settings = await getSettings();
+    final now = DateTime.now();
+    final candidates = <DateTime>[];
+
+    void addTarget(bool enabled, int hour, int minute, String lastText) {
+      if (!enabled) return;
+      final target = DateTime(now.year, now.month, now.day, hour, minute);
+      final last = DateTime.tryParse(lastText);
+      final completedToday = last != null && !last.isBefore(target) && !last.isAfter(now);
+      if (!now.isBefore(target) && !completedToday) {
+        candidates.add(now.add(const Duration(minutes: 1)));
+      } else if (now.isBefore(target)) {
+        candidates.add(target);
+      } else {
+        candidates.add(target.add(const Duration(days: 1)));
+      }
+    }
+
+    addTarget(settings['enabled'] == true, settings['hour'] as int,
+        settings['minute'] as int, settings['lastBackup'] as String? ?? '');
+    addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
+        settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
+
+    if (candidates.isEmpty) {
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+      return;
+    }
+    candidates.sort();
+    final delay = candidates.first.difference(now);
+    await Workmanager().registerOneOffTask(
+      _workManagerTimedUniqueName,
+      _workManagerTimedTaskName,
+      initialDelay: delay.isNegative ? Duration.zero : delay,
+      existingWorkPolicy: replacePending ? ExistingWorkPolicy.replace : ExistingWorkPolicy.keep,
+      constraints: Constraints(
+        networkType: NetworkType.notRequired,
+        requiresBatteryNotLow: false,
+        requiresCharging: false,
+        requiresDeviceIdle: false,
+        requiresStorageNotLow: false,
+      ),
+      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicyDelay: const Duration(minutes: 15),
+    );
+    debugPrint('تمت جدولة فحص النسخ القادم بعد ${delay.inMinutes} دقيقة');
+  }
+
+  static Future<void> scheduleDailyBackup() async {
+    await _scheduleBackgroundBackup();
+  }
+
+  static Future<void> scheduleBackupOnExit() async {
+    try {
+      final settings = await getSettings();
+      if (settings['enabled'] != true && settings['driveEnabled'] != true) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final previous = prefs.getInt(_prefLastExitEnqueuedAt) ?? 0;
+      // Avoid generating repeated snapshots when users switch between apps.
+      if (now - previous < const Duration(hours: 6).inMilliseconds) return;
+
+      await Workmanager().registerOneOffTask(
+        _workManagerExitUniqueName,
+        workManagerExitTaskName,
+        existingWorkPolicy: ExistingWorkPolicy.keep,
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+          requiresBatteryNotLow: false,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        backoffPolicy: BackoffPolicy.linear,
+        backoffPolicyDelay: const Duration(minutes: 15),
+      );
+      // Only throttle after WorkManager accepts the request.
+      await prefs.setInt(_prefLastExitEnqueuedAt, now);
+      debugPrint('تمت جدولة نسخة احتياطية عند خروج الواجهة');
+    } catch (e, st) {
+      debugPrint('تعذر جدولة النسخ عند خروج الواجهة: $e\n$st');
+    }
+  }
+
+  static Future<void> cancelDailyBackup() async {
+    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
+    try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+    await NotificationService.cancelLocalNotification();
+    await NotificationService.cancelDriveNotification();
+    debugPrint('تم إلغاء جميع مهام النسخ المحلية وDrive المجدولة');
+  }
+
+  static Future<bool> _isWritableDirectory(String path) async {
+    try {
+      final dir = Directory(path);
+      await dir.create(recursive: true);
+      final probe = File(p.join(
+          dir.path, '.al_muhasib_write_test_' + DateTime.now().microsecondsSinceEpoch.toString()));
+      await probe.writeAsString('ok', flush: true);
+      if (await probe.exists()) await probe.delete();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String> _defaultAutomaticBackupFolder() async {
+    // مجلد خارجي خاص بالتطبيق: يعمل في الخلفية دون الاعتماد على مجلد
+    // مشترك أو صلاحية MANAGE_EXTERNAL_STORAGE.
+    try {
+      final external = await getExternalStorageDirectory();
+      if (external != null) {
+        final dir = Directory(p.join(external.path, 'AlMuhasib', 'Backups'));
+        if (await _isWritableDirectory(dir.path)) return dir.path;
+      }
+    } catch (_) {}
+
+    // احتياط أخير: تخزين داخلي دائم للتطبيق.
+    final documents = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(documents.path, 'auto_backups'));
+    await dir.create(recursive: true);
+    return dir.path;
+  }
+
+  static bool _isSafFolder(String value) => value.startsWith('saf:');
+
+  static String _safUri(String value) => value.substring(4);
+
+  static Future<bool> _isValidSafFolder(String value) async {
+    if (!_isSafFolder(value)) return false;
+    try {
+      final permissions = await Saf().persistedPermissions();
+      return permissions.any((grant) =>
+          grant.uri == _safUri(value) &&
+          (grant.read && grant.write));
+    } catch (e) {
+      debugPrint('تعذر التحقق من صلاحية مجلد SD: $e');
+      return false;
+    }
+  }
+
+  static Future<String> _resolveBackupFolder(String? selectedFolder) async {
+    final selected = selectedFolder?.trim() ?? '';
+    // SAF returns content:// URIs, not filesystem paths. Keep the persisted
+    // grant and never pass a document URI to Directory/File.
+    if (_isSafFolder(selected)) {
+      // Verify the persisted grant in the background. A revoked grant must not
+      // prevent the independent internal backup from being created.
+      if (!await _isValidSafFolder(selected)) {
+        debugPrint('صلاحية SD غير موجودة أو غير مستمرة؛ ستُحفظ النسخة الداخلية وتُسجّل مشكلة الوجهة الخارجية.');
+      }
+      return selected;
+    }
+    if (selected.isNotEmpty &&
+        p.isAbsolute(selected) &&
+        await _isWritableDirectory(selected)) {
+      return selected;
+    }
+    final fallback = await _defaultAutomaticBackupFolder();
+    if (selected != fallback) await saveSettings(folderPath: fallback);
+    return fallback;
+  }
+
+  static Future<void> _writeVerifiedSafBackup(
+      File sourceFile, String folderSetting) async {
+    final saf = Saf();
+    final folderUri = _safUri(folderSetting);
+    final fileName = p.basename(sourceFile.path);
+    final tempDir = await getTemporaryDirectory();
+    final verificationCopy = File(p.join(tempDir.path,
+        'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
+
+    // A prior interrupted write can leave a partial document with the same
+    // name. Reuse it only if its contents verify; otherwise remove it first.
+    final entries = await saf.list(folderUri);
+    for (final entry in entries.where((e) => !e.isDir && e.name == fileName)) {
+      var copiedForVerification = false;
+      var validExistingCopy = false;
+      Object? readError;
+      try {
+        await saf.copyToLocalFile(entry.uri, verificationCopy.path);
+        copiedForVerification = true;
+        validExistingCopy = await BackupBundleService.verifyBundle(verificationCopy);
+        if (validExistingCopy) {
+          await _cleanOldSafBackups(folderUri);
+          return;
+        }
+      } catch (e) {
+        readError = e;
+        debugPrint('تعذر التحقق من النسخة الموجودة على SD: $e');
+      } finally {
+        try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
+      }
+      // Never delete an existing document merely because the provider failed
+      // to read it; delete only after a successful read proves it is corrupt.
+      if (copiedForVerification && !validExistingCopy) {
+        try { await saf.delete(entry.uri); } catch (_) {}
+      } else if (!copiedForVerification) {
+        throw Exception('تعذر قراءة النسخة الموجودة على بطاقة SD؛ لم يتم حذفها: $readError');
+      }
+    }
+
+    SafDocumentFile? created;
+    try {
+      created = await saf.writeFileStream(
+        folderUri,
+        fileName,
+        'application/octet-stream',
+        sourceFile.openRead(),
+        overwrite: false,
+      );
+      await saf.copyToLocalFile(created.uri, verificationCopy.path);
+      if (!await BackupBundleService.verifyBundle(verificationCopy)) {
+        throw Exception('فشل التحقق من النسخة بعد كتابتها على بطاقة SD');
+      }
+    } catch (_) {
+      if (created != null) {
+        try { await saf.delete(created.uri); } catch (_) {}
+      }
+      rethrow;
+    } finally {
+      try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
+    }
+    // Only verified new copies may trigger retention.
+    await _cleanOldSafBackups(folderUri);
+  }
+
+  static Future<void> _cleanOldSafBackups(String folderUri) async {
+    try {
+      final entries = await Saf().list(folderUri);
+      final backups = entries.where((entry) =>
+          !entry.isDir &&
+          entry.name.startsWith('al_muhasib_') &&
+          p.extension(entry.name).toLowerCase() == '.alb').toList()
+        ..sort((a, b) => b.name.compareTo(a.name));
+      for (final old in backups.skip(_maxLocalBackups)) {
+        try { await Saf().delete(old.uri); } catch (e) {
+          debugPrint('تعذر حذف نسخة SD قديمة ${old.name}: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('تعذر تنظيف النسخ القديمة على SD: $e');
+    }
+  }
+
+  static Future<String?> _retryPendingDestination(String folderSetting) async {
+    try {
+      final internalDir = await internalBackupDirectory();
+      final candidates = internalDir
+          .listSync()
+          .whereType<File>()
+          .where((file) => p.extension(file.path).toLowerCase() == '.alb')
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+
+      File? verifiedSource;
+      for (final candidate in candidates) {
+        if (await BackupBundleService.verifyBundle(candidate)) {
+          verifiedSource = candidate;
+          break;
+        }
+      }
+      if (verifiedSource == null) {
+        throw Exception('لا توجد نسخة داخلية سليمة لإعادة نسخها إلى الوجهة المحددة');
+      }
+
+      final selected = await _resolveBackupFolder(folderSetting);
+      if (_isSafFolder(selected)) {
+        await _writeVerifiedSafBackup(verifiedSource, selected);
+      } else if (p.normalize(selected) != p.normalize(internalDir.path)) {
+        final targetDir = Directory(selected);
+        if (!await _isWritableDirectory(targetDir.path)) {
+          throw Exception('الوجهة المحددة غير قابلة للكتابة');
+        }
+        final targetFile = File(p.join(targetDir.path, p.basename(verifiedSource.path)));
+        await verifiedSource.copy(targetFile.path);
+        if (!await BackupBundleService.verifyBundle(targetFile)) {
+          try { await targetFile.delete(); } catch (_) {}
+          throw Exception('فشل التحقق من النسخة بعد إعادة نسخها إلى الوجهة المحددة');
+        }
+        await _cleanOldLocalBackups(selected);
+      }
+      await saveSettings(lastDestinationError: '');
+      return null;
+    } catch (e, st) {
+      debugPrint('فشل إعادة محاولة الوجهة الخارجية: $e\n$st');
+      await saveSettings(lastDestinationError: e.toString());
+      return 'تعذر إعادة النسخ إلى الوجهة المحددة: $e';
+    }
+  }
+
+  static Future<String?> performScheduledBackup() async {
+    final settings = await getSettings();
+    if (settings['enabled'] != true) return null;
+    final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
+
+    // Scheduled backups are snapshots, not change-only syncs.
+    // Preserve internal backup creation even when the selected destination
+    // is unavailable; performBackup records destination errors separately.
+    final result = await performBackup(selectedFolder);
+    if (result == null) {
+      await NotificationService.showTemporarySuccess(
+          '✅ تم النسخ المحلي', 'تم إنشاء نسخة احتياطية بنجاح');
+    }
+    return result;
+  }
+
+  static Future<String?> performScheduledDriveBackup() async {
+    final settings = await getSettings();
+    if (settings['driveEnabled'] != true) return null;
+    if (!GoogleDriveService.isSignedIn &&
+        !await GoogleDriveService.trySilentSignIn()) {
+      return 'تعذر تسجيل الدخول إلى Google في الخلفية. افتح التطبيق وسجّل الدخول مجدداً.';
+    }
+
+    try {
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
+      if (error == null) {
+        final now = DateTime.now();
+        final dbFile = await _getDatabaseFile();
+        final lastModified = (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+            driveLastBackup: now.toIso8601String(),
+            driveLastDbModified: lastModified,
+            driveDbFingerprint: await _getDatabaseFingerprint());
+        await _cleanOldDriveBackups();
+        await NotificationService.showTemporarySuccess(
+            '☁️ تم الرفع على Drive', 'تم رفع النسخة الاحتياطية بنجاح');
+        return null;
+      } else {
+        await NotificationService.showTemporarySuccess(
+            '⚠️ فشل النسخ على Drive', error);
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  static Future<String?> checkAndRunBackup() async {
+    try {
+      final settings = await getSettings();
+      if (settings['enabled'] != true) return null;
+      final selectedFolder = (settings['folderPath'] as String? ?? '').trim();
+
+      final now = DateTime.now();
+      final todayTarget = DateTime(now.year, now.month, now.day,
+          settings['hour'] as int, settings['minute'] as int);
+      DateTime? lastBackup;
+      final lastBackupStr = settings['lastBackup'] as String? ?? '';
+      if (lastBackupStr.isNotEmpty) {
+        lastBackup = DateTime.tryParse(lastBackupStr);
+      }
+
+      final hasPendingDestinationError =
+          (settings['lastDestinationError'] as String? ?? '').isNotEmpty;
+      if (now.isBefore(todayTarget)) {
+        if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          return await _retryPendingDestination(selectedFolder);
+        }
+        return null;
+      }
+      bool shouldBackup =
+          lastBackup == null || lastBackup.isBefore(todayTarget);
+
+      if (!shouldBackup) {
+        if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          return await _retryPendingDestination(selectedFolder);
+        }
+        return null;
+      }
+      // This is a daily schedule, not a change-only sync. Create a verified
+      // snapshot even when the database fingerprint matches yesterday.
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      // Let performBackup commit and verify the internal snapshot first.
+      // A stale SD permission must not prevent the internal daily backup.
+      final error = await performBackup(selectedFolder);
+      if (error == null) {
+        await NotificationService.showTemporarySuccess(
+            '📁 تم النسخ الاحتياطي',
+            'تم إنشاء النسخة الاحتياطية الكاملة بصيغة .alb بنجاح');
+      }
+      return error;
+    } catch (e, st) {
+      debugPrint('❌ فشل النسخ التلقائي المحلي: $e\\n$st');
+      return 'فشل النسخ التلقائي المحلي: $e';
+    }
+  }
+  static Future<String?> checkAndRunDriveBackup() async {
+    try {
+      final settings = await getSettings();
+      if (settings['driveEnabled'] != true) return null;
+      if (!GoogleDriveService.isSignedIn) {
+        if (!await GoogleDriveService.trySilentSignIn()) {
+          return 'تعذر تسجيل الدخول إلى Google في الخلفية. افتح التطبيق وسجّل الدخول مجدداً.';
+        }
+      }
+
+      final now = DateTime.now();
+      final todayTarget = DateTime(now.year, now.month, now.day,
+          settings['driveHour'] as int, settings['driveMinute'] as int);
+      DateTime? lastBackup;
+      final lastBackupStr = settings['driveLastBackup'] as String? ?? '';
+      if (lastBackupStr.isNotEmpty) {
+        lastBackup = DateTime.tryParse(lastBackupStr);
+      }
+
+      if (now.isBefore(todayTarget)) return null;
+      bool shouldBackup =
+          lastBackup == null || lastBackup.isBefore(todayTarget);
+
+      if (!shouldBackup) return null;
+      // Daily Drive backups must not silently skip days with unchanged data.
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
+      if (error == null) {
+        final dbFile = await _getDatabaseFile();
+        final lastModified = (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+            driveLastBackup: now.toIso8601String(),
+            driveLastDbModified: lastModified,
+            driveDbFingerprint: await _getDatabaseFingerprint());
+        await _cleanOldDriveBackups();
+        return null;
+      } else {
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  static Future<void> _cleanOldDriveBackups() async {
+    try {
+      final backups = await GoogleDriveService.listBackups();
+      // Retain five backup snapshots total per destination, regardless of
+      // whether an older snapshot used the legacy .db or current .alb format.
+      final snapshots = backups.where((b) {
+        final ext = p.extension((b['name'] as String?) ?? '').toLowerCase();
+        return ext == '.alb' || ext == '.db';
+      }).toList()
+        ..sort((a, b) {
+          final aTime = (a['createdTime'] as String?)?.trim() ?? '';
+          final bTime = (b['createdTime'] as String?)?.trim() ?? '';
+          final aKey = aTime.isNotEmpty ? aTime : (a['name'] as String? ?? '');
+          final bKey = bTime.isNotEmpty ? bTime : (b['name'] as String? ?? '');
+          return bKey.compareTo(aKey);
+        });
+      for (final old in snapshots.skip(_maxDriveBackups)) {
+        final id = old['id'] as String? ?? '';
+        if (id.isNotEmpty) await GoogleDriveService.deleteBackup(id);
+      }
+    } catch (e) {
+      debugPrint('⚠️ خطأ في حذف النسخ القديمة على Drive: $e');
+    }
+  }
+
+  static Future<void> _cleanOldLocalBackups(String folderPath) async {
+    try {
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) return;
+      final files = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) {
+            final name = p.basename(f.path);
+            final ext = p.extension(f.path).toLowerCase();
+            return name.startsWith('al_muhasib_') &&
+                (ext == '.alb' || ext == '.db');
+          })
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+      // The newly-created and verified snapshot is newest and must survive.
+      for (final old in files.skip(_maxLocalBackups)) {
+        try {
+          await old.delete();
+        } catch (e) {
+          debugPrint('تعذر حذف النسخة القديمة ${old.path}: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ خطأ في حذف النسخ المحلية القديمة: $e');
+    }
+  }
+
+  static Future<Directory> internalBackupDirectory() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(documents.path, 'AlMuhasib', 'Backups'));
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  static Future<String?> performBackup(String folderPath) async {
+    try {
+      final db = await AppDBHelper.instance.database;
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final internalDir = await internalBackupDirectory();
+      final internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
+      if (!await BackupBundleService.verifyBundle(internalFile)) {
+        try { await internalFile.delete(); } catch (_) {}
+        throw Exception('فشل التحقق من سلامة النسخة الداخلية');
+      }
+
+      // The internal copy is a complete destination in its own right. Record
+      // success only after its integrity check, before attempting optional targets.
+      await _cleanOldLocalBackups(internalDir.path);
+      final now = DateTime.now();
+      final dbFile = await _getDatabaseFile();
+      final lastModified = (await dbFile.stat()).modified.toIso8601String();
+      await saveSettings(
+        lastBackup: now.toIso8601String(),
+        lastDbModified: lastModified,
+        dbFingerprint: await _getDatabaseFingerprint(),
+      );
+
+      final selected = folderPath.trim();
+      final internalOnly = selected.isEmpty ||
+          p.normalize(selected) == p.normalize(internalDir.path);
+      try {
+        if (selected.isNotEmpty && _isSafFolder(selected)) {
+          await _writeVerifiedSafBackup(internalFile, selected);
+        } else if (!internalOnly) {
+          final targetDir = Directory(selected);
+          if (!await _isWritableDirectory(targetDir.path)) {
+            throw Exception('المجلد المحدد غير قابل للكتابة');
+          }
+          final targetFile = File(p.join(targetDir.path, p.basename(internalFile.path)));
+          await internalFile.copy(targetFile.path);
+          if (!await BackupBundleService.verifyBundle(targetFile)) {
+            try { await targetFile.delete(); } catch (_) {}
+            throw Exception('فشل التحقق من النسخة في المجلد المحدد');
+          }
+          await _cleanOldLocalBackups(selected);
+        }
+        // Clear stale external-destination errors when the user has
+        // switched back to internal-only backups as well.
+        await saveSettings(lastDestinationError: '');
+      } catch (destinationError, destinationStack) {
+        await saveSettings(lastDestinationError: destinationError.toString());
+        debugPrint('النسخة الداخلية سليمة، لكن فشل النسخ إلى الوجهة المحددة: $destinationError\n$destinationStack');
+        return 'تم إنشاء نسخة داخلية سليمة والتحقق منها، لكن فشل الحفظ في الوجهة المحددة: $destinationError';
+      }
+      return null;
+    } catch (e, st) {
+      debugPrint('فشل النسخ المحلي: $e\n$st');
+      return 'فشل إنشاء أو التحقق من النسخة الداخلية: $e';
+    }
+  }
+
+  static Future<String?> runBackupNow() async {
+    try {
+      final settings = await getSettings();
+      final folderPath = (settings['folderPath'] as String? ?? '').trim();
+      // Destination failures are handled after the internal backup is safely
+      // created and verified, rather than aborting the entire operation.
+      return await performBackup(folderPath);
+    } catch (e, st) {
+      debugPrint('فشل تشغيل النسخ اليدوي: $e\n$st');
+      return 'تعذر تشغيل النسخ الاحتياطي: $e';
+    }
+  }
+
+  // Safety snapshots for restore must not depend on an optional SD-card or
+  // shared-folder destination being mounted and writable.
+  static Future<String?> runInternalBackupNow() async {
+    try {
+      // A restore safety snapshot must not advance the user's daily schedule
+      // or clear a pending SD-card error. Build and verify it independently.
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      try {
+        await (await AppDBHelper.instance.database)
+            .rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+      final internalDir = await internalBackupDirectory();
+      final safetyBundle =
+          await BackupBundleService.createBundle(outputDirectory: internalDir);
+      if (!await BackupBundleService.verifyBundle(safetyBundle)) {
+        try { await safetyBundle.delete(); } catch (_) {}
+        throw Exception('فشل التحقق من نسخة الأمان الداخلية');
+      }
+      await _cleanOldLocalBackups(internalDir.path);
+      return null;
+    } catch (e, st) {
+      debugPrint('فشل إنشاء نسخة الأمان الداخلية: $e\n$st');
+      return 'تعذر إنشاء نسخة الأمان الداخلية: $e';
+    }
+  }
+
+  static Future<String?> runDriveBackupNow() async {
+    if (!GoogleDriveService.isSignedIn &&
+        !await GoogleDriveService.trySilentSignIn()) {
+      return 'انتهت جلسة Google أو لم تعد متاحة. افتح التطبيق وسجّل الدخول مجدداً.';
+    }
+    try {
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      try { await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)'); } catch (_) {}
+      final bundle = await BackupBundleService.createBundle();
+      if (!await BackupBundleService.verifyBundle(bundle)) {
+        try { await bundle.delete(); } catch (_) {}
+        return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
+      }
+      String? error;
+      try {
+        error = await GoogleDriveService.uploadBackup(bundle);
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
+      if (error == null) {
+        final now = DateTime.now();
+        final dbFile = await _getDatabaseFile();
+        final lastModified = (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+            driveLastBackup: now.toIso8601String(),
+            driveLastDbModified: lastModified,
+            driveDbFingerprint: await _getDatabaseFingerprint());
+        await _cleanOldDriveBackups();
+        return null;
+      } else {
+        return error;
+      }
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  static Future<int> countBackups() async {
+    try {
+      final dir = await internalBackupDirectory();
+      return dir.listSync()
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
+          .where((f) => p.extension(f.path).toLowerCase() == '.alb')
+          .length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<int> countDriveBackups() async {
+    if (!GoogleDriveService.isSignedIn) return 0;
+    try {
+      return (await GoogleDriveService.listBackups()).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // ✅ جدولة Drive مع مهمة خلفية فعلية
+  static Future<void> scheduleDriveBackup() async {
+    await _scheduleBackgroundBackup();
+    debugPrint('تم جدولة نسخ Drive بالخلفية');
+  }
+
+  static Future<void> cancelDriveBackup() async {
+    final settings = await getSettings();
+    await NotificationService.cancelDriveNotification();
+    if (settings['enabled'] != true && settings['driveEnabled'] != true) {
+      // No destination remains enabled: clear every shared scheduled task.
+      await cancelDailyBackup();
+    } else {
+      // Keep the shared scheduler aligned with the remaining destination.
+      await _scheduleBackgroundBackup();
+    }
+    debugPrint('✅ تم إلغاء نسخ Drive');
+  }
+}
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    statusBarBrightness: Brightness.light,
+  ));
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+  };
+
+  // عرض الواجهة فوراً. لا نجعل تهيئة قاعدة البيانات أو الخدمات
+  // والإشعارات سبباً في بقاء شاشة البداية بيضاء في Release.
+  final provider = AppAccountProvider();
+  runApp(
+    ChangeNotifierProvider<AppAccountProvider>.value(
+      value: provider,
+      child: const AlMuhasibApp(),
+    ),
+  );
+
+  runZonedGuarded(() async {
+    try {
+      await NotificationService.initialize();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تهيئة الإشعارات: $e\n$st');
+    }
+
+    try {
+      await Workmanager().initialize(callbackDispatcher);
+      await AndroidAlarmManager.initialize();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
+    }
+
+    try {
+      await cleanTemporaryArtifacts();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تنظيف الملفات المؤقتة: $e\n$st');
+    }
+
+    try {
+      await provider.loadInitialData();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تحميل بيانات التطبيق: $e\n$st');
+    }
+
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      await AutoBackupService.checkAndRunBackup();
+      await AutoBackupService.checkAndRunDriveBackup();
+      // Always reconcile persisted WorkManager/alarm state on startup.
+      // If both destinations are disabled, this cancels stale queued work too.
+      // If either is enabled, it registers the shared schedule once.
+      await AutoBackupService.scheduleDailyBackup();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
+    }
+  }, (error, stack) {
+    debugPrint('ZoneError: $error\n$stack');
+  });
+}
+
+// ==================== AppDBHelper ====================
+class AppDBHelper {
+  static final AppDBHelper instance = AppDBHelper._init();
+  static Database? _db;
+  AppDBHelper._init();
+
+  Future<Database> get database async {
+    if (_db != null) return _db!;
+    _db = await _initDB('al_muhasib_final_v6.db');
+    return _db!;
+  }
+
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final db = await openDatabase(
+      p.join(dbPath, filePath),
+      version: 10,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+    );
+    // نقل الصور القديمة إلى ملفات التطبيق بعد اكتمال ترقية SQLite.
+    // هذا يمنع بقاء ملفات خارج المعاملة إذا فشلت ترقية قاعدة البيانات.
+    try {
+      await ImageStorageService.migrateLegacyTransactionImages(db);
+      await ImageStorageService.migrateLegacyLogo(db);
+    } catch (e) {
+      debugPrint('⚠️ تعذر ترحيل بعض الصور القديمة، ستتم المحاولة لاحقاً: $e');
+    }
+    return db;
+  }
+
+  Future _createDB(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE currencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        symbol TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        currency TEXT NOT NULL,
+        category_id INTEGER,
+        last_activity TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL,
+        details TEXT,
+        date TEXT NOT NULL,
+        image_data TEXT,
+        image_path TEXT,
+        currency TEXT NOT NULL DEFAULT ''
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE personal_logo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        logo_data TEXT,
+        logo_path TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE app_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    ''');
+    // فهارس لتحسين سرعة الحسابات والبحث والنسخ.
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+
+    await db.insert('categories', {'name': 'عام', 'sort_order': 1});
+    await db.insert('categories', {'name': 'عملاء', 'sort_order': 2});
+    await db.insert('categories', {'name': 'موردون', 'sort_order': 3});
+    await db.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
+    await db.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
+    await db.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE customers ADD COLUMN last_activity TEXT');
+      final customers = await db.query('customers');
+      for (var cust in customers) {
+        final cId = cust['id'];
+        final lastTx = await db.query('transactions',
+            where: 'customer_id = ?',
+            whereArgs: [cId],
+            orderBy: 'id DESC',
+            limit: 1);
+        if (lastTx.isNotEmpty) {
+          await db.update('customers', {'last_activity': lastTx.first['date']},
+              where: 'id = ?', whereArgs: [cId]);
+        }
+      }
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+          'ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0');
+      final cats = await db.query('categories', orderBy: 'id ASC');
+      for (int i = 0; i < cats.length; i++) {
+        await db.update('categories', {'sort_order': i + 1},
+            where: 'id = ?', whereArgs: [cats[i]['id']]);
+      }
+    }
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN image_data TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE personal_logo (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          logo_data TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 6) {
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
+    }
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE app_metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 8) {
+      final txColumns = await db.rawQuery('PRAGMA table_info(transactions)');
+      final txNames = txColumns.map((e) => e['name'].toString()).toSet();
+      if (!txNames.contains('image_path')) {
+        await db.execute('ALTER TABLE transactions ADD COLUMN image_path TEXT');
+      }
+
+      final logoTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='personal_logo'");
+      if (logoTables.isNotEmpty) {
+        final logoColumns = await db.rawQuery('PRAGMA table_info(personal_logo)');
+        final logoNames = logoColumns.map((e) => e['name'].toString()).toSet();
+        if (!logoNames.contains('logo_path')) {
+          await db.execute('ALTER TABLE personal_logo ADD COLUMN logo_path TEXT');
+        }
+      }
+    }
+    if (oldVersion < 9) {
+      await db.execute("ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT ''");
+      final rows = await db.rawQuery('''
+        SELECT t.id, c.currency
+        FROM transactions t
+        INNER JOIN customers c ON c.id = t.customer_id
+        WHERE t.currency = ''
+      ''');
+      for (final row in rows) {
+        await db.update('transactions', {'currency': row['currency']?.toString() ?? ''},
+            where: 'id = ?', whereArgs: [row['id']]);
+      }
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+    }
+    if (oldVersion < 10) {
+      // توحيد جميع تواريخ العمليات القديمة إلى ISO محلي: YYYY-MM-DD HH:mm:ss
+      final rows = await db.query('transactions', columns: ['id', 'date']);
+      for (final row in rows) {
+        final raw = row['date']?.toString().trim() ?? '';
+        if (raw.isEmpty) continue;
+        String? normalized;
+        final direct = DateTime.tryParse(raw);
+        if (direct != null) {
+          normalized = direct.toString().split('.').first;
+        } else {
+          final match = RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$').firstMatch(raw);
+          if (match != null) {
+            final y = int.parse(match.group(1)!);
+            final m = int.parse(match.group(2)!);
+            final d = int.parse(match.group(3)!);
+            final h = int.tryParse(match.group(4) ?? '0') ?? 0;
+            final min = int.tryParse(match.group(5) ?? '0') ?? 0;
+            final sec = int.tryParse(match.group(6) ?? '0') ?? 0;
+            final value = DateTime(y, m, d, h, min, sec);
+            if (value.year == y && value.month == m && value.day == d) {
+              normalized = value.toString().split('.').first;
+            }
+          }
+        }
+        if (normalized != null && normalized != raw) {
+          await db.update('transactions', {'date': normalized},
+              where: 'id = ?', whereArgs: [row['id']]);
+        }
+      }
+
+      // إعادة حساب آخر نشاط لكل حساب بعد توحيد التواريخ.
+      final customers = await db.query('customers', columns: ['id']);
+      for (final customer in customers) {
+        final latest = await db.query(
+          'transactions',
+          columns: ['date'],
+          where: 'customer_id = ?',
+          whereArgs: [customer['id']],
+          orderBy: 'datetime(date) DESC, id DESC',
+          limit: 1,
+        );
+        await db.update(
+          'customers',
+          {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+          where: 'id = ?',
+          whereArgs: [customer['id']],
+        );
+      }
+    }
+  }
+
+  Future<String?> getLogoRelativePath() async {
+    final db = await database;
+    final rows = await db.query('personal_logo', columns: ['logo_path'], orderBy: 'id DESC', limit: 1);
+    if (rows.isEmpty) return null;
+    final value = rows.first['logo_path']?.toString().trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> syncPersonalDataToDatabase() async {
+    final db = await database;
+    final prefs = await SharedPreferences.getInstance();
+    final values = <String, String>{
+      'nameAr': prefs.getString('personal_name_ar') ?? '',
+      'nameEn': prefs.getString('personal_name_en') ?? '',
+      'titleAr': prefs.getString('personal_title_ar') ?? '',
+      'titleEn': prefs.getString('personal_title_en') ?? '',
+      'phone': prefs.getString('personal_phone') ?? '',
+      'email': prefs.getString('personal_email') ?? '',
+      'logoShape': prefs.getString('personal_logo_shape') ?? 'circle',
+      'logoPath': (await AppDBHelper.instance.getLogoRelativePath()) ?? '',
+      'backupFormatVersion': '3',
+    };
+    await db.transaction((txn) async {
+      for (final entry in values.entries) {
+        final existing = await txn.query('app_metadata',
+            where: 'key = ?', whereArgs: [entry.key], limit: 1);
+        final oldValue = existing.isNotEmpty ? existing.first['value']?.toString() : null;
+        if (oldValue != entry.value) {
+          await txn.insert('app_metadata',
+              {'key': entry.key, 'value': entry.value},
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    });
+  }
+
+  Future<void> restorePersonalDataFromDatabase() async {
+    final db = await database;
+    final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='app_metadata'");
+    if (tables.isEmpty) return;
+    final rows = await db.query('app_metadata');
+    if (rows.isEmpty) return;
+    final values = <String, String>{};
+    for (final row in rows) {
+      final key = row['key'];
+      final value = row['value'];
+      if (key != null && value != null) values[key.toString()] = value.toString();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final mapping = {
+      'nameAr': 'personal_name_ar',
+      'nameEn': 'personal_name_en',
+      'titleAr': 'personal_title_ar',
+      'titleEn': 'personal_title_en',
+      'phone': 'personal_phone',
+      'email': 'personal_email',
+      'logoShape': 'personal_logo_shape',
+    };
+    if (values.containsKey('logoBase64') && values['logoBase64']!.isNotEmpty) {
+      // توافق مع النسخ القديمة فقط؛ النسخ الجديدة تعتمد على app_data/logo file.
+      await PersonalDataService.saveLogoBase64(values['logoBase64']);
+    }
+    for (final entry in mapping.entries) {
+      if (values.containsKey(entry.key)) {
+        await prefs.setString(entry.value, values[entry.key]!);
+      }
+    }
+  }
+
+  Future<void> restoreDatabase(File newDbFile) async {
+    if (!await newDbFile.exists()) {
+      throw Exception('ملف النسخة الاحتياطية غير موجود');
+    }
+    final bytes = await newDbFile.openRead(0, 16).fold<List<int>>([], (a, b) => a..addAll(b));
+    const sqliteHeader = 'SQLite format 3\u0000';
+    if (String.fromCharCodes(bytes) != sqliteHeader) {
+      throw Exception('الملف المحدد ليس قاعدة بيانات SQLite صالحة');
+    }
+
+    // تحقق كامل من النسخة قبل لمس قاعدة البيانات الحالية.
+    final sourceDb = await openDatabase(newDbFile.path, readOnly: true);
+    try {
+      final integrity = await sourceDb.rawQuery('PRAGMA integrity_check');
+      if (integrity.isEmpty || integrity.first.values.first?.toString().toLowerCase() != 'ok') {
+        throw Exception('ملف النسخة الاحتياطية تالف أو غير سليم');
+      }
+      final tables = await sourceDb.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table'");
+      final names = tables.map((e) => e['name'].toString()).toSet();
+      const required = {'categories', 'currencies', 'customers', 'transactions'};
+      if (!required.every(names.contains)) {
+        throw Exception('النسخة الاحتياطية لا تحتوي على جداول المحاسب المطلوبة');
+      }
+      final txColumns = await sourceDb.rawQuery('PRAGMA table_info(transactions)');
+      final txColumnNames = txColumns.map((e) => e['name'].toString()).toSet();
+      const requiredTxColumns = {'customer_id', 'amount', 'type', 'date'};
+      if (!requiredTxColumns.every(txColumnNames.contains)) {
+        throw Exception('بنية جدول العمليات في النسخة الاحتياطية غير صالحة');
+      }
+    } finally {
+      await sourceDb.close();
+    }
+
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, 'al_muhasib_final_v6.db');
+    final current = File(path);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final staged = File(p.join(dbPath, 'al_muhasib_restore_$stamp.db'));
+    final safety = File(p.join(dbPath, 'al_muhasib_pre_restore_$stamp.db'));
+
+    // جهّز النسخة في ملف منفصل أولاً؛ لا نستبدل الحالية مباشرة.
+    await newDbFile.copy(staged.path);
+    Database? stagedDb;
+    try {
+      stagedDb = await openDatabase(
+        staged.path,
+        version: 10,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      );
+      final integrity = await stagedDb.rawQuery('PRAGMA integrity_check');
+      if (integrity.isEmpty || integrity.first.values.first?.toString().toLowerCase() != 'ok') {
+        throw Exception('فشل التحقق من النسخة بعد تجهيزها للاستعادة');
+      }
+      await stagedDb.close();
+      stagedDb = null;
+
+      if (_db != null) {
+        await _db!.close();
+        _db = null;
+      }
+      if (await current.exists()) {
+        await current.rename(safety.path);
+      }
+      try {
+        await staged.rename(path);
+      } catch (_) {
+        if (await safety.exists()) await safety.rename(path);
+        rethrow;
+      }
+      _db = await openDatabase(
+        path,
+        version: 10,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      );
+      try {
+        await ImageStorageService.migrateLegacyTransactionImages(_db!);
+        await ImageStorageService.migrateLegacyLogo(_db!);
+      } catch (e) {
+        debugPrint('⚠️ تعذر ترحيل صور النسخة المستعادة: $e');
+      }
+      await restorePersonalDataFromDatabase();
+      // تُحذف نسخة الأمان لاحقاً بعد نجاح فتح القاعدة فقط.
+      if (await safety.exists()) await safety.delete();
+    } catch (e) {
+      try { await stagedDb?.close(); } catch (_) {}
+      if (await safety.exists()) {
+        // A failure can happen after the replacement DB was opened (for
+        // example while restoring personal metadata). Close it before
+        // rolling back; checking only _db == null can leave the new DB live.
+        final activeDb = _db;
+        _db = null;
+        try { await activeDb?.close(); } catch (_) {}
+        if (await current.exists()) await current.delete();
+        await safety.rename(path);
+        _db = await openDatabase(
+          path,
+          version: 10,
+          onCreate: _createDB,
+          onUpgrade: _upgradeDB,
+          onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+        );
+        try {
+          await ImageStorageService.migrateLegacyTransactionImages(_db!);
+          await ImageStorageService.migrateLegacyLogo(_db!);
+          await restorePersonalDataFromDatabase();
+        } catch (rollbackRefreshError) {
+          debugPrint('تعذر تحديث بيانات النسخة بعد التراجع عن الاستعادة: $rollbackRefreshError');
+        }
+      }
+      if (await staged.exists()) {
+        try { await staged.delete(); } catch (_) {}
+      }
+      rethrow;
+    }
+  }
+}
+
+// ==================== AppAccountProvider ====================
+class AppAccountProvider extends ChangeNotifier {
+  List<Map<String, dynamic>> customers = [];
+  List<Map<String, dynamic>> categories = [];
+  List<Map<String, dynamic>> currencies = [];
+  List<Map<String, dynamic>> currentTransactions = [];
+  Map<int, double> customerBalances = {};
+
+  Future<void> loadInitialData() async {
+    await loadCategories();
+    await loadCurrencies();
+    await loadCustomers();
+  }
+
+  Future<void> loadCategories() async {
+    final db = await AppDBHelper.instance.database;
+    categories = await db.rawQuery('''
+      SELECT * FROM categories
+      ORDER BY 
+        CASE WHEN sort_order IS NULL OR sort_order = 0 THEN 1 ELSE 0 END,
+        sort_order ASC, id ASC
+    ''');
+    notifyListeners();
+  }
+
+  Future<void> addCategory(String name) async {
+    final db = await AppDBHelper.instance.database;
+    final maxResult =
+        await db.rawQuery('SELECT MAX(sort_order) as max_order FROM categories');
+    int maxOrder = 0;
+    if (maxResult.isNotEmpty && maxResult.first['max_order'] != null) {
+      maxOrder = int.parse(maxResult.first['max_order'].toString());
+    }
+    await db.insert('categories', {'name': name, 'sort_order': maxOrder + 1});
+    await loadCategories();
+  }
+
+  Future<void> updateCategory(int id, String newName) async {
+    final db = await AppDBHelper.instance.database;
+    await db.update('categories', {'name': newName},
+        where: 'id = ?', whereArgs: [id]);
+    await loadCategories();
+  }
+
+  Future<void> reorderCategories(List<int> orderedIds) async {
+    final db = await AppDBHelper.instance.database;
+    for (int i = 0; i < orderedIds.length; i++) {
+      await db.update('categories', {'sort_order': i + 1},
+          where: 'id = ?', whereArgs: [orderedIds[i]]);
+    }
+    await loadCategories();
+  }
+
+  Future<int> countCustomersInCategory(int categoryId) async {
+    final db = await AppDBHelper.instance.database;
+    final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM customers WHERE category_id = ?',
+        [categoryId]);
+    if (result.isNotEmpty) return int.parse(result.first['count'].toString());
+    return 0;
+  }
+
+  Future<bool> deleteCategory(int id) async {
+    final db = await AppDBHelper.instance.database;
+    final categoryCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM categories')) ?? 0;
+    if (categoryCount <= 1) return false;
+    final customerCount = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM customers WHERE category_id = ?', [id])) ?? 0;
+    // الحذف الآمن: لا نحذف الحسابات والمعاملات تلقائياً مع التصنيف.
+    if (customerCount > 0) return false;
+    await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+    await loadCategories();
+    await loadCustomers();
+    return true;
+  }
+
+  Future<void> loadCurrencies() async {
+    final db = await AppDBHelper.instance.database;
+    currencies = await db.query('currencies');
+    notifyListeners();
+  }
+
+  Future<void> addCurrency(String name, String symbol) async {
+    final db = await AppDBHelper.instance.database;
+    await db.insert('currencies', {'name': name, 'symbol': symbol});
+    await loadCurrencies();
+  }
+
+  Future<void> loadCustomers() async {
+    final db = await AppDBHelper.instance.database;
+    customers = await db.rawQuery('''
+      SELECT * FROM customers
+      ORDER BY 
+        CASE WHEN last_activity IS NULL OR last_activity = '' THEN 1 ELSE 0 END,
+        datetime(last_activity) DESC, id DESC
+    ''');
+    await calculateAllCustomerBalances();
+    notifyListeners();
+  }
+
+  Future<void> calculateAllCustomerBalances() async {
+    final db = await AppDBHelper.instance.database;
+    customerBalances.clear();
+    final rows = await db.rawQuery('''
+      SELECT t.customer_id,
+             COALESCE(SUM(CASE WHEN t.type = 'give' THEN t.amount ELSE -t.amount END), 0) AS balance
+      FROM transactions t
+      INNER JOIN customers c ON c.id = t.customer_id
+      WHERE t.currency = c.currency
+      GROUP BY t.customer_id, t.currency
+    ''');
+    for (final row in rows) {
+      final id = int.tryParse(row['customer_id'].toString());
+      if (id != null) {
+        customerBalances[id] = (row['balance'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+    for (final cust in customers) {
+      final id = int.tryParse(cust['id'].toString());
+      if (id != null) customerBalances.putIfAbsent(id, () => 0.0);
+    }
+  }
+
+  Future<void> addCustomer(
+      String name, String phone, String currency, int categoryId) async {
+    final db = await AppDBHelper.instance.database;
+    await db.insert('customers', {
+      'name': name,
+      'phone': phone,
+      'currency': currency,
+      'category_id': categoryId,
+      'last_activity': null,
+    });
+    await loadCustomers();
+  }
+
+  Future<bool> updateCustomer(int id, String name, String phone,
+      String currency, int categoryId) async {
+    final db = await AppDBHelper.instance.database;
+    final current = await db.query('customers', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (current.isEmpty) return false;
+    final oldCurrency = current.first['currency']?.toString() ?? '';
+    if (oldCurrency != currency) {
+      final count = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM transactions WHERE customer_id = ?', [id])) ?? 0;
+      if (count > 0) {
+        throw StateError('لا يمكن تغيير عملة حساب يحتوي على عمليات سابقة. أنشئ حساباً جديداً للعملة الأخرى.');
+      }
+    }
+    await db.update(
+        'customers',
+        {
+          'name': name,
+          'phone': phone,
+          'currency': currency,
+          'category_id': categoryId
+        },
+        where: 'id = ?',
+        whereArgs: [id]);
+    await loadCustomers();
+    return true;
+  }
+
+  Future<bool> deleteCustomer(int id) async {
+    final db = await AppDBHelper.instance.database;
+    final count = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM transactions WHERE customer_id = ?', [id])) ?? 0;
+    if (count > 0) return false;
+    final deleted = await db.delete('customers', where: 'id = ?', whereArgs: [id]);
+    await loadCustomers();
+    return deleted > 0;
+  }
+
+  Future<void> loadTransactions(int customerId) async {
+    final db = await AppDBHelper.instance.database;
+    final rows = await db.query('transactions',
+        where: 'customer_id = ?',
+        whereArgs: [customerId],
+        orderBy: 'datetime(date) ASC, id ASC');
+    // لا نحمل صور آلاف العمليات إلى الذاكرة عند فتح الحساب.
+    // الصورة تُقرأ فقط عند الحاجة لعرض تفاصيل العملية.
+    currentTransactions = rows;
+    notifyListeners();
+  }
+
+  Future<void> addTransaction(int customerId, double amount, String type,
+      String details, String date,
+      {String? imageData}) async {
+    if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
+    if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
+    final db = await AppDBHelper.instance.database;
+
+    // احفظ الصورة أولاً؛ وإذا فشلت المعاملة نحذف الملف الجديد حتى لا يصبح orphan.
+    String? imagePath;
+    if (imageData != null && imageData.trim().isNotEmpty) {
+      imagePath = await ImageStorageService.saveBase64(imageData, 'tx_new');
+      if (imagePath == null) throw Exception('تعذر حفظ صورة العملية');
+    }
+
+    try {
+      await db.transaction((txn) async {
+        final customer = await txn.query('customers', columns: ['currency'],
+            where: 'id = ?', whereArgs: [customerId], limit: 1);
+        if (customer.isEmpty) throw StateError('الحساب غير موجود');
+        final currency = customer.first['currency']?.toString() ?? '';
+        if (currency.trim().isEmpty) throw StateError('عملة الحساب غير محددة');
+        await txn.insert('transactions', {
+          'customer_id': customerId,
+          'amount': amount,
+          'type': type,
+          'details': details,
+          'date': _normalizeDate(date),
+          'image_data': null,
+          'image_path': imagePath,
+          'currency': currency,
+        });
+        final latest = await txn.query('transactions',
+            columns: ['date'],
+            where: 'customer_id = ?',
+            whereArgs: [customerId],
+            orderBy: 'datetime(date) DESC, id DESC',
+            limit: 1);
+        await txn.update('customers',
+            {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+            where: 'id = ?', whereArgs: [customerId]);
+      });
+    } catch (_) {
+      if (imagePath != null) await ImageStorageService.deleteRelative(imagePath);
+      rethrow;
+    }
+    await loadTransactions(customerId);
+    await loadCustomers();
+  }
+
+  Future<void> updateTransaction(
+      int id,
+      int customerId,
+      double amount,
+      String type,
+      String details,
+      String date,
+      {String? imageData}) async {
+    if (amount <= 0 || !amount.isFinite) throw ArgumentError('المبلغ غير صالح');
+    if (type != 'give' && type != 'take') throw ArgumentError('نوع العملية غير صالح');
+    final db = await AppDBHelper.instance.database;
+
+    String? newImagePath;
+    if (imageData != null && imageData.trim().isNotEmpty) {
+      newImagePath = await ImageStorageService.saveBase64(imageData, 'tx_$id');
+      if (newImagePath == null) throw Exception('تعذر حفظ صورة العملية');
+    }
+    String? oldImagePath;
+    try {
+      await db.transaction((txn) async {
+        final existing = await txn.query('transactions',
+            where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId], limit: 1);
+        if (existing.isEmpty) throw StateError('العملية غير موجودة');
+        oldImagePath = existing.first['image_path']?.toString();
+        await txn.update(
+            'transactions',
+            {
+              'amount': amount,
+              'type': type,
+              'details': details,
+              'date': _normalizeDate(date),
+              if (imageData != null) 'image_data': null,
+              if (imageData != null) 'image_path': newImagePath,
+            },
+            where: 'id = ? AND customer_id = ?',
+            whereArgs: [id, customerId]);
+        final latest = await txn.query(
+          'transactions',
+          columns: ['date'],
+          where: 'customer_id = ?',
+          whereArgs: [customerId],
+          orderBy: 'datetime(date) DESC, id DESC',
+          limit: 1,
+        );
+        await txn.update(
+          'customers',
+          {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+          where: 'id = ?',
+          whereArgs: [customerId],
+        );
+      });
+    } catch (_) {
+      if (newImagePath != null) await ImageStorageService.deleteRelative(newImagePath);
+      rethrow;
+    }
+    if (imageData != null && oldImagePath != null && oldImagePath != newImagePath) {
+      await ImageStorageService.deleteRelative(oldImagePath);
+    }
+    await loadTransactions(customerId);
+    await loadCustomers();
+  }
+
+  Future<void> deleteTransaction(int id, int customerId) async {
+    final db = await AppDBHelper.instance.database;
+    String? oldImagePath;
+    await db.transaction((txn) async {
+      final existing = await txn.query('transactions',
+          where: 'id = ? AND customer_id = ?',
+          whereArgs: [id, customerId],
+          limit: 1);
+      if (existing.isEmpty) throw StateError('العملية غير موجودة');
+      oldImagePath = existing.first['image_path']?.toString();
+      await txn.delete('transactions',
+          where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId]);
+      final latest = await txn.query(
+        'transactions',
+        columns: ['date'],
+        where: 'customer_id = ?',
+        whereArgs: [customerId],
+        orderBy: 'datetime(date) DESC, id DESC',
+        limit: 1,
+      );
+      await txn.update(
+        'customers',
+        {'last_activity': latest.isNotEmpty ? latest.first['date'] : null},
+        where: 'id = ?',
+        whereArgs: [customerId],
+      );
+    });
+    if (oldImagePath != null) await ImageStorageService.deleteRelative(oldImagePath);
+    await loadTransactions(customerId);
+    await loadCustomers();
+  }
+
+  Future<void> exportBackup() async {
+    File? bundle;
+    try {
+      bundle = await BackupBundleService.createBundle();
+      await Share.shareXFiles([XFile(bundle.path)], text: 'نسخة احتياطية كاملة - تطبيق المحاسب (.alb)');
+    } catch (e) {
+      debugPrint('خطأ أثناء تصدير ALB: $e');
+    } finally {
+      if (bundle != null) {
+        try { await bundle.delete(); } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> exportDatabaseBackup() async {
+    File? out;
+    try {
+      final db = await AppDBHelper.instance.database;
+      try {
+        await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+      final dbPath = p.join(await getDatabasesPath(), 'al_muhasib_final_v6.db');
+      final dbFile = File(dbPath);
+      if (!await dbFile.exists()) {
+        throw Exception('قاعدة البيانات غير موجودة');
+      }
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'al_muhasib_${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}_${DateTime.now().hour.toString().padLeft(2, '0')}-${DateTime.now().minute.toString().padLeft(2, '0')}-${DateTime.now().second.toString().padLeft(2, '0')}.db';
+      out = File(p.join(tempDir.path, fileName));
+      await dbFile.copy(out.path);
+      await Share.shareXFiles([XFile(out.path)], text: 'نسخة قاعدة البيانات - تطبيق المحاسب (.db)');
+    } catch (e) {
+      debugPrint('خطأ أثناء تصدير DB: $e');
+    } finally {
+      if (out != null) {
+        try { await out.delete(); } catch (_) {}
+      }
+    }
+  }
+
+  Future<bool> importBackup() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles();
+      if (result != null && result.files.single.path != null) {
+        final selected = File(result.files.single.path!);
+        if (p.extension(selected.path).toLowerCase() == '.alb') {
+          if (!await BackupBundleService.verifyBundle(selected)) {
+            throw Exception('ملف النسخة .alb تالف؛ لم يتم تغيير البيانات.');
+          }
+          await BackupBundleService.restoreBundle(selected);
+        } else {
+          await AppDBHelper.instance.restoreDatabase(selected);
+        }
+        await loadInitialData();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('خطأ أثناء الاستعادة: $e');
+    }
+    return false;
+  }
+
+  Future<bool> importBackupFromFile(File selectedFile) async {
+    try {
+      final isBundle = p.extension(selectedFile.path).toLowerCase() == '.alb';
+      if (isBundle && !await BackupBundleService.verifyBundle(selectedFile)) {
+        // Reject damaged bundles before touching the current database.
+        return false;
+      }
+
+      // Preserve a verified rollback snapshot before any restore path,
+      // including Google Drive restores and legacy raw database imports.
+      final safetyError = await AutoBackupService.runInternalBackupNow();
+      if (safetyError != null) {
+        debugPrint('تعذر إنشاء نسخة أمان قبل الاستعادة: $safetyError');
+        return false;
+      }
+
+      if (isBundle) {
+        await BackupBundleService.restoreBundle(selectedFile);
+      } else {
+        await AppDBHelper.instance.restoreDatabase(selectedFile);
+      }
+      await loadInitialData();
+      return true;
+    } catch (e, st) {
+      debugPrint('فشل استيراد/استعادة النسخة: $e\n$st');
+      return false;
+    }
+  }
+
+  Future<List<String>> getDistinctDetails({String query = ''}) async {
+    try {
+      final db = await AppDBHelper.instance.database;
+      List<Map<String, dynamic>> result;
+      if (query.trim().isEmpty) {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL AND TRIM(details) != ''
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 200
+        ''');
+      } else {
+        result = await db.rawQuery('''
+          SELECT details, COUNT(*) as usage_count
+          FROM transactions
+          WHERE details IS NOT NULL AND TRIM(details) != '' 
+            AND details LIKE ?
+          GROUP BY details
+          ORDER BY usage_count DESC, details ASC
+          LIMIT 200
+        ''', ['%$query%']);
+      }
+      return result
+          .map((row) => (row['details'] ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      return [];    }
+  }
+
+  Future<Map<String, dynamic>> importFromExcel(File excelFile,
+      {int? categoryId}) async {
+    final fileName = excelFile.path.toLowerCase();
+    if (fileName.endsWith('.xls')) {
+      throw Exception('صيغة .xls غير مدعومة. يرجى حفظ الملف بصيغة .xlsx');
+    }
+    final bytes = excelFile.readAsBytesSync();
+    final excel = excel_lib.Excel.decodeBytes(bytes);
+    int customersCreated = 0;
+    int transactionsCreated = 0;
+    int rowsSkipped = 0;
+    String detectedAccountName = '';
+    final db = await AppDBHelper.instance.database;
+    final importResult = await db.transaction((txn) async {
+    int finalCategoryId;
+    if (categoryId != null) {
+      final catCheck = await txn
+          .query('categories', where: 'id = ?', whereArgs: [categoryId]);
+      if (catCheck.isEmpty) throw Exception('التصنيف المحدد غير موجود');
+      finalCategoryId = categoryId;
+    } else {
+      final existingCat =
+          await txn.query('categories', where: 'name = ?', whereArgs: ['عام']);
+      finalCategoryId = existingCat.isEmpty
+          ? await txn.insert('categories', {'name': 'عام'})
+          : int.parse(existingCat.first['id'].toString());
+    }
+    Map<String, int> customerNameToId = {};
+    for (var tableName in excel.tables.keys) {
+      final sheet = excel.tables[tableName]!;
+      String? headerAccountName;
+      for (int i = 0; i < sheet.maxRows && i < 5; i++) {
+        for (var cell in sheet.rows[i]) {
+          final cellText = cell?.value?.toString() ?? '';
+          if (cellText.contains('كشف حساب')) {
+            final parts = cellText.split('حساب');
+            if (parts.length > 1) {
+              String extracted = parts[1].trim();
+              if (extracted.startsWith('-')) {
+                extracted = extracted.substring(1).trim();
+              }
+              headerAccountName = extracted;
+            }
+          }
+        }
+      }
+      if (headerAccountName != null && detectedAccountName.isEmpty) {
+        detectedAccountName = headerAccountName;
+      }
+      int headerRowIndex = -1, colDate = -1, colDetails = -1;
+      int colTake = -1, colGive = -1, colCustomerName = -1;
+      for (int i = 0; i < sheet.maxRows && i < 15; i++) {
+        final row = sheet.rows[i];
+        int foundHeaders = 0;
+        for (int j = 0; j < row.length; j++) {
+          final cellText = row[j]?.value?.toString().trim() ?? '';
+          if (cellText == 'التاريخ') {
+            colDate = j;
+            foundHeaders++;
+          } else if (cellText == 'التفاصيل') {
+            colDetails = j;
+            foundHeaders++;
+          } else if (cellText == 'عليه') {
+            colTake = j;
+            foundHeaders++;
+          } else if (cellText == 'له') {
+            colGive = j;
+            foundHeaders++;
+          } else if (cellText == 'اسم الحساب') {
+            colCustomerName = j;
+            foundHeaders++;
+          }
+        }
+        if (foundHeaders >= 3) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+      if (headerRowIndex == -1) continue;
+      for (int i = headerRowIndex + 1; i < sheet.maxRows; i++) {
+          final row = sheet.rows[i];
+          if (row.isEmpty) continue;
+          String customerName = '';
+          if (colCustomerName != -1 && colCustomerName < row.length) {
+            customerName =
+                row[colCustomerName]?.value?.toString().trim() ?? '';
+          }
+          if (customerName.isEmpty &&
+              headerAccountName != null &&
+              headerAccountName.isNotEmpty) {
+            customerName = headerAccountName;
+          }
+          String details = '';
+          if (colDetails != -1 && colDetails < row.length) {
+            details = row[colDetails]?.value?.toString().trim() ?? '';
+          }
+          if (details.contains('إجمالي') ||
+              details.contains('الرصيد الإجمالي') ||
+              details.contains('إجمالي العمليات') ||
+              customerName.contains('إجمالي') ||
+              customerName.contains('الرصيد الإجمالي')) {
+            continue;
+          }
+          if (customerName.isEmpty) {
+            rowsSkipped++;
+            continue;
+          }
+          String dateStr = '';
+          if (colDate != -1 && colDate < row.length) {
+            final dateCell = row[colDate]?.value;
+            if (dateCell is excel_lib.DateCellValue) {
+              dateStr =
+                  DateTime(dateCell.year, dateCell.month, dateCell.day)
+                      .toString()
+                      .split('.')[0];
+            } else if (dateCell is excel_lib.DateTimeCellValue) {
+              dateStr = dateCell.asDateTimeLocal().toString().split('.')[0];
+            } else if (dateCell is excel_lib.IntCellValue || dateCell is excel_lib.DoubleCellValue) {
+              final serial = dateCell is excel_lib.IntCellValue
+                  ? dateCell.value.toDouble()
+                  : (dateCell as excel_lib.DoubleCellValue).value;
+              if (serial > 0) {
+                final wholeDays = serial.floor();
+                final millis = ((serial - wholeDays) * Duration.millisecondsPerDay).round();
+                final excelDate = DateTime(1899, 12, 30).add(
+                    Duration(days: wholeDays, milliseconds: millis));
+                dateStr = excelDate.toString().split('.').first;
+              }
+            } else if (dateCell != null) {
+              dateStr = dateCell.toString().trim();
+            }
+          }
+          double takeAmount = 0, giveAmount = 0;
+          if (colTake != -1 && colTake < row.length) {
+            final v = row[colTake]?.value;
+            if (v is excel_lib.IntCellValue) {
+              takeAmount = v.value.toDouble();
+            } else if (v is excel_lib.DoubleCellValue) {
+              takeAmount = v.value;
+            } else if (v != null) {
+              takeAmount =
+                  double.tryParse(v.toString().replaceAll(',', '').trim()) ?? 0;
+            }
+          }
+          if (colGive != -1 && colGive < row.length) {
+            final v = row[colGive]?.value;
+            if (v is excel_lib.IntCellValue) {
+              giveAmount = v.value.toDouble();
+            } else if (v is excel_lib.DoubleCellValue) {
+              giveAmount = v.value;
+            } else if (v != null) {
+              giveAmount =
+                  double.tryParse(v.toString().replaceAll(',', '').trim()) ?? 0;
+            }
+          }
+          if (takeAmount < 0 || giveAmount < 0) {
+            rowsSkipped++;
+            continue;
+          }
+          if (takeAmount == 0 && giveAmount == 0) continue;
+          // لا نقبل صفًا يحتوي مبلغًا في (له) و(عليه) معًا؛ فهذا غامض محاسبيًا.
+          if (takeAmount > 0 && giveAmount > 0) {
+            rowsSkipped++;
+            continue;
+          }
+          final double amount;
+          final String type;
+          if (giveAmount > 0) {
+            amount = giveAmount;
+            type = 'give';
+          } else {
+            amount = takeAmount;
+            type = 'take';
+          }
+          if (dateStr.isEmpty) {
+            rowsSkipped++;
+            continue;
+          }
+          try {
+            dateStr = _normalizeDate(dateStr);
+          } catch (_) {
+            rowsSkipped++;
+            continue;
+          }
+          int customerId;
+          if (customerNameToId.containsKey(customerName)) {
+            customerId = customerNameToId[customerName]!;
+          } else {
+            final existingCust = await txn.query('customers',
+                where: 'name = ?', whereArgs: [customerName]);
+            if (existingCust.isEmpty) {
+              customerId = await txn.insert('customers', {
+                'name': customerName,
+                'phone': '',
+                'currency': 'ريال يمني',
+                'category_id': finalCategoryId,
+                'last_activity': dateStr,
+              });
+              customersCreated++;
+            } else {
+              customerId = int.parse(existingCust.first['id'].toString());
+              await txn.update('customers', {'category_id': finalCategoryId},
+                  where: 'id = ?', whereArgs: [customerId]);
+            }
+            customerNameToId[customerName] = customerId;
+          }
+          await txn.insert('transactions', {
+            'customer_id': customerId,
+            'amount': amount,
+            'type': type,
+            'details': details,
+            'date': dateStr,
+            'currency': (await txn.query('customers', columns: ['currency'], where: 'id = ?', whereArgs: [customerId], limit: 1)).first['currency']?.toString() ?? 'ريال يمني',
+          });
+          transactionsCreated++;
+          await txn.update('customers', {'last_activity': dateStr},
+              where: 'id = ?', whereArgs: [customerId]);
+      }
+    }
+    String displayName;
+    if (customersCreated > 1) {
+      displayName = 'كل الحسابات ($customersCreated حساب)';
+    } else if (detectedAccountName.isNotEmpty) {
+      displayName = detectedAccountName;
+    } else if (customersCreated == 1) {
+      displayName = 'حساب واحد';
+    } else {
+      displayName = 'لا توجد بيانات جديدة';
+    }
+    return {
+      'customers': customersCreated,
+      'transactions': transactionsCreated,
+      'skipped': rowsSkipped,
+      'accountName': displayName,
+    };
+    });
+    await loadInitialData();
+    return importResult;
+  }
+
+  String _normalizeDate(String dateStr) {
+  final raw = dateStr.trim();
+  if (raw.isEmpty) throw FormatException('التاريخ فارغ');
+
+  final direct = DateTime.tryParse(raw);
+  if (direct != null) return direct.toString().split('.').first;
+
+  final match = RegExp(
+    r'^(\d{1,4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$',
+  ).firstMatch(raw);
+  if (match != null) {
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    final hour = int.tryParse(match.group(4) ?? '0') ?? 0;
+    final minute = int.tryParse(match.group(5) ?? '0') ?? 0;
+    final second = int.tryParse(match.group(6) ?? '0') ?? 0;
+    if (year < 1000) throw FormatException('تاريخ غير صالح: $raw');
+    final d = DateTime(year, month, day, hour, minute, second);
+    if (d.year != year || d.month != month || d.day != day ||
+        d.hour != hour || d.minute != minute || d.second != second) {
+      throw FormatException('تاريخ غير صالح: $raw');
+    }
+    return d.toString().split('.').first;
+  }
+  throw FormatException('تنسيق تاريخ غير مدعوم: $raw');
+}
+}
+
+// ==================== AlMuhasibApp ====================
+class AlMuhasibApp extends StatefulWidget {
+  const AlMuhasibApp({super.key});
+
+  @override
+  State<AlMuhasibApp> createState() => _AlMuhasibAppState();
+}
+
+class _AlMuhasibAppState extends State<AlMuhasibApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Android does not provide a reliable callback for force-stop/swipe-away.
+    // Paused is the practical signal that the UI has left the foreground.
+    // WorkManager runs the queued backup independently of the UI process.
+    if (state == AppLifecycleState.paused) {
+      unawaited(AutoBackupService.scheduleBackupOnExit());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'دفتر المحاسب الشامل',
+      debugShowCheckedModeBanner: false,
+      locale: const Locale('ar', ''),
+      supportedLocales: const [Locale('ar', ''), Locale('en', '')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      theme: ThemeData(
+        fontFamily: 'Cairo',
+        primaryColor: AppColors.primary,
+        scaffoldBackgroundColor: AppColors.background,
+        colorScheme: const ColorScheme.light(
+          primary: AppColors.primary,
+          secondary: AppColors.gold,
+          surface: Colors.white,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.bold),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.gold,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppColors.gold, width: 2),
+          ),
+          labelStyle: const TextStyle(color: AppColors.primary),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 2,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        useMaterial3: false,
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final Widget? title;
+  final List<Widget>? actions;
+  final Widget? leading;
+  final PreferredSizeWidget? bottom;
+  final double toolbarHeight;
+  const GradientAppBar({
+    super.key,
+    this.title,
+    this.actions,
+    this.leading,
+    this.bottom,
+    this.toolbarHeight = kToolbarHeight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.solidBlue,
+      child: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: title,
+        actions: actions,
+        leading: leading,
+        bottom: bottom,
+        toolbarHeight: toolbarHeight,
+        foregroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
+}
+
+class LogoCropScreen extends StatefulWidget {
+  final Uint8List imageBytes;
+  final String shape;
+
+  const LogoCropScreen({
+    super.key,
+    required this.imageBytes,
+    required this.shape,
+  });
+
+  @override
+  State<LogoCropScreen> createState() => _LogoCropScreenState();
+}
+
+class _LogoCropScreenState extends State<LogoCropScreen> {
+  ui.Image? _image;
+  double _zoom = 1.0;
+  Offset _offset = Offset.zero;
+  double _startZoom = 1.0;
+  Offset _startOffset = Offset.zero;
+  bool _saving = false;
+  double _viewportSize = 320;
+
+  @override
+  void initState() {
+    super.initState();
+    _decodeImage();
+  }
+
+  Future<void> _decodeImage() async {
+    final codec = await ui.instantiateImageCodec(widget.imageBytes);
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    if (!mounted) {
+      frame.image.dispose();
+      return;
+    }
+    setState(() => _image = frame.image);
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
+  }
+
+  double _baseScale(Size size) {
+    final image = _image!;
+    return (size.width / image.width > size.height / image.height)
+        ? size.width / image.width
+        : size.height / image.height;
+  }
+
+  Offset _clampOffset(Offset value, Size size, double zoom) {
+    final image = _image!;
+    final scale = _baseScale(size) * zoom;
+    final width = image.width * scale;
+    final height = image.height * scale;
+    final maxX = (width - size.width) / 2;
+    final maxY = (height - size.height) / 2;
+    return Offset(
+      maxX <= 0 ? 0 : value.dx.clamp(-maxX, maxX).toDouble(),
+      maxY <= 0 ? 0 : value.dy.clamp(-maxY, maxY).toDouble(),
+    );
+  }
+
+  Future<void> _confirmCrop() async {
+    if (_image == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      const outputSize = 1024;
+      final renderSize = Size(outputSize.toDouble(), outputSize.toDouble());
+      final scale = _baseScale(renderSize) * _zoom;
+      final image = _image!;
+      final drawnWidth = image.width * scale;
+      final drawnHeight = image.height * scale;
+      final left = (outputSize - drawnWidth) / 2 + _offset.dx * (outputSize / _viewportSize);
+      final top = (outputSize - drawnHeight) / 2 + _offset.dy * (outputSize / _viewportSize);
+      final sourceRect = Rect.fromLTWH(
+        (0 - left) / scale,
+        (0 - top) / scale,
+        outputSize / scale,
+        outputSize / scale,
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final paint = Paint()..filterQuality = FilterQuality.high;
+      canvas.drawImageRect(
+        image,
+        sourceRect,
+        Rect.fromLTWH(0, 0, outputSize.toDouble(), outputSize.toDouble()),
+        paint,
+      );
+      final picture = recorder.endRecording();
+      final cropped = await picture.toImage(outputSize, outputSize);
+      picture.dispose();
+      final data = await cropped.toByteData(format: ui.ImageByteFormat.png);
+      cropped.dispose();
+      if (data == null) throw Exception('تعذر تجهيز الصورة');
+      if (mounted) Navigator.of(context).pop(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر قص الصورة: $e')),
+      );
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _image;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('تحديد الشعار'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Text(
+                'حرّك الصورة بإصبعك، واستخدم إصبعين للتكبير والتصغير. ضع الجزء المطلوب داخل الإطار.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final side = constraints.maxWidth < constraints.maxHeight
+                        ? constraints.maxWidth - 28
+                        : constraints.maxHeight - 28;
+                    final size = side.clamp(220.0, 360.0).toDouble();
+                    _viewportSize = size;
+                    if (image == null) {
+                      return const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+                    return SizedBox(
+                      width: size,
+                      height: size,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onScaleStart: (_) {
+                          _startZoom = _zoom;
+                          _startOffset = _offset;
+                        },
+                        onScaleUpdate: (details) {
+                          final nextZoom = (_startZoom * details.scale).clamp(1.0, 8.0).toDouble();
+                          setState(() {
+                            _zoom = nextZoom;
+                            _offset = _clampOffset(
+                              _startOffset + details.focalPointDelta,
+                              Size(size, size),
+                              nextZoom,
+                            );
+                          });
+                        },
+                        child: ClipRect(
+                          child: CustomPaint(
+                            painter: _LogoCropPainter(
+                              image: image,
+                              zoom: _zoom,
+                              offset: _offset,
+                              circular: widget.shape == 'circle',
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.gold,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _saving ? null : _confirmCrop,
+                      icon: _saving
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.check),
+                      label: const Text('تأكيد وحفظ'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogoCropPainter extends CustomPainter {
+  final ui.Image image;
+  final double zoom;
+  final Offset offset;
+  final bool circular;
+
+  _LogoCropPainter({
+    required this.image,
+    required this.zoom,
+    required this.offset,
+    required this.circular,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final baseScale = (size.width / image.width > size.height / image.height)
+        ? size.width / image.width
+        : size.height / image.height;
+    final scale = baseScale * zoom;
+    final width = image.width * scale;
+    final height = image.height * scale;
+    final imageRect = Rect.fromLTWH(
+      (size.width - width) / 2 + offset.dx,
+      (size.height - height) / 2 + offset.dy,
+      width,
+      height,
+    );
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      imageRect,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    canvas.restore();
+
+    final frame = circular
+        ? (Path()..addOval(Offset.zero & size))
+        : (Path()..addRect(Offset.zero & size));
+    final outside = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addPath(frame, Offset.zero);
+    canvas.drawPath(outside, Paint()..color = Colors.black.withOpacity(0.56));
+    canvas.drawPath(
+      frame,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LogoCropPainter oldDelegate) =>
+      oldDelegate.image != image ||
+      oldDelegate.zoom != zoom ||
+      oldDelegate.offset != offset ||
+      oldDelegate.circular != circular;
+}
+
+class PersonalDataScreen extends StatefulWidget {
+  const PersonalDataScreen({super.key});
+
+  @override
+  State<PersonalDataScreen> createState() => _PersonalDataScreenState();
+}
+
+class _PersonalDataScreenState extends State<PersonalDataScreen> {
+  final List<TextEditingController> _lineControllers =
+      List.generate(6, (_) => TextEditingController());
+  final List<String> _lineColors = List<String>.filled(6, '#000000');
+  final List<double> _lineSizes = List<double>.filled(6, 10.0);
+
+  static const Map<String, String> _colorNames = {
+    '#000000': 'أسود',
+    '#1E3A5F': 'أزرق داكن',
+    '#1565C0': 'أزرق',
+    '#008577': 'أخضر مزرق',
+    '#008000': 'أخضر',
+    '#E65100': 'برتقالي',
+    '#C62828': 'أحمر',
+    '#7B1FA2': 'بنفسجي',
+    '#6D4C41': 'بني',
+    '#757575': 'رمادي',
+  };
+
+  String? _logoBase64;
+  String _logoShape = 'circle';
+  bool _loading = true;
+
+  String _sideKey(int index) => index < 3 ? 'right' : 'left';
+  int _lineNumber(int index) => index < 3 ? index + 1 : index - 2;
+  String _textKey(int index) => '${_sideKey(index)}Line${_lineNumber(index)}';
+  String _colorKey(int index) => '${_sideKey(index)}Color${_lineNumber(index)}';
+  String _sizeKey(int index) => '${_sideKey(index)}Size${_lineNumber(index)}';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _lineControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    final data = await PersonalDataService.getData();
+    final logo = await PersonalDataService.getLogoBase64();
+    if (!mounted) return;
+    setState(() {
+      for (var i = 0; i < _lineControllers.length; i++) {
+        _lineControllers[i].text = (data[_textKey(i)] ?? '').toString();
+        _lineColors[i] = (data[_colorKey(i)] ?? '#000000').toString();
+        _lineSizes[i] = (data[_sizeKey(i)] as num?)?.toDouble() ?? 10.0;
+      }
+      _logoShape = data['logoShape'] as String;
+      _logoBase64 = logo;
+      _loading = false;
+    });
+  }
+
+  Future<void> _pickLogo() async {
+    final img = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 95,
+      maxWidth: 2400,
+      maxHeight: 2400,
+    );
+    if (img == null || !mounted) return;
+
+    final shape = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Text('شكل الشعار'),
+        content: const Text('اختر شكل إطار القص الذي تريد استخدامه للشعار.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'circle'),
+            child: const Text('دائري'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
+            onPressed: () => Navigator.pop(ctx, 'square'),
+            child: const Text('مربع'),
+          ),
+        ],
+      ),
+    );
+    if (shape == null || !mounted) return;
+
+    final sourceBytes = await img.readAsBytes();
+    if (!mounted) return;
+    final croppedBytes = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => LogoCropScreen(imageBytes: sourceBytes, shape: shape),
+      ),
+    );
+    if (croppedBytes == null || !mounted) return;
+
+    final base64Data = base64Encode(croppedBytes);
+    try {
+      await PersonalDataService.saveLogoBase64(base64Data);
+      await PersonalDataService.saveData(logoShape: shape);
+      if (!mounted) return;
+      setState(() {
+        _logoBase64 = base64Data;
+        _logoShape = shape;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ الشعار المحدد')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر حفظ الشعار: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteLogo() async {
+    await PersonalDataService.saveLogoBase64(null);
+    if (!mounted) return;
+    setState(() => _logoBase64 = null);
+  }
+
+  Future<void> _save() async {
+    final lineTexts = <String, String>{};
+    final lineColors = <String, String>{};
+    final lineSizes = <String, double>{};
+    for (var i = 0; i < _lineControllers.length; i++) {
+      lineTexts[_textKey(i)] = _lineControllers[i].text.trim();
+      lineColors[_colorKey(i)] = _lineColors[i];
+      lineSizes[_sizeKey(i)] = _lineSizes[i];
+    }
+    await PersonalDataService.saveData(
+      lineTexts: lineTexts,
+      lineColors: lineColors,
+      lineSizes: lineSizes,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('✅ تم حفظ البيانات'),
+        backgroundColor: AppColors.green,
+      ));
+      Navigator.pop(context);
+    }
+  }
+
+  Widget _buildLineEditor(int index, String lineLabel) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _lineControllers[index],
+              decoration: InputDecoration(
+                labelText: lineLabel,
+                hintText: lineLabel,
+                prefixIcon: const Icon(Icons.edit),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: DropdownButtonFormField<String>(
+                    value: _lineColors[index],
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'لون الخط',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: _colorNames.entries.map((entry) {
+                      final colorValue = int.parse(entry.key.substring(1), radix: 16);
+                      return DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Color(0xFF000000 | colorValue),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black26),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Flexible(child: Text(entry.value, overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _lineColors[index] = value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<double>(
+                    value: _lineSizes[index],
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'حجم الخط',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: const [8, 9, 10, 11, 12, 14, 16, 18, 20]
+                        .map((size) => DropdownMenuItem<double>(
+                              value: size.toDouble(),
+                              child: Text('$size'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _lineSizes[index] = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return Scaffold(
+      appBar: GradientAppBar(
+        title: const Text('البيانات الشخصية'),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: _logoBase64 != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                        _logoShape == 'circle' ? 100 : 12),
+                    child: Image.memory(
+                      base64Decode(_logoBase64!),
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/icon.png',
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _pickLogo,
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                icon: const Icon(Icons.image),
+                label: const Text('تغيير الشعار'),
+              ),
+              const SizedBox(width: 10),
+              if (_logoBase64 != null)
+                ElevatedButton.icon(
+                  onPressed: _deleteLogo,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+                  icon: const Icon(Icons.delete),
+                  label: const Text('حذف الشعار'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Center(
+            child: Text(
+              'البيانات التي تظهر في ترويسة التقارير',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primary),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text('يمين الصفحة', textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primary)),
+          const SizedBox(height: 10),
+          _buildLineEditor(0, 'السطر الأول'),
+          _buildLineEditor(1, 'السطر الثاني'),
+          _buildLineEditor(2, 'السطر الثالث'),
+          const SizedBox(height: 8),
+          const Divider(),
+          const SizedBox(height: 8),
+          const Text('يسار الصفحة', textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primary)),
+          const SizedBox(height: 10),
+          _buildLineEditor(3, 'السطر الأول'),
+          _buildLineEditor(4, 'السطر الثاني'),
+          _buildLineEditor(5, 'السطر الثالث'),
+          const SizedBox(height: 18),
+          ElevatedButton.icon(
+            onPressed: _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              minimumSize: const Size(double.infinity, 55),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.save),
+            label: const Text('حفظ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== HomeScreen ====================
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  String searchQuery = '';
+  bool isSearching = false;
+  Timer? _autoBackupTimer;
+  TextEditingController? searchController;
+  TabController? _tabController;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? _drawerLogoBase64;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAutoBackup();
+      _loadDrawerLogo();
+      _autoBackupTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _checkAutoBackup();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = null;
+    // Disposing a screen is not a backup trigger. Running backups here races
+    // the minute timer, startup checks, WorkManager, and the exact alarm.
+    _tabController?.dispose();
+    searchController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDrawerLogo() async {
+    final logo = await PersonalDataService.getLogoBase64();
+    if (!mounted) return;
+    setState(() {
+      _drawerLogoBase64 = logo;
+    });
+  }
+
+  void _startSearch() {
+    setState(() {
+      isSearching = true;
+      searchController = TextEditingController();
+      searchQuery = '';
+    });
+  }
+
+  void _stopSearch() {
+    setState(() {
+      isSearching = false;
+      searchController?.dispose();
+      searchController = null;
+      searchQuery = '';
+    });
+  }
+
+  Future<void> _checkAutoBackup() async {
+    try {
+      final settings = await AutoBackupService.getSettings();
+      final wasEnabled = settings['enabled'] as bool;
+      final lastBackupBefore = settings['lastBackup'] as String;
+      final error = await AutoBackupService.checkAndRunBackup();
+      if (error != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('⚠️ فشل النسخ التلقائي: $error'),
+          backgroundColor: AppColors.red,
+          duration: const Duration(seconds: 5),
+        ));
+      } else if (error == null && wasEnabled && mounted) {
+        final newSettings = await AutoBackupService.getSettings();
+        final newLastBackup = newSettings['lastBackup'] as String;
+        if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Row(children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('✅ تم النسخ الاحتياطي بنجاح'),
+              ]),
+              backgroundColor: AppColors.green,
+              duration: Duration(seconds: 4),
+            ));
+          }
+        }
+      }
+      await _checkDriveBackup();
+    } catch (e) {
+      debugPrint('❌ خطأ في فحص النسخ: $e');
+    }
+  }
+
+  Future<void> _checkDriveBackup() async {
+    try {
+      final settings = await AutoBackupService.getSettings();
+      final wasEnabled = settings['driveEnabled'] as bool;
+      final lastBackupBefore = settings['driveLastBackup'] as String;
+      final error = await AutoBackupService.checkAndRunDriveBackup();
+      if (error != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('⚠️ فشل النسخ على Drive: $error'),
+          backgroundColor: AppColors.red,
+          duration: const Duration(seconds: 5),
+        ));
+      } else if (error == null && wasEnabled && mounted) {
+        final newSettings = await AutoBackupService.getSettings();
+        final newLastBackup = newSettings['driveLastBackup'] as String;
+        if (newLastBackup.isNotEmpty && newLastBackup != lastBackupBefore) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Row(children: [
+                Icon(Icons.cloud_done, color: Colors.white),
+                SizedBox(width: 8),
+                Text('☁️ تم النسخ على Google Drive'),
+              ]),
+              backgroundColor: AppColors.drive,
+              duration: Duration(seconds: 4),
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ خطأ في فحص Drive: $e');
+    }
+  }
+
+  Future<void> _importFromExcel(BuildContext context) async {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    if (provider.categories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('لا توجد تصنيفات. أضف تصنيفاً أولاً'),
+          backgroundColor: AppColors.red));
+      return;
+    }
+    int selectedCategoryId =
+        int.parse(provider.categories.first['id'].toString());
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: const Row(children: [
+            Icon(Icons.folder_open, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('اختر التصنيف'),
+          ]),
+          content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('في أي تصنيف تريد إضافة الحسابات المستوردة؟',
+                    style: TextStyle(fontSize: 14, color: Colors.grey)),
+                const SizedBox(height: 15),
+                DropdownButtonFormField<int>(
+                  value: selectedCategoryId,
+                  decoration: const InputDecoration(
+                      labelText: 'التصنيف', prefixIcon: Icon(Icons.folder)),
+                  items: provider.categories.map((c) {
+                    final int cId = int.parse(c['id'].toString());
+                    return DropdownMenuItem<int>(
+                        value: cId, child: Text(c['name'].toString()));
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedCategoryId = val);
+                    }
+                  },
+                ),
+              ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('إلغاء',
+                    style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('متابعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      FilePickerResult? result = await FilePicker.platform
+          .pickFiles(type: FileType.custom, allowedExtensions: ['xlsx']);
+      if (result == null || result.files.single.path == null) return;
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => WillPopScope(
+            onWillPop: () async => false,
+            child: const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    CircularProgressIndicator(color: AppColors.gold),
+                    SizedBox(height: 15),
+                    Text('جاري الاستيراد...'),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+      File excelFile = File(result.files.single.path!);
+      final stats = await provider.importFromExcel(excelFile,
+          categoryId: selectedCategoryId);
+      if (context.mounted) {
+        Navigator.pop(context);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            title: const Row(children: [
+              Icon(Icons.check_circle, color: AppColors.green),
+              SizedBox(width: 8),
+              Text('تم الاستيراد بنجاح'),
+            ]),
+            content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if ((stats['accountName'] as String).isNotEmpty) ...[
+                    Text('📁 ${stats['accountName']}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    const Divider(),
+                  ],
+                  Text('✅ حسابات جديدة: ${stats['customers']}',
+                      style: const TextStyle(fontSize: 15)),
+                  const SizedBox(height: 5),
+                  Text('✅ معاملات: ${stats['transactions']}',
+                      style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.green)),
+                  if ((stats['skipped'] as int) > 0) ...[
+                    const SizedBox(height: 5),
+                    Text('⚠️ تم تجاهل: ${stats['skipped']} صف',
+                        style: const TextStyle(color: Colors.orange)),
+                  ],
+                ]),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.gold),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('تم'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true)
+            .popUntil((route) => route.settings.name != null);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('خطأ: $e'),
+            backgroundColor: AppColors.red,
+            duration: const Duration(seconds: 8)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<AppAccountProvider>(context);
+    final categories = provider.categories;
+    if (categories.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('دفتر المحاسب الشامل')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('لا توجد تصنيفات مضافة'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+                icon: const Icon(Icons.category),
+                label: const Text('إدارة التصنيفات'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_tabController == null ||
+        _tabController!.length != categories.length) {
+      _tabController?.dispose();
+      _tabController = TabController(length: categories.length, vsync: this);
+    }
+
+    return Scaffold(
+      key: _scaffoldKey,
+      appBar: AppBar(
+        toolbarHeight: 0,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(104),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(8),
+              bottomRight: Radius.circular(8),
+            ),
+            child: Container(
+              color: AppColors.solidBlue,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(
+                  height: 56,
+                  child: Row(children: [
+                    IconButton(
+                      icon: const Icon(Icons.menu,
+                          color: Colors.black, size: 26),
+                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                    ),
+                    const Spacer(),
+                    if (!isSearching) ...[
+                      Row(children: const [
+                        Icon(Icons.menu_book, color: Colors.black, size: 24),
+                        SizedBox(width: 8),
+                        Text('المحاسب',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold)),
+                      ]),
+                    ] else
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TextField(
+                            controller: searchController,
+                            autofocus: true,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(color: Colors.black),
+                            decoration: const InputDecoration(
+                              hintText: 'ابحث في هذا التصنيف...',
+                              hintStyle: TextStyle(color: Colors.black54),
+                              border: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Colors.black)),
+                              focusedBorder: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Colors.black)),
+                              isDense: true,
+                            ),
+                            onChanged: (val) =>
+                                setState(() => searchQuery = val),
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (!isSearching)
+                      IconButton(
+                        icon: const Icon(Icons.search,
+                            color: Colors.black, size: 26),
+                        onPressed: _startSearch,
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.close,
+                            color: Colors.black, size: 26),
+                        onPressed: _stopSearch,
+                      ),
+                    const SizedBox(width: 4),
+                  ]),
+                ),
+                SizedBox(
+                  height: 48,
+                  child: TabBar(                    controller: _tabController,
+                    isScrollable: true,
+                    indicatorColor: AppColors.primary,
+                    indicatorWeight: 3,
+                    labelColor: Colors.black,
+                    unselectedLabelColor: Colors.black54,
+                    labelStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                    tabs: categories
+                        .map((cat) => Tab(text: cat['name'].toString()))
+                        .toList(),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+      drawerEnableOpenDragGesture: false,
+      drawer: Drawer(
+        child: Column(children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 40, 20, 25),
+            color: AppColors.solidBlue,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.gold, width: 3),
+                    ),
+                    child: ClipOval(
+                      child: _drawerLogoBase64 != null
+                          ? Image.memory(
+                              base64Decode(_drawerLogoBase64!),
+                              fit: BoxFit.cover,
+                              width: 90,
+                              height: 90,
+                            )
+                          : Image.asset(
+                              'assets/icon.png',
+                              fit: BoxFit.cover,
+                              width: 90,
+                              height: 90,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  const Text('تطبيق المحاسب',
+                      style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const Text('المهندس : اسامه الاضرعي',
+                      style: TextStyle(color: Colors.black54, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Row(children: const [
+                    Icon(Icons.phone, color: AppColors.goldDark, size: 16),
+                    SizedBox(width: 6),
+                    Text('770638276',
+                        style:
+                            TextStyle(color: Colors.black54, fontSize: 14)),
+                  ]),
+                ]),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.category, color: AppColors.primary),
+            ),
+            title: const Text('إدارة التصنيفات',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.gold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child:
+                  const Icon(Icons.attach_money, color: AppColors.goldDark),
+            ),
+            title: const Text('إدارة العملات',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.person, color: Colors.purple),
+            ),
+            title: const Text('البيانات الشخصية',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const PersonalDataScreen())).then((_) {
+                _loadDrawerLogo();
+              });
+            },
+          ),
+          const Divider(height: 20, indent: 20, endIndent: 20),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.upload_file, color: Colors.teal),
+            ),
+            title: const Text('استيراد من Excel',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _importFromExcel(context);
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.green.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.cloud_sync, color: AppColors.green),
+            ),
+            title: const Text('النسخ الاحتياطي والاستعادة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const BackupOptionsScreen()));
+            },
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(15),
+            child: const Text('دفتر المحاسب © 2026',
+                style: TextStyle(color: Colors.grey, fontSize: 12)),
+          ),
+        ]),
+      ),
+      body: Column(children: [
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: categories.map((cat) {
+              final int currentCatId = int.parse(cat['id'].toString());
+              final categoryCustomers = provider.customers.where((c) {
+                final int customerCatId =
+                    int.parse(c['category_id'].toString());
+                final name = (c['name'] ?? '').toString();
+                final phone = (c['phone'] ?? '').toString();
+                return customerCatId == currentCatId &&
+                    (name.contains(searchQuery) || phone.contains(searchQuery));
+              }).toList();
+
+              // لا يجوز جمع أرصدة بعملات مختلفة في إجمالي واحد.
+              // لذلك نحسب الإجماليات بشكل مستقل لكل عملة.
+              final Map<String, Map<String, double>> currencyTotals = {};
+              for (var cust in categoryCustomers) {
+                final int cId = int.parse(cust['id'].toString());
+                final String currency =
+                    (cust['currency'] ?? 'غير محددة').toString();
+                final double bal = provider.customerBalances[cId] ?? 0.0;
+                final totals = currencyTotals.putIfAbsent(
+                    currency, () => {'give': 0.0, 'take': 0.0});
+                if (bal > 0) {
+                  totals['give'] = (totals['give'] ?? 0) + bal;
+                } else if (bal < 0) {
+                  totals['take'] = (totals['take'] ?? 0) + bal.abs();
+                }
+              }
+
+              return Column(children: [
+                Expanded(
+                  child: categoryCustomers.isEmpty
+                      ? Center(
+                          child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                              Icon(Icons.inbox,
+                                  size: 80, color: Colors.grey.shade300),
+                              const SizedBox(height: 15),
+                              Text('لا توجد حسابات مضافة',
+                                  style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 15)),
+                            ]))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          itemCount: categoryCustomers.length,
+                          itemBuilder: (ctx, i) => _buildCustomerCard(
+                              context, provider, categoryCustomers[i]),
+                        ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  color: AppColors.background,
+                  child: Row(children: [
+                    SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        elevation: 3,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(28),
+                          onTap: () {
+                            final activeIndex = _tabController!.index;
+                            final activeCategoryId = int.parse(
+                                categories[activeIndex]['id'].toString());
+                            _showAddCustomerDialog(context, activeCategoryId);
+                          },
+                          child: const Center(
+                            child: Icon(Icons.add,
+                                color: AppColors.gold, size: 30),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.solidBlue,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: currencyTotals.entries.map((entry) {
+                            final currency = entry.key;
+                            final totalGive = entry.value['give'] ?? 0.0;
+                            final totalTake = entry.value['take'] ?? 0.0;
+                            final netBalance = totalGive - totalTake;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    currency,
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'عليه: ${formatNumber(totalTake)}',
+                                        style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16),
+                                      ),
+                                      Text(
+                                        'له: ${formatNumber(totalGive)}',
+                                        style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    height: 1,
+                                    color: Colors.black.withOpacity(0.2),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Center(
+                                    child: Text(
+                                      '${netBalance == 0 ? "الرصيد" : (netBalance > 0 ? "الرصيد له" : "الرصيد عليه")}: ${formatNumber(netBalance.abs())}',
+                                      style: const TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              ]);
+            }).toList(),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildCustomerCard(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> customer) {
+    final int cId = int.parse(customer['id'].toString());
+    final String custName = (customer['name'] ?? 'حساب').toString();
+    final double bal = provider.customerBalances[cId] ?? 0.0;
+
+    Color sideColor;
+    Color circleColor;
+    if (bal > 0) {
+      sideColor = const Color(0xFF81C784);
+      circleColor = AppColors.greenLight;
+    } else if (bal < 0) {
+      sideColor = AppColors.redDark;
+      circleColor = AppColors.redLight;
+    } else {
+      sideColor = const Color(0xFF81C784);
+      circleColor = AppColors.greenLight;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      height: 70,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 4,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          CustomerDetailsScreen(customer: customer)))
+              .then((_) => provider.loadCustomers()),
+          onLongPress: () =>
+              _showCustomerOptionsModal(context, provider, customer),
+          child: Stack(children: [
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: 5,
+                decoration: BoxDecoration(
+                    color: sideColor,
+                    borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(8),
+                        bottomRight: Radius.circular(8))),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(children: [
+                SizedBox(
+                  height: 70,
+                  child: Center(
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                          color: circleColor, shape: BoxShape.circle),
+                      alignment: Alignment.center,
+                      child: Icon(Icons.person, color: sideColor, size: 24),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 70,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(custName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppColors.textDarkest),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 70,
+                  child: Center(
+                    child: Text(
+                      formatNumber(bal.abs()),
+                      style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+
+
+  void _showCustomerOptionsModal(BuildContext context,
+      AppAccountProvider provider, Map<String, dynamic> customer) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 10),
+            decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 15),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.edit, color: AppColors.primary),
+            ),
+            title: const Text('تعديل الحساب',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showEditCustomerDialog(context, customer);
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.delete, color: AppColors.red),
+            ),
+            title: const Text('حذف الحساب',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: AppColors.red)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _confirmDeleteCustomer(context, provider,
+                  int.parse(customer['id'].toString()));
+            },
+          ),
+          const SizedBox(height: 10),
+        ]),
+      ),
+    );
+  }
+
+  void _showEditCustomerDialog(
+      BuildContext context, Map<String, dynamic> customer) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final nameCtrl = TextEditingController(text: customer['name'].toString());
+    final phoneCtrl =
+        TextEditingController(text: customer['phone']?.toString() ?? '');
+    String selectedCurrency = customer['currency'].toString();
+    int selectedCat = int.parse(customer['category_id'].toString());
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: const Row(children: [
+            Icon(Icons.edit, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('تعديل الحساب'),
+          ]),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'اسم الحساب/العميل')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'رقم الهاتف')),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: provider.currencies
+                        .any((c) => c['name'].toString() == selectedCurrency)
+                    ? selectedCurrency
+                    : (provider.currencies.isNotEmpty
+                        ? provider.currencies.first['name'].toString()
+                        : 'ريال يمني'),
+                decoration: const InputDecoration(labelText: 'العملة'),
+                items: provider.currencies
+                    .map((c) => DropdownMenuItem<String>(
+                        value: c['name'].toString(),
+                        child: Text(c['name'].toString())))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedCurrency = val);
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                value: provider.categories.any(
+                        (c) => int.parse(c['id'].toString()) == selectedCat)
+                    ? selectedCat
+                    : (provider.categories.isNotEmpty
+                        ? int.parse(provider.categories.first['id'].toString())
+                        : selectedCat),
+                decoration: const InputDecoration(labelText: 'التصنيف'),
+                items: provider.categories
+                    .map((c) => DropdownMenuItem<int>(
+                        value: int.parse(c['id'].toString()),
+                        child: Text(c['name'].toString())))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedCat = val);
+                },
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child:
+                    const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
+              onPressed: () async {
+                if (nameCtrl.text.trim().isEmpty) return;
+                try {
+                  await provider.updateCustomer(
+                    int.parse(customer['id'].toString()),
+                    nameCtrl.text.trim(),
+                    phoneCtrl.text.trim(),
+                    selectedCurrency,
+                    selectedCat,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      content: Text(e.toString().replaceFirst('Bad state: ', '')),
+                      backgroundColor: AppColors.red,
+                    ));
+                  }
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteCustomer(
+      BuildContext context, AppAccountProvider provider, int id) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Row(children: [
+          Icon(Icons.warning_amber, color: AppColors.red),
+          SizedBox(width: 8),
+          Text('تأكيد الحذف'),
+        ]),
+        content: const Text('هل أنت متأكد من عملية الحذف؟'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:
+                  const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () async {
+              final ok = await provider.deleteCustomer(id);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('لا يمكن حذف حساب يحتوي على عمليات. احذف الحساب فقط بعد إزالة عملياته أو احتفظ به للأرشفة.'),
+                  backgroundColor: AppColors.red,
+                ));
+              }
+            },
+            child: const Text('حذف'),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _showAddCustomerDialog(BuildContext context, int defaultCatId) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    String selectedCurrency = provider.currencies.isNotEmpty
+        ? provider.currencies.first['name'].toString()
+        : 'ريال يمني';
+    int selectedCat = defaultCatId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: const Row(children: [
+            Icon(Icons.person_add, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('إضافة حساب جديد'),
+          ]),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'اسم الحساب/العميل')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'رقم الهاتف')),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedCurrency,
+                decoration: const InputDecoration(labelText: 'العملة'),
+                items: provider.currencies
+                    .map((c) => DropdownMenuItem<String>(
+                        value: c['name'].toString(),
+                        child: Text(c['name'].toString())))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedCurrency = val);
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                value: selectedCat,
+                decoration: const InputDecoration(labelText: 'التصنيف'),
+                items: provider.categories
+                    .map((c) => DropdownMenuItem<int>(
+                        value: int.parse(c['id'].toString()),
+                        child: Text(c['name'].toString())))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedCat = val);
+                },
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child:
+                    const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.white),
+              onPressed: () async {
+                if (nameCtrl.text.trim().isNotEmpty) {
+                  provider.addCustomer(nameCtrl.text.trim(),
+                      phoneCtrl.text.trim(), selectedCurrency, selectedCat);
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==================== BackupOptionsScreen ====================
+class BackupOptionsScreen extends StatelessWidget {
+  const BackupOptionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: GradientAppBar(
+        title: const Text('النسخ الاحتياطي والاستعادة'),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: ListView(children: [
+        const SizedBox(height: 10),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.gold.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.schedule, color: AppColors.goldDark),
+          ),
+          title: const Text('خيارات حفظ البيانات',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.green.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.smartphone, color: AppColors.green),
+          ),
+          title: const Text('النسخ الاحتياطي من الهاتف',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ / استعادة من الجهاز',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () => _showBackupDialog(context),
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          tileColor: Colors.white,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.drive.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.cloud, color: AppColors.drive),
+          ),
+          title: const Text('النسخ الاحتياطي من Drive',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('حفظ / استعادة من Google Drive',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () => _showBackupDialog(context, fromDrive: true),
+        ),
+      ]),
+    );
+  }
+
+
+  Future<void> _showDriveRestoreDialog(BuildContext context) async {
+    if (!GoogleDriveService.isSignedIn) {
+      final signedIn = await GoogleDriveService.trySilentSignIn();
+      if (!signedIn) {
+        final ok = await GoogleDriveService.signIn();
+        if (!ok) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('❌ يجب تسجيل الدخول إلى Google أولاً'),
+              backgroundColor: AppColors.red,
+            ));
+          }
+          return;
+        }
+      }
+    }
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final backups = await GoogleDriveService.listBackups();
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+    if (!context.mounted) return;
+    if (backups.isEmpty) {
+      final listError = GoogleDriveService.lastListBackupsError;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(listError ?? 'لا توجد نسخ احتياطية على Google Drive'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('اختر نسخة للاستعادة'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: backups.length,
+            itemBuilder: (_, index) {
+              final item = backups[index];
+              final date = item['createdTime']?.toString() ?? '';
+              return ListTile(
+                leading: const Icon(Icons.cloud_download, color: AppColors.drive),
+                title: Text(item['name']?.toString() ?? 'نسخة احتياطية'),
+                subtitle: Text(date),
+                onTap: () => Navigator.pop(ctx, item),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null || !context.mounted) return;
+
+    final fileId = selected['id']?.toString() ?? '';
+    final fileName = selected['name']?.toString() ?? 'al_muhasib_backup.alb';
+    if (fileId.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final file = await GoogleDriveService.downloadBackup(fileId, fileName);
+    bool success = false;
+    if (file != null) {
+      try {
+        success = await provider.importBackupFromFile(file);
+      } finally {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? 'تمت استعادة البيانات بنجاح'
+            : 'تعذر استعادة النسخة الاحتياطية'),
+        backgroundColor: success ? AppColors.green : AppColors.red,
+      ));
+    }
+  }
+
+  void _showBackupDialog(BuildContext context, {bool fromDrive = false}) {
+    final provider = Provider.of<AppAccountProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Row(children: [
+          Icon(fromDrive ? Icons.cloud : Icons.backup,
+              color: fromDrive ? AppColors.drive : AppColors.gold),
+          const SizedBox(width: 8),
+          Text(fromDrive ? 'النسخ الاحتياطي (Drive)' : 'النسخ الاحتياطي'),
+        ]),
+        content: Text(fromDrive
+            ? 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من Google Drive.'
+            : 'اختر حفظ نسخة احتياطية من بياناتك أو استعادة نسخة سابقة من الهاتف.'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.download, color: AppColors.green),
+            label: const Text('استعادة نسخة',
+                style: TextStyle(color: AppColors.green)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (fromDrive) {
+                await _showDriveRestoreDialog(context);
+                return;
+              }
+              bool success = await provider.importBackup();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(success
+                      ? 'تمت استعادة البيانات بنجاح'
+                      : 'تعذر استعادة الملف'),
+                  backgroundColor: success ? AppColors.green : AppColors.red,
+                ));
+              }
+            },
+          ),
+          if (!fromDrive) ...[
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              icon: const Icon(Icons.storage),
+              label: const Text('حفظ DB'),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await provider.exportDatabaseBackup();
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: fromDrive ? AppColors.drive : AppColors.gold),
+            icon: const Icon(Icons.upload),
+            label: Text(fromDrive ? 'حفظ نسخة' : 'حفظ ALB'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (fromDrive) {
+                if (!GoogleDriveService.isSignedIn) {
+                  final signedIn = await GoogleDriveService.signIn();
+                  if (!signedIn || !context.mounted) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('❌ يجب تسجيل الدخول إلى Google أولاً'),
+                        backgroundColor: AppColors.red,
+                      ));
+                    }
+                    return;
+                  }
+                }
+                final error = await AutoBackupService.runDriveBackupNow();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(error == null ? '☁️ تم الرفع على Drive بنجاح' : '❌ فشل الرفع: $error'),
+                    backgroundColor: error == null ? AppColors.drive : AppColors.red,
+                  ));
+                }
+              } else {
+                await provider.exportBackup();
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== AutoBackupScreen ====================
+class AutoBackupScreen extends StatefulWidget {
+  const AutoBackupScreen({super.key});
+
+  @override
+  State<AutoBackupScreen> createState() => _AutoBackupScreenState();
+}
+
+class _AutoBackupScreenState extends State<AutoBackupScreen> {
+  bool _enabled = false;
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
+  String _folderPath = '', _lastBackup = '';
+  int _backupCount = 0;
+  bool _driveEnabled = false;
+  TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
+  String _driveLastBackup = '';
+  int _driveBackupCount = 0;
+  bool _signedIn = false;
+  String? _userEmail;
+  bool _hasExactAlarm = false;
   bool _loading = true;
 
   @override
@@ -5511,6 +10990,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _driveBackupCount = driveCount;
       _signedIn = signedIn;
       _userEmail = GoogleDriveService.userEmail;
+      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
