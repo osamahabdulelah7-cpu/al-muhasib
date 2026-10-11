@@ -1503,7 +1503,8 @@ class AutoBackupService {
     await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
     try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
     await NotificationService.cancelLocalNotification();
-    debugPrint('تم إلغاء جميع مهام النسخ المحلية المجدولة');
+    await NotificationService.cancelDriveNotification();
+    debugPrint('تم إلغاء جميع مهام النسخ المحلية وDrive المجدولة');
   }
 
   static Future<bool> _isWritableDirectory(String path) async {
