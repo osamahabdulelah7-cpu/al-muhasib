@@ -6,34 +6,49 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false, bool undeclaredPayload = false, bool duplicateManifestPath = false, bool incorrectDatabaseSize = false}) async {
+Future<File> _makeBundle({
+  bool corruptPayload = false,
+  bool unsafePath = false,
+  bool undeclaredPayload = false,
+  bool duplicateManifestPath = false,
+  bool incorrectDatabaseSize = false,
+  bool wrongFormat = false,
+  bool missingManifest = false,
+  bool missingDatabase = false,
+}) async {
   final database = <int>[1, 2, 3, 4, 5, 6];
   final payload = <int>[10, 20, 30, 40];
   final payloadPath = unsafePath ? '../outside.bin' : 'app_data/example.bin';
-  final archive = Archive()
-    ..addFile(ArchiveFile(
+  final archive = Archive();
+
+  if (!missingDatabase) {
+    archive.addFile(ArchiveFile(
       'database/al_muhasib_final_v6.db',
       database.length,
       database,
-    ))
-    ..addFile(ArchiveFile(payloadPath, payload.length, payload));
+    ));
+  }
+  archive.addFile(ArchiveFile(payloadPath, payload.length, payload));
+
   if (undeclaredPayload) {
     archive.addFile(ArchiveFile('app_data/unlisted.bin', 3, <int>[7, 8, 9]));
   }
 
   final manifest = <String, dynamic>{
-    'format': 'al_muhasib_backup',
+    'format': wrongFormat ? 'unknown_format' : 'al_muhasib_backup',
     'formatVersion': 1,
     'createdAt': DateTime.now().toUtc().toIso8601String(),
     'databaseSha256': sha256.convert(database).toString(),
-    'databaseSize': incorrectDatabaseSize ? database.length + 1 : database.length,
+    'databaseSize':
+        incorrectDatabaseSize ? database.length + 1 : database.length,
     'schemaVersion': 10,
     'files': [
-      {
-        'path': 'database/al_muhasib_final_v6.db',
-        'size': database.length,
-        'sha256': sha256.convert(database).toString(),
-      },
+      if (!missingDatabase)
+        {
+          'path': 'database/al_muhasib_final_v6.db',
+          'size': database.length,
+          'sha256': sha256.convert(database).toString(),
+        },
       if (duplicateManifestPath)
         {
           'path': 'database/al_muhasib_final_v6.db',
@@ -43,12 +58,19 @@ Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false, 
       {
         'path': payloadPath,
         'size': payload.length,
-        'sha256': sha256.convert(corruptPayload ? <int>[99, 20, 30, 40] : payload).toString(),
+        'sha256': sha256
+            .convert(corruptPayload ? <int>[99, 20, 30, 40] : payload)
+            .toString(),
       },
     ],
   };
-  final manifestBytes = utf8.encode(jsonEncode(manifest));
-  archive.addFile(ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+
+  if (!missingManifest) {
+    final manifestBytes = utf8.encode(jsonEncode(manifest));
+    archive.addFile(
+        ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+  }
+
   final encoded = ZipEncoder().encode(archive)!;
   final dir = await Directory.systemTemp.createTemp('al_muhasib_test_');
   final file = File('${dir.path}/test.alb');
@@ -60,7 +82,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('BackupBundleService.verifyBundle', () {
-    test('accepts a valid bundle with matching SHA-256 checksums', () async {
+    test('accepts a valid bundle', () async {
       final file = await _makeBundle();
       try {
         expect(await BackupBundleService.verifyBundle(file), isTrue);
@@ -69,7 +91,7 @@ void main() {
       }
     });
 
-    test('rejects a bundle whose payload checksum does not match', () async {
+    test('rejects corrupt payload', () async {
       final file = await _makeBundle(corruptPayload: true);
       try {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
@@ -78,7 +100,7 @@ void main() {
       }
     });
 
-    test('refuses to restore a corrupt bundle before touching the database', () async {
+    test('refuses to restore corrupt bundle', () async {
       final file = await _makeBundle(corruptPayload: true);
       try {
         await expectLater(
@@ -90,7 +112,7 @@ void main() {
       }
     });
 
-    test('rejects payload files not covered by the manifest', () async {
+    test('rejects undeclared payload', () async {
       final file = await _makeBundle(undeclaredPayload: true);
       try {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
@@ -99,7 +121,7 @@ void main() {
       }
     });
 
-    test('rejects duplicate paths in the manifest', () async {
+    test('rejects duplicate manifest paths', () async {
       final file = await _makeBundle(duplicateManifestPath: true);
       try {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
@@ -108,7 +130,7 @@ void main() {
       }
     });
 
-    test('rejects an incorrect database size in the manifest', () async {
+    test('rejects incorrect database size', () async {
       final file = await _makeBundle(incorrectDatabaseSize: true);
       try {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
@@ -117,8 +139,8 @@ void main() {
       }
     });
 
-    test('rejects a file that is not a ZIP backup', () async {
-      final dir = await Directory.systemTemp.createTemp('al_muhasib_bad_');
+    test('rejects non-ZIP file', () async {
+      final dir = await Directory.systemTemp.createTemp('bad_');
       final file = File('${dir.path}/broken.alb');
       await file.writeAsBytes(<int>[1, 2, 3, 4, 5]);
       try {
@@ -128,8 +150,35 @@ void main() {
       }
     });
 
-    test('rejects a bundle containing an unsafe relative path', () async {
+    test('rejects unsafe relative path', () async {
       final file = await _makeBundle(unsafePath: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects wrong format marker', () async {
+      final file = await _makeBundle(wrongFormat: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects missing manifest', () async {
+      final file = await _makeBundle(missingManifest: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects missing database', () async {
+      final file = await _makeBundle(missingDatabase: true);
       try {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
       } finally {
