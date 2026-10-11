@@ -2156,12 +2156,10 @@ void main() {
       await Future.delayed(const Duration(seconds: 2));
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
-      final settings = await AutoBackupService.getSettings();
-      if (settings['enabled'] == true || settings['driveEnabled'] == true) {
-        // Both destinations share one scheduler and one exact alarm. Calling
-        // both methods here reschedules the same jobs twice at every startup.
-        await AutoBackupService.scheduleDailyBackup();
-      }
+      // Always reconcile persisted WorkManager/alarm state on startup.
+      // If both destinations are disabled, this cancels stale queued work too.
+      // If either is enabled, it registers the shared schedule once.
+      await AutoBackupService.scheduleDailyBackup();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
     }
