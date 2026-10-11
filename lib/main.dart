@@ -6052,7 +6052,72 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+    Future<void> _requestExactAlarm() async {
+    final granted = await AutoBackupService.requestExactAlarmPermissionFromUI();
+    if (!mounted) return;
+    setState(() => _hasExactAlarm = granted);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(granted
+          ? '✅ تم تفعيل النسخ الاحتياطي الدقيق'
+          : '⚠️ لم يتم تفعيل الصلاحية. النسخ قد يعمل متأخرًا.\n'
+              'افتح: الإعدادات ← التطبيقات ← المحاسب ← المنبّهات والتذكيرات.'),
+      backgroundColor: granted ? AppColors.green : Colors.orange,
+      duration: const Duration(seconds: 8),
+    ));
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Row(children: [
+          Icon(Icons.warning_amber, color: AppColors.red),
+          SizedBox(width: 8),
+          Text('حذف الحساب والبيانات'),
+        ]),
+        content: const Text(
+          'سيتم حذف جميع بياناتك نهائيًا:\n'
+          '• جميع المعاملات والحسابات\n'
+          '• جميع الصور المرفقة\n'
+          '• الشعار والبيانات الشخصية\n'
+          '• جميع النسخ الاحتياطية على Google Drive\n\n'
+          'لا يمكن التراجع. هل أنت متأكد؟',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('حذف نهائي'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+    final result = await GoogleDriveService.deleteAccountAndData();
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(result.success
+          ? 'تم حذف الحساب والبيانات بنجاح'
+          : 'حدثت أخطاء:\n${result.errors.join('\n')}'),
+      backgroundColor: result.success ? AppColors.green : AppColors.red,
+      duration: const Duration(seconds: 8),
+    ));
+    if (result.success && mounted) Navigator.pop(context);
+  }
+
+Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -6190,6 +6255,53 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
           ),
         ),
         const Divider(height: 1),
+        if (_enabled && !_hasExactAlarm)
+          Container(
+            color: Colors.orange.shade50,
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: const [
+                  Icon(Icons.warning_amber, color: Colors.orange, size: 22),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'لضمان عمل النسخ في الوقت المحدد، يلزم تفعيل صلاحية "المنبّهات والتذكيرات".',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _requestExactAlarm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.alarm_on),
+                    label: const Text('تفعيل النسخ الدقيق', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_enabled && _hasExactAlarm)
+          Container(
+            color: AppColors.greenLight,
+            padding: const EdgeInsets.all(10),
+            child: Row(children: const [
+              Icon(Icons.check_circle, color: AppColors.green, size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('النسخ الدقيق مفعّل ✓', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.greenDark)),
+              ),
+            ]),
+          ),
         Container(
           color: Colors.white,
           child: ListTile(
@@ -6458,6 +6570,24 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                         fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ]),
+          ),
+        if (_signedIn)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: OutlinedButton.icon(
+              onPressed: _confirmDeleteAccount,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.red,
+                side: const BorderSide(color: AppColors.red),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              icon: const Icon(Icons.delete_forever),
+              label: const Text('حذف الحساب وجميع البيانات',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            ),
+          ),
           ),
         const SizedBox(height: 20),
       ]),
