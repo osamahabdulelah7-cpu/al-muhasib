@@ -20,6 +20,7 @@ jobs:
           set -euo pipefail
           test -f al_muhasib_final_patch_ready.zip
           python3 - <<'PY'
+          import stat
           import zipfile
           from pathlib import PurePosixPath
 
@@ -29,14 +30,27 @@ jobs:
               ".github/workflows/",
               "android/key.properties",
           )
+          max_total_size = 250 * 1024 * 1024
+          max_file_size = 100 * 1024 * 1024
           with zipfile.ZipFile(archive) as z:
-              names = z.namelist()
+              infos = z.infolist()
+              names = [info.filename for info in infos]
               if not names:
                   raise SystemExit("Patch archive is empty")
-              for name in names:
+              if len(names) != len(set(names)):
+                  raise SystemExit("Patch archive contains duplicate paths")
+              if sum(info.file_size for info in infos) > max_total_size:
+                  raise SystemExit("Patch archive exceeds the total uncompressed size limit")
+              for info in infos:
+                  name = info.filename
                   path = PurePosixPath(name)
-                  if path.is_absolute() or ".." in path.parts or "\\" in name:
-                      raise SystemExit(f"Unsafe archive path: {name}")
+                  if (path.is_absolute() or ".." in path.parts or "\\" in name
+                          or path.as_posix() != name.rstrip("/")):
+                      raise SystemExit(f"Unsafe or non-canonical archive path: {name}")
+                  if stat.S_ISLNK(info.external_attr >> 16):
+                      raise SystemExit(f"Symbolic links are not allowed in patches: {name}")
+                  if info.file_size > max_file_size:
+                      raise SystemExit(f"Patch file exceeds the size limit: {name}")
                   if name.rstrip("/") and not name.startswith(prefix):
                       raise SystemExit(f"Unexpected path outside {prefix}: {name}")
                   relative = name[len(prefix):] if name.startswith(prefix) else ""
