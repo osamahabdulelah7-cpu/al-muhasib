@@ -1306,7 +1306,10 @@ class AutoBackupService {
 
     if (!localEnabled && !driveEnabled) {
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت مهمة الخلفية');
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+      await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت جميع مهام النسخ المجدولة');
       return;
     }
 
@@ -1497,9 +1500,11 @@ class AutoBackupService {
   static Future<void> cancelDailyBackup() async {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
     try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
     await NotificationService.cancelLocalNotification();
-    debugPrint('تم إلغاء المهام اليومية');
+    await NotificationService.cancelDriveNotification();
+    debugPrint('تم إلغاء جميع مهام النسخ المحلية وDrive المجدولة');
   }
 
   static Future<bool> _isWritableDirectory(String path) async {
@@ -2088,9 +2093,12 @@ class AutoBackupService {
   static Future<void> cancelDriveBackup() async {
     final settings = await getSettings();
     await NotificationService.cancelDriveNotification();
-    if (settings['enabled'] != true) {
-      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
-      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    if (settings['enabled'] != true && settings['driveEnabled'] != true) {
+      // No destination remains enabled: clear every shared scheduled task.
+      await cancelDailyBackup();
+    } else {
+      // Keep the shared scheduler aligned with the remaining destination.
+      await _scheduleBackgroundBackup();
     }
     debugPrint('✅ تم إلغاء نسخ Drive');
   }
@@ -2148,12 +2156,10 @@ void main() {
       await Future.delayed(const Duration(seconds: 2));
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
-      final settings = await AutoBackupService.getSettings();
-      if (settings['enabled'] == true || settings['driveEnabled'] == true) {
-        // Both destinations share one scheduler and one exact alarm. Calling
-        // both methods here reschedules the same jobs twice at every startup.
-        await AutoBackupService.scheduleDailyBackup();
-      }
+      // Always reconcile persisted WorkManager/alarm state on startup.
+      // If both destinations are disabled, this cancels stale queued work too.
+      // If either is enabled, it registers the shared schedule once.
+      await AutoBackupService.scheduleDailyBackup();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
     }
@@ -3329,8 +3335,12 @@ class _AlMuhasibAppState extends State<AlMuhasibApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Do not enqueue a second backup merely because the app is backgrounded.
-    // The configured-time alarm and WorkManager own the backup schedule.
+    // Android does not provide a reliable callback for force-stop/swipe-away.
+    // Paused is the practical signal that the UI has left the foreground.
+    // WorkManager runs the queued backup independently of the UI process.
+    if (state == AppLifecycleState.paused) {
+      unawaited(AutoBackupService.scheduleBackupOnExit());
+    }
   }
 
   @override
@@ -5488,7 +5498,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(enabled: value);
     if (!mounted) return;
     setState(() => _enabled = value);
-    if (value) {
+    // The scheduler is shared by local and Drive backups. Disabling one
+    // destination must not cancel jobs still needed by the other.
+    final latest = await AutoBackupService.getSettings();
+    if (latest['enabled'] == true || latest['driveEnabled'] == true) {
       await AutoBackupService.scheduleDailyBackup();
     } else {
       await AutoBackupService.cancelDailyBackup();
@@ -5742,10 +5755,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(driveEnabled: value);
     setState(() => _driveEnabled = value);
 
-    if (value) {
-      await AutoBackupService.scheduleDriveBackup();
+    // Local and Drive backups share the same background scheduler.
+    final latest = await AutoBackupService.getSettings();
+    if (latest['enabled'] == true || latest['driveEnabled'] == true) {
+      await AutoBackupService.scheduleDailyBackup();
     } else {
-      await AutoBackupService.cancelDriveBackup();
+      await AutoBackupService.cancelDailyBackup();
     }
   }
 
