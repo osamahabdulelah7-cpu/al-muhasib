@@ -2092,9 +2092,12 @@ class AutoBackupService {
   static Future<void> cancelDriveBackup() async {
     final settings = await getSettings();
     await NotificationService.cancelDriveNotification();
-    if (settings['enabled'] != true) {
-      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
-      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    if (settings['enabled'] != true && settings['driveEnabled'] != true) {
+      // No destination remains enabled: clear every shared scheduled task.
+      await cancelDailyBackup();
+    } else {
+      // Keep the shared scheduler aligned with the remaining destination.
+      await _scheduleBackgroundBackup();
     }
     debugPrint('✅ تم إلغاء نسخ Drive');
   }
