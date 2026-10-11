@@ -250,46 +250,44 @@ class NotificationService {
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
 @pragma('vm:entry-point')
+@pragma('vm:entry-point')
 Future<void> exactBackupAlarmCallback() async {
   WidgetsFlutterBinding.ensureInitialized();
   ui.DartPluginRegistrant.ensureInitialized();
   try {
     await NotificationService.initialize(requestPermission: false);
+  } catch (e) {
+    debugPrint('تعذر تهيئة الإشعارات: $e');
+  }
+  try {
     await AppDBHelper.instance.database;
-    final localError = await AutoBackupService.checkAndRunBackup();
-    if (localError != null) {
-      await NotificationService.showTemporaryFailure('تعذر إكمال النسخ المحلي', localError);
-    }
+  } catch (e) {
+    debugPrint('تعذر فتح قاعدة البيانات: $e');
+  }
+  try {
     final settings = await AutoBackupService.getSettings();
-    if (settings['driveEnabled'] == true) {
-      if (await GoogleDriveService.trySilentSignIn()) {
-        final driveError = await AutoBackupService.checkAndRunDriveBackup();
-        if (driveError != null) {
-          await NotificationService.showTemporaryFailure('تعذر النسخ إلى Google Drive', driveError);
-        }
+    if (settings['enabled'] == true) {
+      final err = await AutoBackupService.checkAndRunBackup();
+      if (err != null) {
+        try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', err); } catch (_) {}
       } else {
-        await NotificationService.showTemporaryFailure(
-          'تعذر النسخ إلى Google Drive',
-          'يلزم فتح التطبيق وتجديد تسجيل الدخول إلى Google.',
-        );
+        try { await NotificationService.showTemporarySuccess('📁 النسخ المحلي', 'تم بنجاح'); } catch (_) {}
+      }
+    }
+    if (settings['driveEnabled'] == true && await GoogleDriveService.trySilentSignIn()) {
+      final err = await AutoBackupService.checkAndRunDriveBackup();
+      if (err != null) {
+        try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', err); } catch (_) {}
       }
     }
   } catch (e, st) {
-    debugPrint('فشل المنبّه الدقيق للنسخ: $e\\n$st');
-    try {
-      await NotificationService.showTemporaryFailure('فشل النسخ الاحتياطي', '$e');
-    } catch (_) {}
+    debugPrint('فشل المنبّه: $e\n$st');
   } finally {
     try {
-      final exactScheduled = await AutoBackupService._scheduleNextExactBackup();
-      if (exactScheduled) {
-        await Workmanager().cancelByUniqueName(
-            AutoBackupService._workManagerTimedUniqueName);
-      } else {
-        await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
-      }
+      final exact = await AutoBackupService._scheduleNextExactBackup();
+      if (!exact) await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
     } catch (e) {
-      debugPrint('تعذر إعادة جدولة النسخ بعد المنبّه: $e');
+      debugPrint('تعذر إعادة الجدولة: $e');
     }
   }
 }
@@ -298,105 +296,66 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
     ui.DartPluginRegistrant.ensureInitialized();
-    await NotificationService.initialize(requestPermission: false);
+    try {
+      await NotificationService.initialize(requestPermission: false);
+    } catch (e) {
+      debugPrint('تعذر تهيئة الإشعارات: $e');
+    }
     try {
       await AppDBHelper.instance.database;
-      bool shouldRetry = false;
-
-      // Queue a one-off snapshot when the UI is backgrounded/closed. This
-      // task runs independently of the daily schedule and survives process death.
+    } catch (e) {
+      debugPrint('تعذر فتح قاعدة البيانات: $e');
+      return false;
+    }
+    var shouldRetry = false;
+    try {
       if (task == AutoBackupService.workManagerExitTaskName) {
         final settings = await AutoBackupService.getSettings();
         final now = DateTime.now();
         final lastLocal = DateTime.tryParse(settings['lastBackup'] as String? ?? '');
-        final localAlreadyDone = lastLocal != null &&
-            now.difference(lastLocal).inHours < 6 &&
-            !now.isBefore(lastLocal);
-        if (settings['enabled'] == true && !localAlreadyDone) {
-          final localError = await AutoBackupService.runBackupNow();
-          if (localError != null) {
-            shouldRetry = true;
-            debugPrint('❌ فشل النسخ عند إغلاق الواجهة: $localError');
-          }
+        final localDone = lastLocal != null && now.difference(lastLocal).inHours < 6 && !now.isBefore(lastLocal);
+        if (settings['enabled'] == true && !localDone) {
+          final err = await AutoBackupService.runBackupNow();
+          if (err != null) shouldRetry = true;
         }
-
         final lastDrive = DateTime.tryParse(settings['driveLastBackup'] as String? ?? '');
-        final driveAlreadyDone = lastDrive != null &&
-            now.difference(lastDrive).inHours < 6 &&
-            !now.isBefore(lastDrive);
-        if (settings['driveEnabled'] == true && !driveAlreadyDone) {
+        final driveDone = lastDrive != null && now.difference(lastDrive).inHours < 6 && !now.isBefore(lastDrive);
+        if (settings['driveEnabled'] == true && !driveDone) {
           if (await GoogleDriveService.trySilentSignIn()) {
-            final driveError = await AutoBackupService.runDriveBackupNow();
-            if (driveError != null) {
-              shouldRetry = true;
-              debugPrint('❌ فشل نسخ Drive عند إغلاق الواجهة: $driveError');
-            }
+            final err = await AutoBackupService.runDriveBackupNow();
+            if (err != null) shouldRetry = true;
           } else {
             shouldRetry = true;
-            debugPrint('⚠️ تعذر تسجيل الدخول إلى Google عند إغلاق الواجهة');
           }
         }
         return !shouldRetry;
       }
-
       final localError = await AutoBackupService.checkAndRunBackup();
       if (localError != null) {
         shouldRetry = true;
-        debugPrint('❌ فشل النسخ المحلي بالخلفية: $localError');
-        try {
-          await NotificationService.showTemporaryFailure(
-            'تعذر إكمال النسخ المحلي',
-            localError,
-          );
-        } catch (notificationError) {
-          // Notification failures must never abort backup execution/retry.
-          debugPrint('تعذر عرض إشعار فشل النسخ المحلي: $notificationError');
-        }
-      } else {
-        debugPrint('✅ فحص النسخ المحلي بالخلفية اكتمل');
+        try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', localError); } catch (_) {}
       }
-
       final settings = await AutoBackupService.getSettings();
       if (settings['driveEnabled'] == true) {
-        final signedIn = await GoogleDriveService.trySilentSignIn();
-        if (signedIn) {
+        if (await GoogleDriveService.trySilentSignIn()) {
           final driveError = await AutoBackupService.checkAndRunDriveBackup();
           if (driveError != null) {
             shouldRetry = true;
-            debugPrint('❌ فشل نسخ Drive بالخلفية: $driveError');
-            try {
-              await NotificationService.showTemporaryFailure(
-                'تعذر النسخ إلى Google Drive',
-                driveError,
-              );
-            } catch (notificationError) {
-              debugPrint('تعذر عرض إشعار فشل Drive: $notificationError');
-            }
-          } else {
-            debugPrint('☁️ فحص نسخ Drive بالخلفية اكتمل');
+            try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', driveError); } catch (_) {}
           }
         } else {
           shouldRetry = true;
-          debugPrint('⚠️ تعذر تسجيل الدخول إلى Google في المهمة الخلفية');
         }
       }
-
-      // Keep the next configured-time request alive even when this run was
-      // triggered by the periodic fallback.
       try {
-        final exactScheduled = await AutoBackupService._scheduleNextExactBackup();
-        if (exactScheduled) {
-          await Workmanager().cancelByUniqueName(
-              AutoBackupService._workManagerTimedUniqueName);
-        } else {
-          await AutoBackupService._scheduleNextTimedBackup();
-        }
-      } catch (scheduleError) {
-        debugPrint('تعذر إعادة جدولة موعد النسخ القادم: $scheduleError');
+        final exact = await AutoBackupService._scheduleNextExactBackup();
+        if (!exact) await AutoBackupService._scheduleNextTimedBackup();
+      } catch (e) {
+        debugPrint('تعذر إعادة الجدولة: $e');
       }
       return !shouldRetry;
     } catch (e, st) {
-      debugPrint('❌ خطأ في المهمة الخلفية: $e\n$st');
+      debugPrint('خطأ في WorkManager: $e\n$st');
       return false;
     }
   });
@@ -1303,55 +1262,52 @@ class AutoBackupService {
     final settings = await getSettings();
     final localEnabled = settings['enabled'] == true;
     final driveEnabled = settings['driveEnabled'] == true;
-
     if (!localEnabled && !driveEnabled) {
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
       await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
-      await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
       try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
-      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت جميع مهام النسخ المجدولة');
       return;
     }
-
-    // Periodic WorkManager survives normal app closure and device reboot.
-    // Android's minimum periodic interval is 15 minutes, and execution time
-    // is best-effort; the task checks the configured daily times each run.
-    await Workmanager().registerPeriodicTask(
-      _workManagerUniqueName,
-      _workManagerTaskName,
-      frequency: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
-      constraints: Constraints(
-        networkType: NetworkType.notRequired,
-        requiresBatteryNotLow: false,
-        requiresCharging: false,
-        requiresDeviceIdle: false,
-        requiresStorageNotLow: false,
-      ),
-      backoffPolicy: BackoffPolicy.linear,
-      backoffPolicyDelay: const Duration(minutes: 15),
-    );
+    try {
+      await Workmanager().registerPeriodicTask(
+        _workManagerUniqueName,
+        _workManagerTaskName,
+        frequency: const Duration(minutes: 15),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+          requiresBatteryNotLow: false,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        backoffPolicy: BackoffPolicy.linear,
+        backoffPolicyDelay: const Duration(minutes: 15),
+      );
+    } catch (e) {
+      debugPrint('تعذر تسجيل WorkManager الدوري: $e');
+    }
     var exactScheduled = false;
     try {
       exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
     } catch (e) {
-      debugPrint('تعذر جدولة المنبّه الدقيق: $e');
+      debugPrint('تعذر جدولة المنبّه: $e');
     }
-    if (exactScheduled) {
-      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    if (!exactScheduled) {
+      try {
+        await _scheduleNextTimedBackup(replacePending: true);
+      } catch (e) {
+        debugPrint('تعذر جدولة WorkManager one-off: $e');
+      }
     } else {
-      await _scheduleNextTimedBackup(replacePending: true);
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
     }
-    debugPrint('تم تسجيل النسخ الدوري والمنبّه المحدد');
   }
 
-  // Exact Android alarm complements WorkManager. It is used only when
-  // Android grants exact-alarm access; otherwise WorkManager remains fallback.
   static Future<bool> _scheduleNextExactBackup({bool requestPermission = false}) async {
     final settings = await getSettings();
     final now = DateTime.now();
     final targets = <DateTime>[];
-
     void addTarget(bool enabled, int hour, int minute, String lastText) {
       if (!enabled) return;
       final target = DateTime(now.year, now.month, now.day, hour, minute);
@@ -1365,49 +1321,64 @@ class AutoBackupService {
         targets.add(target.add(const Duration(days: 1)));
       }
     }
-
     addTarget(settings['enabled'] == true, settings['hour'] as int,
         settings['minute'] as int, settings['lastBackup'] as String? ?? '');
     addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
         settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
-
     if (targets.isEmpty) {
-      await AndroidAlarmManager.cancel(_exactAlarmId);
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       return false;
     }
-
     targets.sort();
-    final permission = await Permission.scheduleExactAlarm.status;
-    if (!permission.isGranted && requestPermission) {
-      // Only request special access from the foreground scheduling path;
-      // alarm/worker callbacks must never try to launch Android settings.
-      final requested = await Permission.scheduleExactAlarm.request();
-      if (!requested.isGranted) {
-        await AndroidAlarmManager.cancel(_exactAlarmId);
-        debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ يلزم السماح بها من إعدادات Android');
-        return false;
-      }
-    } else if (!permission.isGranted) {
-      await AndroidAlarmManager.cancel(_exactAlarmId);
-      debugPrint('صلاحية المنبّه الدقيق غير مفعلة؛ سيعمل WorkManager كخيار احتياطي');
+    final canSchedule = await ensureExactAlarmPermission(requestPermission: requestPermission);
+    if (!canSchedule) {
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       return false;
     }
+    try {
+      final scheduled = await AndroidAlarmManager.oneShotAt(
+        targets.first, _exactAlarmId, exactBackupAlarmCallback,
+        exact: true, wakeup: true, allowWhileIdle: true, rescheduleOnReboot: true,
+      );
+      if (!scheduled) return false;
+      debugPrint('✅ تم تسجيل منبّه النسخ عند ${targets.first}');
+      return true;
+    } catch (e, st) {
+      debugPrint('خطأ في المنبّه الدقيق: $e\n$st');
+      return false;
+    }
+  }
 
-    final scheduled = await AndroidAlarmManager.oneShotAt(
-      targets.first,
-      _exactAlarmId,
-      exactBackupAlarmCallback,
-      exact: true,
-      wakeup: true,
-      allowWhileIdle: true,
-      rescheduleOnReboot: true,
-    );
-    if (!scheduled) {
-      debugPrint('تعذر تسجيل المنبّه الدقيق؛ سيبقى WorkManager كخيار احتياطي');
+  static Future<bool> ensureExactAlarmPermission({bool requestPermission = false}) async {
+    try {
+      final status = await Permission.scheduleExactAlarm.status;
+      if (status.isGranted) return true;
+      if (!requestPermission) return false;
+      final requested = await Permission.scheduleExactAlarm.request();
+      if (requested.isGranted) return true;
+      if (requested.isPermanentlyDenied) {
+        try { await openAppSettings(); } catch (_) {}
+      }
+      return false;
+    } catch (e) {
+      debugPrint('خطأ في صلاحية Exact Alarm: $e');
       return false;
     }
-    debugPrint('تم تسجيل منبّه النسخ عند ${targets.first}');
-    return true;
+  }
+
+  static Future<bool> requestExactAlarmPermissionFromUI() async {
+    final granted = await ensureExactAlarmPermission(requestPermission: true);
+    if (granted) await scheduleDailyBackup();
+    return granted;
+  }
+
+  static Future<bool> hasExactAlarmPermission() async {
+    try {
+      final status = await Permission.scheduleExactAlarm.status;
+      return status.isGranted;
+    } catch (_) {
+      return false;
+    }
   }
 
   // Periodic work is best-effort. Add a one-off request aimed at the next
