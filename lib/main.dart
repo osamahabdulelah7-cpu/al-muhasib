@@ -5496,7 +5496,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(enabled: value);
     if (!mounted) return;
     setState(() => _enabled = value);
-    if (value) {
+    // The scheduler is shared by local and Drive backups. Disabling one
+    // destination must not cancel jobs still needed by the other.
+    final latest = await AutoBackupService.getSettings();
+    if (latest['enabled'] == true || latest['driveEnabled'] == true) {
       await AutoBackupService.scheduleDailyBackup();
     } else {
       await AutoBackupService.cancelDailyBackup();
@@ -5750,10 +5753,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(driveEnabled: value);
     setState(() => _driveEnabled = value);
 
-    if (value) {
-      await AutoBackupService.scheduleDriveBackup();
+    // Local and Drive backups share the same background scheduler.
+    final latest = await AutoBackupService.getSettings();
+    if (latest['enabled'] == true || latest['driveEnabled'] == true) {
+      await AutoBackupService.scheduleDailyBackup();
     } else {
-      await AutoBackupService.cancelDriveBackup();
+      await AutoBackupService.cancelDailyBackup();
     }
   }
 
