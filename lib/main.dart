@@ -853,6 +853,12 @@ class PersonalDataService {
   }
 }
 
+class DeleteAccountResult {
+  final bool success;
+  final List<String> errors;
+  DeleteAccountResult({required this.success, required this.errors});
+}
+
 // ==================== Google Drive Service ====================
 class GoogleDriveService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -1105,6 +1111,50 @@ class GoogleDriveService {
     } catch (e) {
       return false;
     }
+  }
+
+  static Future<DeleteAccountResult> deleteAccountAndData({
+    bool deleteLocalData = true,
+  }) async {
+    final errors = <String>[];
+    if (_driveApi != null || await trySilentSignIn()) {
+      try {
+        final backups = await listBackups();
+        for (final backup in backups) {
+          final id = backup['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          final ok = await deleteBackup(id);
+          if (!ok) errors.add('تعذر حذف الملف: ${backup['name']}');
+        }
+      } catch (e) {
+        errors.add('تعذر حذف النسخ من Drive: $e');
+      }
+    }
+    if (deleteLocalData) {
+      try {
+        await AppDBHelper.instance.deleteAllLocalData();
+      } catch (e) {
+        errors.add('تعذر حذف البيانات المحلية: $e');
+      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+      } catch (e) {
+        errors.add('تعذر حذف التفضيلات: $e');
+      }
+      try {
+        await AutoBackupService.cancelDailyBackup();
+        await AutoBackupService.cancelDriveBackup();
+      } catch (e) {
+        errors.add('تعذر إلغاء الجدولة: $e');
+      }
+    }
+    try {
+      await signOut();
+    } catch (e) {
+      errors.add('تعذر تسجيل الخروج: $e');
+    }
+    return DeleteAccountResult(success: errors.isEmpty, errors: errors);
   }
 }
 
@@ -3730,6 +3780,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
   String? _logoBase64;
   String _logoShape = 'circle';
   bool _loading = true;
+  bool _hasExactAlarm = false;
 
   String _sideKey(int index) => index < 3 ? 'right' : 'left';
   int _lineNumber(int index) => index < 3 ? index + 1 : index - 2;
@@ -3763,6 +3814,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
       }
       _logoShape = data['logoShape'] as String;
       _logoBase64 = logo;
+      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
@@ -5442,6 +5494,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     final driveCount = await AutoBackupService.countDriveBackups();
     final signedIn = GoogleDriveService.isSignedIn ||
         await GoogleDriveService.trySilentSignIn();
+    final hasExact = await AutoBackupService.hasExactAlarmPermission();
     if (!mounted) return;
     setState(() {
       _enabled = settings['enabled'] as bool;
