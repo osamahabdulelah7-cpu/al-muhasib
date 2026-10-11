@@ -1,13 +1,13 @@
 name: Apply Al-Mohaseb Patch
 
+# Applying a repository-wide ZIP patch must be an explicit manual action.
+# Never run this workflow automatically when a ZIP is pushed.
 on:
-  push:
-    paths:
-      - "al_muhasib_final_patch_ready.zip"
   workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   apply:
@@ -15,23 +15,80 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract patch
+      - name: Validate and extract patch
+        shell: bash
         run: |
+          set -euo pipefail
+          test -f al_muhasib_final_patch_ready.zip
+          python3 - <<'PY'
+          import stat
+          import zipfile
+          from pathlib import PurePosixPath
+
+          archive = "al_muhasib_final_patch_ready.zip"
+          prefix = "al_muhasib_final_patch/"
+          blocked = (
+              ".git",
+              ".github",
+              "android/key.properties",
+          )
+          max_total_size = 250 * 1024 * 1024
+          max_file_size = 100 * 1024 * 1024
+          with zipfile.ZipFile(archive) as z:
+              infos = z.infolist()
+              names = [info.filename for info in infos]
+              if not names:
+                  raise SystemExit("Patch archive is empty")
+              if len(names) != len(set(names)):
+                  raise SystemExit("Patch archive contains duplicate paths")
+              if sum(info.file_size for info in infos) > max_total_size:
+                  raise SystemExit("Patch archive exceeds the total uncompressed size limit")
+              for info in infos:
+                  name = info.filename
+                  path = PurePosixPath(name)
+                  if (path.is_absolute() or ".." in path.parts or "\\" in name
+                          or path.as_posix() != name.rstrip("/")):
+                      raise SystemExit(f"Unsafe or non-canonical archive path: {name}")
+                  if stat.S_ISLNK(info.external_attr >> 16):
+                      raise SystemExit(f"Symbolic links are not allowed in patches: {name}")
+                  if info.file_size > max_file_size:
+                      raise SystemExit(f"Patch file exceeds the size limit: {name}")
+                  if name.rstrip("/") and not name.startswith(prefix):
+                      raise SystemExit(f"Unexpected path outside {prefix}: {name}")
+                  relative = name[len(prefix):] if name.startswith(prefix) else ""
+                  if any(relative == item or relative.startswith(item + "/") for item in blocked):
+                      raise SystemExit(f"Patch may not modify protected path: {name}")
+                  if relative.lower().endswith((".jks", ".keystore")):
+                      raise SystemExit(f"Patch may not replace signing keys: {name}")
+              if prefix + "lib/main.dart" not in names:
+                  raise SystemExit("Expected lib/main.dart is missing")
+          PY
+          mkdir -p _patch
           unzip -q al_muhasib_final_patch_ready.zip -d _patch
-          test -f _patch/al_muhasib_final_patch/lib/main.dart
           cp -a _patch/al_muhasib_final_patch/. .
 
-      - name: Remove old signing workflow
-        run: rm -f .github/workflows/generate-keystore.yml
-
-      - name: Commit complete patch
+      - name: Commit patch on a review branch and open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           rm -rf _patch
           rm -f al_muhasib_final_patch_ready.zip
           rm -f DELETE_generate-keystore.yml.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          PATCH_BRANCH="apply-patch-${GITHUB_RUN_ID}"
+          git checkout -b "$PATCH_BRANCH"
           git add -A
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo "Patch produced no changes; no pull request needed."
+            exit 0
+          fi
           git commit -m "Apply complete Al-Mohaseb stability patch"
-          git push
+          git push --set-upstream origin "$PATCH_BRANCH"
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$PATCH_BRANCH" \
+            --title "Apply Al-Mohaseb stability patch" \
+            --body "Automated patch application. Review all file changes and CI results before merging."
