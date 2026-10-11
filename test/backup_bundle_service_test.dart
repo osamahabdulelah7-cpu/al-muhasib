@@ -6,7 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false}) async {
+Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false, bool undeclaredPayload = false, bool duplicateManifestPath = false, bool incorrectDatabaseSize = false}) async {
   final database = <int>[1, 2, 3, 4, 5, 6];
   final payload = <int>[10, 20, 30, 40];
   final payloadPath = unsafePath ? '../outside.bin' : 'app_data/example.bin';
@@ -17,13 +17,16 @@ Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false})
       database,
     ))
     ..addFile(ArchiveFile(payloadPath, payload.length, payload));
+  if (undeclaredPayload) {
+    archive.addFile(ArchiveFile('app_data/unlisted.bin', 3, <int>[7, 8, 9]));
+  }
 
   final manifest = <String, dynamic>{
     'format': 'al_muhasib_backup',
     'formatVersion': 1,
     'createdAt': DateTime.now().toUtc().toIso8601String(),
     'databaseSha256': sha256.convert(database).toString(),
-    'databaseSize': database.length,
+    'databaseSize': incorrectDatabaseSize ? database.length + 1 : database.length,
     'schemaVersion': 10,
     'files': [
       {
@@ -31,6 +34,12 @@ Future<File> _makeBundle({bool corruptPayload = false, bool unsafePath = false})
         'size': database.length,
         'sha256': sha256.convert(database).toString(),
       },
+      if (duplicateManifestPath)
+        {
+          'path': 'database/al_muhasib_final_v6.db',
+          'size': database.length,
+          'sha256': sha256.convert(database).toString(),
+        },
       {
         'path': payloadPath,
         'size': payload.length,
@@ -76,6 +85,33 @@ void main() {
           BackupBundleService.restoreBundle(file),
           throwsA(isA<Exception>()),
         );
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects payload files not covered by the manifest', () async {
+      final file = await _makeBundle(undeclaredPayload: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects duplicate paths in the manifest', () async {
+      final file = await _makeBundle(duplicateManifestPath: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects an incorrect database size in the manifest', () async {
+      final file = await _makeBundle(incorrectDatabaseSize: true);
+      try {
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
       } finally {
         await file.parent.delete(recursive: true);
       }

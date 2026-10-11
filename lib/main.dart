@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -637,7 +636,6 @@ class BackupBundleService {
     final dbOut = File(p.join(dir.path, 'al_muhasib_final_v6.db'));
     await dbOut.writeAsBytes(dbBytes, flush: true);
 
-    final root = await _appDataRoot();
     final stagingRoot = Directory(p.join(dir.path, 'app_data'));
     for (final entry in archive) {
       if (!entry.isFile || !entry.name.startsWith('app_data/')) continue;
@@ -743,6 +741,7 @@ class BackupBundleService {
       final declared = manifest['files'];
       if (declared is! List) return false;
       var declaresDatabase = false;
+      final declaredPaths = <String>{};
       for (final item in declared) {
         if (item is! Map) return false;
         final name = item['path']?.toString() ?? '';
@@ -750,7 +749,8 @@ class BackupBundleService {
         if (name.isEmpty ||
             p.isAbsolute(name) ||
             name.contains('\\') ||
-            segments.any((segment) => segment == '..' || segment.isEmpty)) {
+            segments.any((segment) => segment == '..' || segment.isEmpty) ||
+            !declaredPaths.add(name)) {
           return false;
         }
         if (name == 'database/al_muhasib_final_v6.db') declaresDatabase = true;
@@ -762,7 +762,17 @@ class BackupBundleService {
           return false;
         }
       }
-      if (!declaresDatabase) return false;
+      // Every payload file must be covered by the manifest; otherwise restore
+      // could import unverified app_data files that were never checksummed.
+      if (!declaresDatabase ||
+          declaredPaths.length != byName.keys.where((name) => name != 'manifest.json').length ||
+          byName.keys.any((name) => name != 'manifest.json' && !declaredPaths.contains(name))) {
+        return false;
+      }
+      if (manifest['databaseSize']?.toString() !=
+          List<int>.from(databaseEntry.content as List<int>).length.toString()) {
+        return false;
+      }
       return true;
     } catch (e) {
       debugPrint('فشل التحقق من النسخة الاحتياطية: $e');
@@ -1286,26 +1296,6 @@ class AutoBackupService {
     } catch (_) {
       return null;
     }
-  }
-
-  static Future<bool> _hasDataChanged() async {
-    final fingerprint = await _getDatabaseFingerprint();
-    if (fingerprint == null) return true;
-    final settings = await getSettings();
-    final previous = settings['dbFingerprint'] as String? ?? '';
-    return previous.isEmpty || fingerprint != previous;
-  }
-
-  static Future<bool> _hasDataChangedForDrive() async {
-    final fingerprint = await _getDatabaseFingerprint();
-    if (fingerprint == null) return true;
-    final settings = await getSettings();
-    final previous = settings['driveDbFingerprint'] as String? ?? '';
-    return previous.isEmpty || fingerprint != previous;
-  }
-
-  static String _formatTime(int hour, int minute) {
-    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
   // ============ جدولة المهام الخلفية ============
@@ -2315,8 +2305,6 @@ class AppDBHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_last_activity ON customers(last_activity)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
     }
     if (oldVersion < 7) {
       await db.execute('''
@@ -2357,6 +2345,7 @@ class AppDBHelper {
       }
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_currency ON transactions(currency)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_transactions_customer_date ON transactions(customer_id, date, id)');
+    }
     if (oldVersion < 10) {
       // توحيد جميع تواريخ العمليات القديمة إلى ISO محلي: YYYY-MM-DD HH:mm:ss
       final rows = await db.query('transactions', columns: ['id', 'date']);
@@ -2406,7 +2395,6 @@ class AppDBHelper {
           whereArgs: [customer['id']],
         );
       }
-    }
     }
   }
 
@@ -4082,7 +4070,6 @@ class _HomeScreenState extends State<HomeScreen>
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String? _drawerLogoBase64;
-  String _drawerLogoShape = 'circle';
 
   @override
   void initState() {
@@ -4109,11 +4096,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadDrawerLogo() async {
     final logo = await PersonalDataService.getLogoBase64();
-    final data = await PersonalDataService.getData();
     if (!mounted) return;
     setState(() {
       _drawerLogoBase64 = logo;
-      _drawerLogoShape = data['logoShape'] as String;
     });
   }
 
@@ -7194,7 +7179,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final String details = tx['details']?.toString() ?? '';
     final String dateStr = tx['date'].toString();
     String? imageData = tx['image_data']?.toString();
-    if ((imageData == null || imageData!.isEmpty) &&
+    if ((imageData == null || imageData.isEmpty) &&
         (tx['image_path']?.toString().isNotEmpty ?? false)) {
       final bytes = await ImageStorageService.readRelative(tx['image_path']?.toString());
       if (bytes != null) imageData = base64Encode(bytes);
