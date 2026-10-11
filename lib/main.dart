@@ -1306,7 +1306,10 @@ class AutoBackupService {
 
     if (!localEnabled && !driveEnabled) {
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت مهمة الخلفية');
+      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+      await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
+      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
+      debugPrint('النسخ المحلي وDrive متوقفان؛ ألغيت جميع مهام النسخ المجدولة');
       return;
     }
 
@@ -1497,9 +1500,10 @@ class AutoBackupService {
   static Future<void> cancelDailyBackup() async {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
+    await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
     try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
     await NotificationService.cancelLocalNotification();
-    debugPrint('تم إلغاء المهام اليومية');
+    debugPrint('تم إلغاء جميع مهام النسخ المحلية المجدولة');
   }
 
   static Future<bool> _isWritableDirectory(String path) async {
@@ -3329,8 +3333,12 @@ class _AlMuhasibAppState extends State<AlMuhasibApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Do not enqueue a second backup merely because the app is backgrounded.
-    // The configured-time alarm and WorkManager own the backup schedule.
+    // Android does not provide a reliable callback for force-stop/swipe-away.
+    // Paused is the practical signal that the UI has left the foreground.
+    // WorkManager runs the queued backup independently of the UI process.
+    if (state == AppLifecycleState.paused) {
+      unawaited(AutoBackupService.scheduleBackupOnExit());
+    }
   }
 
   @override
