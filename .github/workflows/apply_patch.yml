@@ -1,9 +1,8 @@
 name: Apply Al-Mohaseb Patch
 
+# Applying a repository-wide ZIP patch must be an explicit manual action.
+# Never run this workflow automatically when a ZIP is pushed.
 on:
-  push:
-    paths:
-      - "al_muhasib_final_patch_ready.zip"
   workflow_dispatch:
 
 permissions:
@@ -15,14 +14,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract patch
+      - name: Validate and extract patch
+        shell: bash
         run: |
-          unzip -q al_muhasib_final_patch_ready.zip -d _patch
-          test -f _patch/al_muhasib_final_patch/lib/main.dart
-          cp -a _patch/al_muhasib_final_patch/. .
+          set -euo pipefail
+          test -f al_muhasib_final_patch_ready.zip
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import PurePosixPath
 
-      - name: Remove old signing workflow
-        run: rm -f .github/workflows/generate-keystore.yml
+          archive = "al_muhasib_final_patch_ready.zip"
+          prefix = "al_muhasib_final_patch/"
+          blocked = (
+              ".github/workflows/",
+              "android/key.properties",
+          )
+          with zipfile.ZipFile(archive) as z:
+              names = z.namelist()
+              if not names:
+                  raise SystemExit("Patch archive is empty")
+              for name in names:
+                  path = PurePosixPath(name)
+                  if path.is_absolute() or ".." in path.parts or "\\" in name:
+                      raise SystemExit(f"Unsafe archive path: {name}")
+                  if name.rstrip("/") and not name.startswith(prefix):
+                      raise SystemExit(f"Unexpected path outside {prefix}: {name}")
+                  relative = name[len(prefix):] if name.startswith(prefix) else ""
+                  if any(relative.startswith(item) for item in blocked):
+                      raise SystemExit(f"Patch may not modify protected path: {name}")
+                  if relative.lower().endswith((".jks", ".keystore")):
+                      raise SystemExit(f"Patch may not replace signing keys: {name}")
+              if prefix + "lib/main.dart" not in names:
+                  raise SystemExit("Expected lib/main.dart is missing")
+          PY
+          mkdir -p _patch
+          unzip -q al_muhasib_final_patch_ready.zip -d _patch
+          cp -a _patch/al_muhasib_final_patch/. .
 
       - name: Commit complete patch
         run: |
