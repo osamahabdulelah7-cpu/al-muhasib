@@ -2495,6 +2495,32 @@ class AppDBHelper {
     }
   }
 
+  Future<void> deleteAllLocalData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('transactions');
+      await txn.delete('customers');
+      await txn.delete('personal_logo');
+      await txn.delete('app_metadata');
+      await txn.delete('categories');
+      await txn.delete('currencies');
+      await txn.insert('categories', {'name': 'عام', 'sort_order': 1});
+      await txn.insert('categories', {'name': 'عملاء', 'sort_order': 2});
+      await txn.insert('categories', {'name': 'موردون', 'sort_order': 3});
+      await txn.insert('currencies', {'name': 'ريال يمني', 'symbol': 'ر.ي'});
+      await txn.insert('currencies', {'name': 'ريال سعودي', 'symbol': 'ر.س'});
+      await txn.insert('currencies', {'name': 'دولار أمريكي', 'symbol': '\$'});
+    });
+    try {
+      final root = await ImageStorageService._root;
+      final images = Directory(p.join(root.path, 'images'));
+      if (await images.exists()) await images.delete(recursive: true);
+    } catch (e) {
+      debugPrint('تعذر حذف بعض ملفات الصور المحلية: $e');
+      rethrow;
+    }
+  }
+
   Future<void> restoreDatabase(File newDbFile) async {
     if (!await newDbFile.exists()) {
       throw Exception('ملف النسخة الاحتياطية غير موجود');
@@ -3780,7 +3806,6 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
   String? _logoBase64;
   String _logoShape = 'circle';
   bool _loading = true;
-  bool _hasExactAlarm = false;
 
   String _sideKey(int index) => index < 3 ? 'right' : 'left';
   int _lineNumber(int index) => index < 3 ? index + 1 : index - 2;
@@ -3814,7 +3839,6 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
       }
       _logoShape = data['logoShape'] as String;
       _logoBase64 = logo;
-      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
@@ -5481,6 +5505,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _signedIn = false;
   String? _userEmail;
   bool _loading = true;
+  bool _hasExactAlarm = false;
 
   @override
   void initState() {
@@ -5511,6 +5536,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _driveBackupCount = driveCount;
       _signedIn = signedIn;
       _userEmail = GoogleDriveService.userEmail;
+      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
@@ -6051,8 +6077,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
-  @override
-    Future<void> _requestExactAlarm() async {
+  Future<void> _requestExactAlarm() async {
     final granted = await AutoBackupService.requestExactAlarmPermissionFromUI();
     if (!mounted) return;
     setState(() => _hasExactAlarm = granted);
@@ -6587,7 +6612,6 @@ Widget build(BuildContext context) {
               label: const Text('حذف الحساب وجميع البيانات',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ),
-          ),
           ),
         const SizedBox(height: 20),
       ]),
