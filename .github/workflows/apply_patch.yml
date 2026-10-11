@@ -28,7 +28,8 @@ jobs:
           archive = "al_muhasib_final_patch_ready.zip"
           prefix = "al_muhasib_final_patch/"
           blocked = (
-              ".github/workflows/",
+              ".git",
+              ".github",
               "android/key.properties",
           )
           max_total_size = 250 * 1024 * 1024
@@ -55,7 +56,7 @@ jobs:
                   if name.rstrip("/") and not name.startswith(prefix):
                       raise SystemExit(f"Unexpected path outside {prefix}: {name}")
                   relative = name[len(prefix):] if name.startswith(prefix) else ""
-                  if any(relative.startswith(item) for item in blocked):
+                  if any(relative == item or relative.startswith(item + "/") for item in blocked):
                       raise SystemExit(f"Patch may not modify protected path: {name}")
                   if relative.lower().endswith((".jks", ".keystore")):
                       raise SystemExit(f"Patch may not replace signing keys: {name}")
