@@ -2558,7 +2558,13 @@ class AppDBHelper {
       if (await safety.exists()) await safety.delete();
     } catch (e) {
       try { await stagedDb?.close(); } catch (_) {}
-      if (_db == null && await safety.exists()) {
+      if (await safety.exists()) {
+        // A failure can happen after the replacement DB was opened (for
+        // example while restoring personal metadata). Close it before
+        // rolling back; checking only _db == null can leave the new DB live.
+        final activeDb = _db;
+        _db = null;
+        try { await activeDb?.close(); } catch (_) {}
         if (await current.exists()) await current.delete();
         await safety.rename(path);
         _db = await openDatabase(
@@ -2571,7 +2577,10 @@ class AppDBHelper {
         try {
           await ImageStorageService.migrateLegacyTransactionImages(_db!);
           await ImageStorageService.migrateLegacyLogo(_db!);
-        } catch (_) {}
+          await restorePersonalDataFromDatabase();
+        } catch (rollbackRefreshError) {
+          debugPrint('تعذر تحديث بيانات النسخة بعد التراجع عن الاستعادة: $rollbackRefreshError');
+        }
       }
       if (await staged.exists()) {
         try { await staged.delete(); } catch (_) {}
