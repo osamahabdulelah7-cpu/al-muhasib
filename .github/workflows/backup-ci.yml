@@ -1,15 +1,18 @@
 name: Backup CI
-# Final validation for backup scheduling, Drive retry handling, SAF, restore, and retention.
-
 on:
   pull_request:
     branches: [ "main", "master" ]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'android/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/**'
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * *'
 
-# Push builds are handled by build.yml to avoid running the same full checks twice.
-# Keep PR, scheduled, and manual backup-focused validation.
 concurrency:
   group: backup-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -22,8 +25,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: '17'
@@ -32,22 +35,15 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Resolve dependencies
-        run: flutter pub get
-      - name: Analyze Dart code
-        run: flutter analyze --no-fatal-infos --fatal-warnings
-      - name: Run tests
-        run: flutter test --reporter expanded
-      - name: Generate Android launcher icons
-        run: dart run flutter_launcher_icons
-      - name: Build debug APK (no signing secrets required)
-        run: flutter build apk --debug --no-tree-shake-icons
-
-      - name: Upload debug APK
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --fatal-warnings
+      - run: flutter test --reporter expanded
+      - run: dart run flutter_launcher_icons
+      - run: flutter build apk --debug --no-tree-shake-icons
+      - uses: actions/upload-artifact@v4
         if: success()
-        uses: actions/upload-artifact@v5
         with:
-          name: al-muhasib-debug-apk
+          name: al-mohaseb-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 14
