@@ -434,7 +434,7 @@ class AutoBackupService {
       File sourceFile, String folderSetting) async {
     final saf = Saf();
     final folderUri = _safUri(folderSetting);
-    final fileName = p.basename(sourceFile.path);
+    var fileName = p.basename(sourceFile.path);
     final tempDir = await getTemporaryDirectory();
     final verificationCopy = File(p.join(tempDir.path,
         'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
@@ -464,6 +464,7 @@ class AutoBackupService {
       // return incomplete bytes transiently; never destroy the only old copy.
       if (copiedForVerification && !validExistingCopy) {
         debugPrint('النسخة الموجودة على SD لم تجتز التحقق؛ سيتم الاحتفاظ بها وإضافة نسخة منفصلة');
+        fileName = '${p.basenameWithoutExtension(fileName)}_retry_${DateTime.now().microsecondsSinceEpoch}${p.extension(fileName)}';
       } else if (!copiedForVerification) {
         throw Exception('تعذر قراءة النسخة الموجودة على بطاقة SD؛ لم يتم حذفها: $readError');
       }
