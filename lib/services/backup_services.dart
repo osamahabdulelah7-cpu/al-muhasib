@@ -179,6 +179,11 @@ class BackupBundleService {
     final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
     final file = File(p.join(outDir.path, name));
     await file.writeAsBytes(encoded, flush: true);
+    final written = await file.length();
+    if (written != encoded.length) {
+      try { await file.delete(); } catch (_) {}
+      throw Exception('فشل حفظ النسخة كاملة: $written/${encoded.length} بايت');
+    }
     return file;
   }
 
@@ -777,6 +782,15 @@ class GoogleDriveService {
         await prefs.clear();
       } catch (e) {
         errors.add('تعذر حذف التفضيلات: $e');
+      }
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        for (final folder in ['app_data', 'AlMuhasib']) {
+          final dir = Directory(p.join(docs.path, folder));
+          if (await dir.exists()) await dir.delete(recursive: true);
+        }
+      } catch (e) {
+        errors.add('تعذر حذف ملفات التطبيق: $e');
       }
       try {
         await AutoBackupService.cancelDailyBackup();
