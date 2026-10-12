@@ -234,7 +234,7 @@ Future<void> exactBackupAlarmCallback() async {
   try {
     final settings = await AutoBackupService.getSettings();
     if (settings['enabled'] == true) {
-      final err = await AutoBackupService.checkAndRunBackup();
+      final err = await AutoBackupService.performScheduledBackup();
       if (err != null) {
         try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', err); } catch (_) {}
       } else {
@@ -242,7 +242,7 @@ Future<void> exactBackupAlarmCallback() async {
       }
     }
     if (settings['driveEnabled'] == true && await GoogleDriveService.trySilentSignIn()) {
-      final err = await AutoBackupService.checkAndRunDriveBackup();
+      final err = await AutoBackupService.performScheduledDriveBackup();
       if (err != null) {
         try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', err); } catch (_) {}
       }
