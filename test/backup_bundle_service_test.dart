@@ -81,6 +81,44 @@ Future<File> _makeBundle({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('AutoBackupService.isAttemptThrottled', () {
+    final now = DateTime(2026, 10, 12, 12);
+
+    test('allows the first attempt when no previous attempt exists', () {
+      expect(AutoBackupService.isAttemptThrottled(null, now), isFalse);
+    });
+
+    test('throttles an attempt made less than 15 minutes ago', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.subtract(const Duration(minutes: 14, seconds: 59)),
+          now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('allows an attempt after the 15-minute interval', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.subtract(const Duration(minutes: 15)),
+          now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('throttles when the saved attempt is in the future', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.add(const Duration(minutes: 1)),
+          now,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('BackupBundleService.verifyBundle', () {
     test('accepts a valid bundle', () async {
       final file = await _makeBundle();
