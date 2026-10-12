@@ -242,7 +242,7 @@ Future<void> exactBackupAlarmCallback() async {
       }
     }
     if (settings['driveEnabled'] == true && await GoogleDriveService.trySilentSignIn()) {
-      final err = await AutoBackupService.performScheduledDriveBackup();
+      final err = await AutoBackupService.checkAndRunDriveBackup();
       if (err != null) {
         try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', err); } catch (_) {}
       }
