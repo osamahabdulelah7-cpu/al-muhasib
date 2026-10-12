@@ -1273,7 +1273,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       double finalBalance) async {
     DateTime start = _reportStartDate ?? DateTime(DateTime.now().year, 1, 1);
     DateTime end = _reportEndDate ?? DateTime(DateTime.now().year, 12, 31);
-    bool usePeriod = true;
+    bool usePeriod = false;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -1288,41 +1288,50 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 onChanged: (value) => setDialogState(() => usePeriod = value ?? false),
               ),
               if (usePeriod) ...[
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('من'),
-                  subtitle: Text('${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}'),
-                  trailing: const Icon(Icons.calendar_month),
-                  onTap: () async {
-                    final picked = await showDatePicker(context: context, initialDate: start,
-                      firstDate: DateTime(2000), lastDate: DateTime(2100));
-                    if (picked != null) setDialogState(() => start = picked);
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('إلى'),
-                  subtitle: Text('${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}'),
-                  trailing: const Icon(Icons.calendar_month),
-                  onTap: () async {
-                    final picked = await showDatePicker(context: context, initialDate: end,
-                      firstDate: DateTime(2000), lastDate: DateTime(2100));
-                    if (picked != null) setDialogState(() => end = picked);
-                  },
-                ),
+                Row(children: [
+                  Expanded(child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('من'),
+                    subtitle: Text('${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}'),
+                    trailing: const Icon(Icons.calendar_month),
+                    onTap: () async {
+                      final picked = await showDatePicker(context: context, initialDate: start,
+                        firstDate: DateTime(2000), lastDate: DateTime(2100));
+                      if (picked != null) setDialogState(() => start = picked);
+                    },
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('إلى'),
+                    subtitle: Text('${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}'),
+                    trailing: const Icon(Icons.calendar_month),
+                    onTap: () async {
+                      final picked = await showDatePicker(context: context, initialDate: end,
+                        firstDate: DateTime(2000), lastDate: DateTime(2100));
+                      if (picked != null) setDialogState(() => end = picked);
+                    },
+                  )),
+                ]),
               ],
               const Divider(),
+              Row(children: [
+                Expanded(child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                  title: const Text('PDF'),
+                  onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, true); },
+                )),
+                const SizedBox(width: 16),
+                Expanded(child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.table_view, color: Colors.green),
+                  title: const Text('Excel'),
+                  onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, false); },
+                )),
+              ]),
               ListTile(
-                leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                title: const Text('PDF'),
-                onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, true); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.table_view, color: Colors.green),
-                title: const Text('Excel'),
-                onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, false); },
-              ),
-              ListTile(
+                contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.chat, color: Colors.green, size: 30),
                 title: const Text('مشاركة عبر واتساب'),
                 subtitle: const Text('اختر PDF أو Excel'),
@@ -1418,7 +1427,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           excel_lib.TextCellValue((tx['details'] ?? '').toString()),
           isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
           isGive ? excel_lib.TextCellValue('-') : excel_lib.DoubleCellValue(amount),
-          excel_lib.DoubleCellValue(runningBalance),
+          excel_lib.DoubleCellValue(runningBalance.abs()),
         ]);
       }
       sheet.appendRow([
@@ -1442,10 +1451,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       if (!await file.exists() || await file.length() <= 0) {
         throw Exception('لم تُحفظ بيانات ملف Excel بشكل صحيح');
       }
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
-        text: 'كشف حساب Excel - ${widget.customer['name']}',
-      );
+      final openResult = await OpenFile.open(file.path,
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      if (openResult.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('تم إنشاء ملف Excel لكن تعذر فتحه مباشرة: ${openResult.message}'),
+          backgroundColor: AppColors.red,
+        ));
+      }
     } catch (e, st) {
       debugPrint('Excel export error: $e\\n$st');
       if (mounted) {
