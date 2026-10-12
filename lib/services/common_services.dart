@@ -108,6 +108,32 @@ class NotificationService {
     }
   }
 
+  // إشعار مؤقت أثناء تنفيذ النسخ فقط؛ يُلغى عند انتهاء العملية.
+  static Future<void> showBackupInProgress({required bool drive}) async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: true,
+        autoCancel: false,
+        showWhen: false,
+        icon: 'ic_notification',
+      );
+      final id = drive ? _driveNotificationId : _localNotificationId;
+      await _plugin.show(
+        id,
+        drive ? '☁️ جاري النسخ إلى Google Drive' : '📁 جارٍ النسخ الاحتياطي للهاتف',
+        'عملية النسخ الاحتياطي قيد التنفيذ',
+        const NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار تقدم النسخ (ستستمر العملية): $e');
+    }
+  }
+
   static Future<void> showPersistentLocalNotification(String timeText) async {
     try {
     const androidDetails = AndroidNotificationDetails(
