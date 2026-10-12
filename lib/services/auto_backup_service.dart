@@ -623,9 +623,13 @@ class AutoBackupService {
     final lastText = prefs.getString(_prefLastAttempt);
     final last = lastText == null ? null : DateTime.tryParse(lastText);
     final now = DateTime.now();
-    if (last != null && now.difference(last) >= Duration.zero &&
-        now.difference(last) < _minRetryInterval) {
-      return false;
+    if (last != null) {
+      final diff = now.difference(last);
+      // Clock changes can put the saved attempt in the future. Treat that
+      // as throttled too, rather than allowing an immediate repeated attempt.
+      if (diff.isNegative || diff < _minRetryInterval) {
+        return false;
+      }
     }
     await prefs.setString(_prefLastAttempt, now.toIso8601String());
     return true;
