@@ -136,9 +136,17 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     if (value && _folderPath.isEmpty) {
       if (!await _pickFolder()) return;
     }
-    await AutoBackupService.saveSettings(enabled: value);
+    await AutoBackupService.saveSettings(
+      enabled: value,
+      scheduledTimeEnabled: value,
+      repeatEnabled: value,
+    );
     if (!mounted) return;
-    setState(() => _enabled = value);
+    setState(() {
+      _enabled = value;
+      _scheduledTimeEnabled = value;
+      _repeatEnabled = value;
+    });
     // The scheduler is shared by local and Drive backups. Disabling one
     // destination must not cancel jobs still needed by the other.
     final latest = await AutoBackupService.getSettings();
@@ -764,7 +772,8 @@ Widget build(BuildContext context) {
           child: SwitchListTile(
             value: _enabled,
             onChanged: _toggleEnabled,
-            activeColor: Colors.pink,
+            activeColor: const Color(0xFF1976D2),
+            tileColor: Colors.white,
             secondary: Container(
               width: 45,
               height: 45,
@@ -849,22 +858,23 @@ Widget build(BuildContext context) {
         const Divider(height: 1),
         SwitchListTile(
           value: _scheduledTimeEnabled,
-          activeColor: AppColors.primary,
+          activeColor: const Color(0xFF1976D2),
+          tileColor: Colors.white,
           secondary: const Icon(Icons.schedule, color: Color(0xFF1976D2), size: 28),
           title: const Text('تفعيل تحديد وقت النسخ',
               style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
           subtitle: const Text('تشغيل أو إيقاف النسخ المرتبط بالوقت المحدد'),
-          onChanged: (value) async {
+          onChanged: _enabled ? (value) async {
             await AutoBackupService.saveSettings(scheduledTimeEnabled: value);
             if (!mounted) return;
             setState(() => _scheduledTimeEnabled = value);
             await AutoBackupService.scheduleDailyBackup();
-          },
+          } : null,
         ),
         Container(
           color: Colors.white,
           child: ListTile(
-            enabled: _scheduledTimeEnabled,
+            enabled: _enabled && _scheduledTimeEnabled,
             leading: Container(
               width: 45,
               height: 45,
@@ -889,31 +899,41 @@ Widget build(BuildContext context) {
         const Divider(height: 1),
         SwitchListTile(
           value: _repeatEnabled,
-          activeColor: AppColors.primary,
+          activeColor: const Color(0xFF1976D2),
+          tileColor: Colors.white,
           secondary: const Icon(Icons.repeat, color: Color(0xFF1976D2), size: 28),
           title: const Text('تفعيل تكرار النسخ التلقائي',
               style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
           subtitle: Text('التكرار الحالي: كل ' + _repeatValue.toString() + ' ' + (_repeatUnit == 'hours' ? 'ساعة' : _repeatUnit == 'days' ? 'يوم' : 'دقيقة')),
-          onChanged: (value) async {
+          onChanged: _enabled ? (value) async {
             await AutoBackupService.saveSettings(repeatEnabled: value);
             if (!mounted) return;
             setState(() => _repeatEnabled = value);
             await AutoBackupService.scheduleDailyBackup();
-          },
+          } : null,
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Row(children: [
-            Expanded(
+            SizedBox(
+              width: 132,
               child: TextField(
                 controller: _repeatController,
-                enabled: _repeatEnabled,
+                enabled: _enabled && _repeatEnabled,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'قيمة فترة التكرار',
-                  helperText: 'الحد الأدنى الفعلي على Android هو 15 دقيقة',
+                  labelText: 'فترة التكرار',
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                   border: OutlineInputBorder(),
                 ),
+                onChanged: (text) async {
+                  final parsed = int.tryParse(text);
+                  if (parsed == null || parsed < 1 || parsed > 10080) return;
+                  setState(() => _repeatValue = parsed);
+                  await AutoBackupService.saveSettings(repeatValue: parsed);
+                  await AutoBackupService.scheduleDailyBackup();
+                },
                 onSubmitted: (text) async {
                   final parsed = int.tryParse(text);
                   if (parsed == null || parsed < 1 || parsed > 10080) {
@@ -935,7 +955,7 @@ Widget build(BuildContext context) {
                 DropdownMenuItem(value: 'hours', child: Text('ساعة')),
                 DropdownMenuItem(value: 'days', child: Text('يوم')),
               ],
-              onChanged: _repeatEnabled ? (unit) async {
+              onChanged: (_enabled && _repeatEnabled) ? (unit) async {
                 if (unit == null) return;
                 setState(() => _repeatUnit = unit);
                 await AutoBackupService.saveSettings(repeatUnit: unit);
