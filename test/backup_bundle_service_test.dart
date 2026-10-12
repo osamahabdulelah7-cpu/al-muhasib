@@ -146,6 +146,50 @@ void main() {
     }
   });
 
+  group('BackupBundleService.writeEncodedBundleForTesting', () {
+    test('returns only a written bundle that passes integrity verification', () async {
+      final source = await _makeBundle();
+      final output = await Directory.systemTemp.createTemp('verified_bundle_');
+      try {
+        final result = await BackupBundleService.writeEncodedBundleForTesting(
+          await source.readAsBytes(), output);
+        expect(await result.exists(), isTrue);
+        expect(await BackupBundleService.verifyBundle(result), isTrue);
+      } finally {
+        await source.parent.delete(recursive: true);
+        await output.delete(recursive: true);
+      }
+    });
+
+    test('removes output when written bytes fail integrity verification', () async {
+      final output = await Directory.systemTemp.createTemp('invalid_bundle_');
+      try {
+        await expectLater(
+          BackupBundleService.writeEncodedBundleForTesting(<int>[1, 2, 3, 4], output),
+          throwsA(isA<Exception>()),
+        );
+        expect(await output.list().toList(), isEmpty);
+      } finally {
+        await output.delete(recursive: true);
+      }
+    });
+
+    test('fails when the output directory path is an ordinary file', () async {
+      final root = await Directory.systemTemp.createTemp('bundle_output_failure_');
+      final file = File('${root.path}/not_a_directory');
+      await file.writeAsString('keep');
+      try {
+        await expectLater(
+          BackupBundleService.writeEncodedBundleForTesting(<int>[1, 2, 3], Directory(file.path)),
+          throwsA(anything),
+        );
+        expect(await file.readAsString(), 'keep');
+      } finally {
+        await root.delete(recursive: true);
+      }
+    });
+  });
+
   group('BackupBundleService.verifyBundle', () {
     test('accepts a valid bundle', () async {
       final file = await _makeBundle();
