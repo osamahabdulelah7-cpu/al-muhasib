@@ -209,7 +209,6 @@ class BackupBundleService {
       rethrow;
     }
   }
-  }
 
   static Future<File> _extractDatabase(File bundle) async {
     final bytes = await bundle.readAsBytes();
