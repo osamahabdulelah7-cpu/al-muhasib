@@ -9,63 +9,52 @@ class BackupOptionsScreen extends StatelessWidget {
       appBar: GradientAppBar(
         title: const Text('النسخ الاحتياطي والاستعادة'),
         leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: ListView(children: [
-        const SizedBox(height: 10),
-        ListTile(
-          tileColor: Colors.white,
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-                color: AppColors.gold.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.schedule, color: AppColors.goldDark),
-          ),
-          title: const Text('خيارات حفظ البيانات',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('حفظ تلقائي يومي (محلي + Drive)',
-              style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
-        ),
-        const SizedBox(height: 8),
-        ListTile(
-          tileColor: Colors.white,
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
+      body: ListView(
+        children: [
+          const SizedBox(height: 10),
+          ListTile(
+            tileColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
                 color: AppColors.green.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.smartphone, color: AppColors.green),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.smartphone, color: AppColors.green, size: 30),
+            ),
+            title: const Text('من الهاتف', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            subtitle: const Text('مجلد الحفظ والنسخ المحلي والاستعادة والنسخ التلقائي'),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
           ),
-          title: const Text('النسخ الاحتياطي من الهاتف',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('حفظ / استعادة من الجهاز',
-              style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () => _showBackupDialog(context),
-        ),
-        const SizedBox(height: 8),
-        ListTile(
-          tileColor: Colors.white,
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
+          const SizedBox(height: 8),
+          ListTile(
+            tileColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
                 color: AppColors.drive.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.cloud, color: AppColors.drive),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.cloud, color: AppColors.drive, size: 30),
+            ),
+            title: const Text('من Google Drive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            subtitle: const Text('النسخ إلى Google Drive والاستعادة منه'),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
           ),
-          title: const Text('النسخ الاحتياطي من Drive',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('حفظ / استعادة من Google Drive',
-              style: TextStyle(fontSize: 12, color: Colors.grey)),
-          onTap: () => _showBackupDialog(context, fromDrive: true),
-        ),
-      ]),
+        ],
+      ),
     );
   }
-
 
   Future<void> _showDriveRestoreDialog(BuildContext context) async {
     if (!GoogleDriveService.isSignedIn) {
