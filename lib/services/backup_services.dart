@@ -571,24 +571,6 @@ class GoogleDriveService {
     final fileContent = await backupFile.readAsBytes();
     final expectedMd5 = crypto.md5.convert(fileContent).toString();
 
-    // Reconcile a prior operation with this exact name before creating another
-    // Drive object. Only skip upload when size and checksum both match.
-    try {
-      final preCheck = await _driveApi!.files.list(
-        spaces: 'appDataFolder',
-        q: "name = '$fileName'",
-        $fields: 'files(id,name,size,md5Checksum)',
-      ).timeout(const Duration(seconds: 15));
-      final existing = (preCheck.files ?? []).any((f) =>
-          (f.id ?? '').isNotEmpty &&
-          f.name == fileName &&
-          f.size == fileContent.length.toString() &&
-          f.md5Checksum == expectedMd5);
-      if (existing) return null;
-    } catch (e) {
-      debugPrint('تعذر الفحص المبدئي لملف Drive؛ ستتم متابعة الرفع بحذر: $e');
-    }
-
     // Retry transient DNS/network/server failures. A new Drive file name is used
     // per operation, so retrying an interrupted upload may create a duplicate;
     // old-backup retention removes excess copies after a confirmed upload.
@@ -601,25 +583,23 @@ class GoogleDriveService {
             throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
           }
         }
-        if (attempt > 0) {
-          // A timed-out create request may have reached Drive even if its
-          // response was lost. Reconcile by unique operation name and size
-          // after restoring authentication, avoiding duplicate uploads.
-          try {
-            final existing = await _driveApi!.files.list(
-              spaces: 'appDataFolder',
-              q: "name = '$fileName'",
-              $fields: 'files(id,name,size,md5Checksum)',
-            ).timeout(const Duration(seconds: 20));
-            final confirmed = (existing.files ?? []).any((f) =>
-                (f.id ?? '').isNotEmpty &&
-                f.name == fileName &&
-                f.size == fileContent.length.toString() &&
-                f.md5Checksum == expectedMd5);
-            if (confirmed) return null;
-          } catch (reconcileError) {
-            debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
-          }
+        // Reconcile before every create attempt. If listing fails because
+        // of a transient network issue, the create request is attempted and
+        // the surrounding retry loop handles any resulting failure.
+        try {
+          final existing = await _driveApi!.files.list(
+            spaces: 'appDataFolder',
+            q: "name = '$fileName'",
+            $fields: 'files(id,name,size,md5Checksum)',
+          ).timeout(const Duration(seconds: 20));
+          final confirmed = (existing.files ?? []).any((f) =>
+              (f.id ?? '').isNotEmpty &&
+              f.name == fileName &&
+              f.size == fileContent.length.toString() &&
+              f.md5Checksum == expectedMd5);
+          if (confirmed) return null;
+        } catch (reconcileError) {
+          debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
         }
         final driveFile = drive.File()
           ..name = fileName
@@ -790,16 +770,19 @@ class GoogleDriveService {
       }
     }
     if (deleteLocalData) {
+      // Stop scheduled work before removing files that a background backup
+      // may be reading. Keep cancellation separate so cleanup still proceeds.
+      try {
+        await AutoBackupService.cancelDailyBackup();
+        await AutoBackupService.cancelDriveBackup();
+      } catch (e) {
+        errors.add('تعذر إلغاء الجدولة: $e');
+      }
+
       try {
         await AppDBHelper.instance.deleteAllLocalData();
       } catch (e) {
         errors.add('تعذر حذف البيانات المحلية: $e');
-      }
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.clear();
-      } catch (e) {
-        errors.add('تعذر حذف التفضيلات: $e');
       }
       try {
         final docs = await getApplicationDocumentsDirectory();
@@ -810,11 +793,12 @@ class GoogleDriveService {
       } catch (e) {
         errors.add('تعذر حذف ملفات التطبيق: $e');
       }
+      // Clear preferences last, after cancellation has had access to settings.
       try {
-        await AutoBackupService.cancelDailyBackup();
-        await AutoBackupService.cancelDriveBackup();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
       } catch (e) {
-        errors.add('تعذر إلغاء الجدولة: $e');
+        errors.add('تعذر حذف التفضيلات: $e');
       }
     }
     try {
