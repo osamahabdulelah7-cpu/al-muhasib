@@ -1,5 +1,14 @@
 part of '../main.dart';
 
+@visibleForTesting
+Future<void> runCleanupStagesInOrderForTesting(
+    List<Future<void> Function()> stages) async {
+  for (final stage in stages) {
+    await stage();
+  }
+}
+
+
 class ImageStorageService {
   static Future<Directory> get _root async {
     final dir = await getApplicationDocumentsDirectory();
@@ -786,36 +795,44 @@ class GoogleDriveService {
       }
     }
     if (deleteLocalData) {
-      // Stop scheduled work before removing files that a background backup
-      // may be reading. Keep cancellation separate so cleanup still proceeds.
-      try {
-        await AutoBackupService.cancelDailyBackup();
-        await AutoBackupService.cancelDriveBackup();
-      } catch (e) {
-        errors.add('تعذر إلغاء الجدولة: $e');
-      }
-
-      try {
-        await AppDBHelper.instance.deleteAllLocalData();
-      } catch (e) {
-        errors.add('تعذر حذف البيانات المحلية: $e');
-      }
-      try {
-        final docs = await getApplicationDocumentsDirectory();
-        for (final folder in ['app_data', 'AlMuhasib']) {
-          final dir = Directory(p.join(docs.path, folder));
-          if (await dir.exists()) await dir.delete(recursive: true);
-        }
-      } catch (e) {
-        errors.add('تعذر حذف ملفات التطبيق: $e');
-      }
-      // Clear preferences last, after cancellation has had access to settings.
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.clear();
-      } catch (e) {
-        errors.add('تعذر حذف التفضيلات: $e');
-      }
+      // Keep cleanup stages sequential: scheduled work is cancelled before
+      // storage is removed, and preferences are cleared only after cleanup.
+      await runCleanupStagesInOrderForTesting([
+        () async {
+          try {
+            await AutoBackupService.cancelDailyBackup();
+            await AutoBackupService.cancelDriveBackup();
+          } catch (e) {
+            errors.add('تعذر إلغاء الجدولة: $e');
+          }
+        },
+        () async {
+          try {
+            await AppDBHelper.instance.deleteAllLocalData();
+          } catch (e) {
+            errors.add('تعذر حذف البيانات المحلية: $e');
+          }
+        },
+        () async {
+          try {
+            final docs = await getApplicationDocumentsDirectory();
+            for (final folder in ['app_data', 'AlMuhasib']) {
+              final dir = Directory(p.join(docs.path, folder));
+              if (await dir.exists()) await dir.delete(recursive: true);
+            }
+          } catch (e) {
+            errors.add('تعذر حذف ملفات التطبيق: $e');
+          }
+        },
+        () async {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.clear();
+          } catch (e) {
+            errors.add('تعذر حذف التفضيلات: $e');
+          }
+        },
+      ]);
     }
     try {
       await signOut();
