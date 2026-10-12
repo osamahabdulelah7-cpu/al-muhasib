@@ -2,6 +2,10 @@ part of '../main.dart';
 
 class AutoBackupService {
   static const String _prefEnabled = 'auto_backup_enabled';
+  static const String _prefScheduledTimeEnabled = 'auto_backup_scheduled_time_enabled';
+  static const String _prefRepeatEnabled = 'auto_backup_repeat_enabled';
+  static const String _prefRepeatValue = 'auto_backup_repeat_value';
+  static const String _prefRepeatUnit = 'auto_backup_repeat_unit';
   static const String _prefHour = 'auto_backup_hour';
   static const String _prefMinute = 'auto_backup_minute';
   static const String _prefFolderPath = 'auto_backup_folder_path';
@@ -32,6 +36,10 @@ class AutoBackupService {
     final prefs = await SharedPreferences.getInstance();
     return {
       'enabled': prefs.getBool(_prefEnabled) ?? false,
+      'scheduledTimeEnabled': prefs.getBool(_prefScheduledTimeEnabled) ?? true,
+      'repeatEnabled': prefs.getBool(_prefRepeatEnabled) ?? false,
+      'repeatValue': prefs.getInt(_prefRepeatValue) ?? 60,
+      'repeatUnit': prefs.getString(_prefRepeatUnit) ?? 'minutes',
       'hour': prefs.getInt(_prefHour) ?? 3,
       'minute': prefs.getInt(_prefMinute) ?? 0,
       'folderPath': prefs.getString(_prefFolderPath) ?? '',
@@ -50,6 +58,10 @@ class AutoBackupService {
 
   static Future<void> saveSettings({
     bool? enabled,
+    bool? scheduledTimeEnabled,
+    bool? repeatEnabled,
+    int? repeatValue,
+    String? repeatUnit,
     int? hour,
     int? minute,
     String? folderPath,
@@ -66,6 +78,12 @@ class AutoBackupService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     if (enabled != null) await prefs.setBool(_prefEnabled, enabled);
+    if (scheduledTimeEnabled != null) {
+      await prefs.setBool(_prefScheduledTimeEnabled, scheduledTimeEnabled);
+    }
+    if (repeatEnabled != null) await prefs.setBool(_prefRepeatEnabled, repeatEnabled);
+    if (repeatValue != null) await prefs.setInt(_prefRepeatValue, repeatValue);
+    if (repeatUnit != null) await prefs.setString(_prefRepeatUnit, repeatUnit);
     if (hour != null) await prefs.setInt(_prefHour, hour);
     if (minute != null) await prefs.setInt(_prefMinute, minute);
     if (folderPath != null) await prefs.setString(_prefFolderPath, folderPath);
@@ -138,6 +156,21 @@ class AutoBackupService {
     }
   }
 
+  static Duration _configuredRepeatInterval(Map<String, dynamic> settings) {
+    if (settings['repeatEnabled'] != true) return const Duration(minutes: 15);
+    final value = (settings['repeatValue'] as int? ?? 60).clamp(1, 10080);
+    final unit = settings['repeatUnit'] as String? ?? 'minutes';
+    final requested = unit == 'hours'
+        ? Duration(hours: value)
+        : unit == 'days'
+            ? Duration(days: value)
+            : Duration(minutes: value);
+    // Android WorkManager enforces a 15-minute minimum periodic interval.
+    return requested < const Duration(minutes: 15)
+        ? const Duration(minutes: 15)
+        : requested;
+  }
+
   // ============ جدولة المهام الخلفية ============
   static Future<void> _scheduleBackgroundBackup() async {
     final settings = await getSettings();
@@ -153,7 +186,7 @@ class AutoBackupService {
       await Workmanager().registerPeriodicTask(
         _workManagerUniqueName,
         _workManagerTaskName,
-        frequency: const Duration(minutes: 15),
+        frequency: _configuredRepeatInterval(settings),
         existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
         constraints: Constraints(
           networkType: NetworkType.notRequired,
@@ -202,9 +235,9 @@ class AutoBackupService {
         targets.add(target.add(const Duration(days: 1)));
       }
     }
-    addTarget(settings['enabled'] == true, settings['hour'] as int,
+    addTarget(settings['enabled'] == true && settings['scheduledTimeEnabled'] == true, settings['hour'] as int,
         settings['minute'] as int, settings['lastBackup'] as String? ?? '');
-    addTarget(settings['driveEnabled'] == true, settings['driveHour'] as int,
+    addTarget(settings['driveEnabled'] == true && settings['scheduledTimeEnabled'] == true, settings['driveHour'] as int,
         settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
     if (targets.isEmpty) {
       try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
