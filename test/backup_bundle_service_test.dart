@@ -204,6 +204,20 @@ void main() {
       }
     });
 
+    test('rejects a truncated bundle after a previously valid header', () async {
+      final source = await _makeBundle();
+      final dir = await Directory.systemTemp.createTemp('truncated_bundle_');
+      final file = File('${dir.path}/truncated.alb');
+      try {
+        final bytes = await source.readAsBytes();
+        await file.writeAsBytes(bytes.take(24).toList(), flush: true);
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await source.parent.delete(recursive: true);
+        await dir.delete(recursive: true);
+      }
+    });
+
     test('rejects non-ZIP file', () async {
       final dir = await Directory.systemTemp.createTemp('bad_');
       final file = File('${dir.path}/broken.alb');
