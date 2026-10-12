@@ -628,10 +628,12 @@ class AutoBackupService {
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
       String? error;
+      await NotificationService.showBackupInProgress(drive: true);
       try {
         error = await GoogleDriveService.uploadBackup(bundle);
       } finally {
         try { await bundle.delete(); } catch (_) {}
+        await NotificationService.cancelDriveNotification();
       }
       if (error == null) {
         final now = DateTime.now();
@@ -758,10 +760,12 @@ class AutoBackupService {
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
       String? error;
+      await NotificationService.showBackupInProgress(drive: true);
       try {
         error = await GoogleDriveService.uploadBackup(bundle);
       } finally {
         try { await bundle.delete(); } catch (_) {}
+        await NotificationService.cancelDriveNotification();
       }
       if (error == null) {
         final dbFile = await _getDatabaseFile();
@@ -951,10 +955,12 @@ class AutoBackupService {
         return 'تم إيقاف الرفع لأن فحص سلامة النسخة الجديدة فشل';
       }
       String? error;
+      await NotificationService.showBackupInProgress(drive: true);
       try {
         error = await GoogleDriveService.uploadBackup(bundle);
       } finally {
         try { await bundle.delete(); } catch (_) {}
+        await NotificationService.cancelDriveNotification();
       }
       if (error == null) {
         final now = DateTime.now();
