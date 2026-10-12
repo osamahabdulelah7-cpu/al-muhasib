@@ -1406,6 +1406,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final sheet = workbook['كشف الحساب'];
       try { workbook.delete('Sheet1'); } catch (_) {}
       sheet.appendRow([
+        excel_lib.TextCellValue('كشف حساب - ${widget.customer['name']}'),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
+      ]);
+      sheet.merge(excel_lib.CellIndex.indexByString('A1'),
+          excel_lib.CellIndex.indexByString('E1'));
+      sheet.appendRow([
         excel_lib.TextCellValue('التاريخ'),
         excel_lib.TextCellValue('التفاصيل'),
         excel_lib.TextCellValue('له'),
@@ -1435,7 +1444,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         excel_lib.TextCellValue(''),
         excel_lib.DoubleCellValue(totalGive),
         excel_lib.DoubleCellValue(totalTake),
-        excel_lib.DoubleCellValue(finalBal),
+        excel_lib.DoubleCellValue(finalBal.abs()),
+      ]);
+      sheet.appendRow([
+        excel_lib.TextCellValue('الرصيد الإجمالي - عليه'),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
+        excel_lib.DoubleCellValue(finalBal.abs()),
       ]);
       final bytes = workbook.encode();
       if (bytes == null || bytes.isEmpty) {
