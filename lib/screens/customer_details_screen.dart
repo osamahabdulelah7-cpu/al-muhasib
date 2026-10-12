@@ -9,12 +9,23 @@ class CustomerDetailsScreen extends StatefulWidget {
 }
 
 class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
+  bool _isSearchingTransactions = false;
+  final TextEditingController _transactionSearchController = TextEditingController();
+  DateTime? _reportStartDate;
+  DateTime? _reportEndDate;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() => Provider.of<AppAccountProvider>(context,
             listen: false)
         .loadTransactions(int.parse(widget.customer['id'].toString())));
+  }
+
+  @override
+  void dispose() {
+    _transactionSearchController.dispose();
+    super.dispose();
   }
 
   Map<String, String> _formatDateTime(String rawDateTime) {
@@ -970,42 +981,64 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       processedTransactions.add({...tx, 'running_balance': cumulative});
     }
     final double finalBalance = cumulative;
-    final displayTransactions = processedTransactions.reversed.toList();
+    final allDisplayTransactions = processedTransactions.reversed.toList();
+    final query = _transactionSearchController.text.trim().toLowerCase();
+    final displayTransactions = query.isEmpty
+        ? allDisplayTransactions
+        : allDisplayTransactions.where((tx) =>
+            (tx['details'] ?? '').toString().toLowerCase().contains(query)).toList();
 
     return Scaffold(
       appBar: GradientAppBar(
-        title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.customer['name'].toString(),
-                  style: const TextStyle(fontSize: 18, color: Colors.black)),
-              if (widget.customer['phone'] != null &&
-                  widget.customer['phone'].toString().trim().isNotEmpty)
-                Text(widget.customer['phone'].toString(),
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.black54)),
-            ]),
+        title: _isSearchingTransactions
+            ? TextField(
+                controller: _transactionSearchController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.black),
+                decoration: const InputDecoration(
+                  hintText: 'بحث في التفاصيل...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.black54),
+                ),
+                onChanged: (_) => setState(() {}),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.customer['name'].toString(),
+                      style: const TextStyle(fontSize: 18, color: Colors.black)),
+                  if (widget.customer['phone'] != null &&
+                      widget.customer['phone'].toString().trim().isNotEmpty)
+                    Text(widget.customer['phone'].toString(),
+                        style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                ]),
         leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.black),
-            tooltip: 'تصدير PDF',
-            onPressed: () => _exportToPdf(
-                processedTransactions, totalGive, totalTake, finalBalance),
-          ),
-          IconButton(
-            icon: const Icon(Icons.table_view, color: Colors.green),
-            tooltip: 'تصدير Excel',
-            onPressed: () => _exportToExcel(
+            tooltip: 'التقارير PDF وExcel',
+            onPressed: () => _showReportsDialog(
                 processedTransactions, totalGive, totalTake, finalBalance),
           ),
           IconButton(
             icon: const Icon(Icons.chat, color: Colors.black, size: 26),
-            tooltip: 'إرسال عبر واتساب',
+            tooltip: 'إرسال رسالة للعميل عبر واتساب',
             onPressed: () => _sendWhatsApp(
                 widget.customer['phone']?.toString(), finalBalance),
+          ),
+          IconButton(
+            icon: Icon(_isSearchingTransactions ? Icons.close : Icons.search,
+                color: Colors.black),
+            tooltip: _isSearchingTransactions ? 'إغلاق البحث' : 'بحث في التفاصيل',
+            onPressed: () {
+              setState(() {
+                _isSearchingTransactions = !_isSearchingTransactions;
+                _transactionSearchController.clear();
+              });
+            },
           ),
         ],
       ),
@@ -1233,6 +1266,123 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  Future<void> _showReportsDialog(
+      List<Map<String, dynamic>> allTxs,
+      double totalGive,
+      double totalTake,
+      double finalBalance) async {
+    DateTime start = _reportStartDate ?? DateTime(DateTime.now().year, 1, 1);
+    DateTime end = _reportEndDate ?? DateTime(DateTime.now().year, 12, 31);
+    bool usePeriod = true;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('التقارير', textAlign: TextAlign.center),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('تحديد تاريخ الفترة'),
+                value: usePeriod,
+                onChanged: (value) => setDialogState(() => usePeriod = value ?? false),
+              ),
+              if (usePeriod) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('من'),
+                  subtitle: Text('${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}'),
+                  trailing: const Icon(Icons.calendar_month),
+                  onTap: () async {
+                    final picked = await showDatePicker(context: context, initialDate: start,
+                      firstDate: DateTime(2000), lastDate: DateTime(2100));
+                    if (picked != null) setDialogState(() => start = picked);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('إلى'),
+                  subtitle: Text('${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}'),
+                  trailing: const Icon(Icons.calendar_month),
+                  onTap: () async {
+                    final picked = await showDatePicker(context: context, initialDate: end,
+                      firstDate: DateTime(2000), lastDate: DateTime(2100));
+                    if (picked != null) setDialogState(() => end = picked);
+                  },
+                ),
+              ],
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                title: const Text('PDF'),
+                onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, true); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_view, color: Colors.green),
+                title: const Text('Excel'),
+                onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, false); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.chat, color: Colors.green, size: 30),
+                title: const Text('مشاركة عبر واتساب'),
+                subtitle: const Text('اختر PDF أو Excel'),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  showModalBottomSheet<void>(
+                    context: context,
+                    builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      ListTile(
+                        leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                        title: const Text('PDF'),
+                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, true); },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.table_view, color: Colors.green),
+                        title: const Text('Excel'),
+                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, false); },
+                      ),
+                    ])),
+                  );
+                },
+              ),
+            ]),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق'))],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runReportExport(List<Map<String, dynamic>> allTxs,
+      DateTime start, DateTime end, bool usePeriod, bool pdf) async {
+    if (usePeriod && start.isAfter(end)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تاريخ البداية يجب ألا يكون بعد تاريخ النهاية')));
+      return;
+    }
+    final selected = usePeriod ? allTxs.where((tx) {
+      try {
+        final dt = DateTime.parse(tx['date'].toString());
+        final day = DateTime(dt.year, dt.month, dt.day);
+        return !day.isBefore(DateTime(start.year, start.month, start.day)) &&
+            !day.isAfter(DateTime(end.year, end.month, end.day));
+      } catch (_) { return false; }
+    }).toList() : List<Map<String, dynamic>>.from(allTxs);
+    double give = 0, take = 0, balance = 0;
+    for (final tx in selected) {
+      final amount = (tx['amount'] as num).toDouble();
+      if (tx['type'] == 'give') { give += amount; balance += amount; }
+      else { take += amount; balance -= amount; }
+    }
+    _reportStartDate = start;
+    _reportEndDate = end;
+    if (pdf) {
+      await _exportToPdf(selected, give, take, balance);
+    } else {
+      await _exportToExcel(selected, give, take, balance);
+    }
+  }
+
   // ============ تصدير كشف الحساب إلى Excel ============
   Future<void> _exportToExcel(
       List<Map<String, dynamic>> txs,
@@ -1240,8 +1390,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       double totalTake,
       double finalBal) async {
     try {
+      if (txs.isEmpty) {
+        throw Exception('لا توجد حركات لتصديرها في هذا الحساب أو ضمن الفترة المحددة');
+      }
       final workbook = excel_lib.Excel.createExcel();
       final sheet = workbook['كشف الحساب'];
+      try { workbook.delete('Sheet1'); } catch (_) {}
       sheet.appendRow([
         excel_lib.TextCellValue('التاريخ'),
         excel_lib.TextCellValue('التفاصيل'),
@@ -1249,7 +1403,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         excel_lib.TextCellValue('عليه'),
         excel_lib.TextCellValue('الرصيد'),
       ]);
-
       double runningBalance = 0;
       for (final tx in txs) {
         final isGive = tx['type'] == 'give';
@@ -1258,8 +1411,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         String dateOnly = (tx['date'] ?? '').toString().split(' ').first;
         try {
           final dt = DateTime.parse(tx['date'].toString());
-          dateOnly =
-              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+          dateOnly = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
         sheet.appendRow([
           excel_lib.TextCellValue(dateOnly),
@@ -1269,7 +1421,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           excel_lib.DoubleCellValue(runningBalance),
         ]);
       }
-
       sheet.appendRow([
         excel_lib.TextCellValue('إجمالي العمليات'),
         excel_lib.TextCellValue(''),
@@ -1278,28 +1429,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         excel_lib.DoubleCellValue(finalBal),
       ]);
       final bytes = workbook.encode();
-      if (bytes == null) throw Exception('تعذر إنشاء ملف Excel');
-
-      final tempDir =
-          Directory(p.join((await getTemporaryDirectory()).path, 'excel'));
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('فشل إنشاء محتوى ملف Excel');
+      }
+      final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'excel'));
       if (!await tempDir.exists()) await tempDir.create(recursive: true);
-      final safeName = widget.customer['name']
-          .toString()
+      final safeName = widget.customer['name'].toString()
           .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final file = File(p.join(
-        tempDir.path,
-        'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx',
-      ));
+      final file = File(p.join(tempDir.path,
+          'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx'));
       await file.writeAsBytes(bytes, flush: true);
+      if (!await file.exists() || await file.length() <= 0) {
+        throw Exception('لم تُحفظ بيانات ملف Excel بشكل صحيح');
+      }
       await Share.shareXFiles(
-        [XFile(file.path)],
+        [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
         text: 'كشف حساب Excel - ${widget.customer['name']}',
       );
-      Future.delayed(const Duration(minutes: 10), () async {
-        try {
-          if (await file.exists()) await file.delete();
-        } catch (_) {}
-      });
     } catch (e, st) {
       debugPrint('Excel export error: $e\\n$st');
       if (mounted) {
