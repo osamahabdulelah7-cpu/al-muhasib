@@ -82,6 +82,22 @@ Future<File> _makeBundle({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('cleanup stages run sequentially in the declared order', () async {
+    final order = <String>[];
+    await runCleanupStagesInOrderForTesting([
+      () async { order.add('cancel-schedules'); },
+      () async { order.add('delete-database'); },
+      () async { order.add('delete-files'); },
+      () async { order.add('clear-preferences'); },
+    ]);
+    expect(order, <String>[
+      'cancel-schedules',
+      'delete-database',
+      'delete-files',
+      'clear-preferences',
+    ]);
+  });
+
   group('AutoBackupService.isAttemptThrottled', () {
     final now = DateTime(2026, 10, 12, 12);
 
