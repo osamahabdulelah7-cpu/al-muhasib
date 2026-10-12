@@ -932,7 +932,8 @@ Widget build(BuildContext context) {
             onPressed: () => Navigator.pop(context)),
       ),
       body: ListView(children: [
-        if (!widget.driveOnly) Container(
+        if (!widget.driveOnly) ...[
+        Container(
           color: AppColors.primary.withOpacity(0.08),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: const Row(children: [
@@ -1222,6 +1223,8 @@ Widget build(BuildContext context) {
           ),
         ),
         const SizedBox(height: 20),
+        ],
+        if (widget.driveOnly) ...[
         Container(
           color: AppColors.drive.withOpacity(0.08),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1373,8 +1376,9 @@ Widget build(BuildContext context) {
                     fontSize: 13, color: AppColors.textMuted)),
           ),
         ),
+        ],
         const SizedBox(height: 20),
-        if (_enabled && _folderPath.isNotEmpty)
+        if (!widget.driveOnly && _folderPath.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: ElevatedButton.icon(
@@ -1393,7 +1397,7 @@ Widget build(BuildContext context) {
                       TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
-        if (_enabled && _folderPath.isNotEmpty)
+        if (!widget.driveOnly && _folderPath.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ElevatedButton.icon(
@@ -1410,7 +1414,7 @@ Widget build(BuildContext context) {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
-        if (_signedIn)
+        if (widget.driveOnly && _signedIn)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Column(children: [
@@ -1447,7 +1451,7 @@ Widget build(BuildContext context) {
               ),
             ]),
           ),
-        if (_signedIn)
+        if (widget.driveOnly && _signedIn)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: OutlinedButton.icon(
