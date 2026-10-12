@@ -270,9 +270,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _hasExactAlarm = false;
   bool _scheduledTimeEnabled = true;
   bool _repeatEnabled = false;
-  int _repeatValue = 60;
-  String _repeatUnit = 'minutes';
-  final TextEditingController _repeatController = TextEditingController(text: '60');
+  int _repeatValue = 1;
+  String _repeatUnit = 'days';
+  final TextEditingController _repeatController = TextEditingController(text: '1');
 
   @override
   void initState() {
@@ -312,9 +312,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _hasExactAlarm = hasExact;
       _scheduledTimeEnabled = settings['scheduledTimeEnabled'] == true;
       _repeatEnabled = settings['repeatEnabled'] == true;
-      _repeatValue = settings['repeatValue'] as int? ?? 60;
+      _repeatValue = settings['repeatValue'] as int? ?? 1;
       _repeatController.text = _repeatValue.toString();
-      _repeatUnit = settings['repeatUnit'] as String? ?? 'minutes';
+      _repeatUnit = settings['repeatUnit'] as String? ?? 'days';
       _loading = false;
     });
   }
