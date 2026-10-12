@@ -174,23 +174,32 @@ class BackupBundleService {
     final encoded = ZipEncoder().encode(archive);
     if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     final outDir = outputDirectory ?? await getTemporaryDirectory();
+    return writeEncodedBundleForTesting(encoded, outDir);
+  }
+
+  @visibleForTesting
+  static Future<File> writeEncodedBundleForTesting(
+      List<int> encoded, Directory outDir) async {
+    if (encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     if (!await outDir.exists()) await outDir.create(recursive: true);
     final now = DateTime.now();
     final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
     final file = File(p.join(outDir.path, name));
-    await file.writeAsBytes(encoded, flush: true);
-    final written = await file.length();
-    if (written != encoded.length) {
-      try { await file.delete(); } catch (_) {}
-      throw Exception('فشل حفظ النسخة كاملة: $written/${encoded.length} بايت');
+    try {
+      await file.writeAsBytes(encoded, flush: true);
+      final written = await file.length();
+      if (written != encoded.length) {
+        throw Exception('فشل حفظ النسخة كاملة: $written/${encoded.length} بايت');
+      }
+      if (!await verifyBundle(file)) {
+        throw Exception('فشل فحص سلامة النسخة الاحتياطية بعد حفظها');
+      }
+      return file;
+    } catch (_) {
+      try { if (await file.exists()) await file.delete(); } catch (_) {}
+      rethrow;
     }
-    // Do not report a bundle as created until the on-disk archive passes the
-    // same integrity checks required before restore or cloud upload.
-    if (!await verifyBundle(file)) {
-      try { await file.delete(); } catch (_) {}
-      throw Exception('فشل فحص سلامة النسخة الاحتياطية بعد حفظها');
-    }
-    return file;
+  }
   }
 
   static Future<File> _extractDatabase(File bundle) async {
