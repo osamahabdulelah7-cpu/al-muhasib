@@ -248,7 +248,8 @@ class BackupOptionsScreen extends StatelessWidget {
 
 // ==================== AutoBackupScreen ====================
 class AutoBackupScreen extends StatefulWidget {
-  const AutoBackupScreen({super.key});
+  final bool driveOnly;
+  const AutoBackupScreen({super.key, this.driveOnly = false});
 
   @override
   State<AutoBackupScreen> createState() => _AutoBackupScreenState();
@@ -277,6 +278,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _repeatController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -919,13 +926,13 @@ Widget build(BuildContext context) {
     }
     return Scaffold(
       appBar: GradientAppBar(
-        title: const Text('خيارات حفظ البيانات'),
+        title: Text(widget.driveOnly ? 'خيارات حفظ البيانات على Google Drive' : 'خيارات حفظ البيانات'),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
             onPressed: () => Navigator.pop(context)),
       ),
       body: ListView(children: [
-        Container(
+        if (!widget.driveOnly) Container(
           color: AppColors.primary.withOpacity(0.08),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: const Row(children: [
