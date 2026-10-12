@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:al_muhasib/main.dart';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<File> _makeBundle({
@@ -117,6 +118,32 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  test('countBackups counts ALB and DB backup files only', () async {
+    final documents = await Directory.systemTemp.createTemp('backup_count_test_');
+    const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+      if (call.method == 'getApplicationDocumentsDirectory') {
+        return documents.path;
+      }
+      throw MissingPluginException('Unexpected method: ${call.method}');
+    });
+
+    try {
+      final backups = Directory('${documents.path}/AlMuhasib/Backups');
+      await backups.create(recursive: true);
+      await File('${backups.path}/al_muhasib_one.alb').writeAsString('bundle');
+      await File('${backups.path}/al_muhasib_two.db').writeAsString('database');
+      await File('${backups.path}/al_muhasib_notes.txt').writeAsString('not a backup');
+
+      expect(await AutoBackupService.countBackups(), 2);
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, null);
+      await documents.delete(recursive: true);
+    }
   });
 
   group('BackupBundleService.verifyBundle', () {
