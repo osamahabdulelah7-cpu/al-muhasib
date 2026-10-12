@@ -606,6 +606,7 @@ class GoogleDriveService {
           if (confirmed) return null;
         } catch (reconcileError) {
           debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
+          rethrow;
         }
         final driveFile = drive.File()
           ..name = fileName
