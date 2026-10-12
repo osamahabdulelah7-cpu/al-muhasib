@@ -571,6 +571,24 @@ class GoogleDriveService {
     final fileContent = await backupFile.readAsBytes();
     final expectedMd5 = crypto.md5.convert(fileContent).toString();
 
+    // Reconcile a prior operation with this exact name before creating another
+    // Drive object. Only skip upload when size and checksum both match.
+    try {
+      final preCheck = await _driveApi!.files.list(
+        spaces: 'appDataFolder',
+        q: "name = '$fileName'",
+        $fields: 'files(id,name,size,md5Checksum)',
+      ).timeout(const Duration(seconds: 15));
+      final existing = (preCheck.files ?? []).any((f) =>
+          (f.id ?? '').isNotEmpty &&
+          f.name == fileName &&
+          f.size == fileContent.length.toString() &&
+          f.md5Checksum == expectedMd5);
+      if (existing) return null;
+    } catch (e) {
+      debugPrint('تعذر الفحص المبدئي لملف Drive؛ ستتم متابعة الرفع بحذر: $e');
+    }
+
     // Retry transient DNS/network/server failures. A new Drive file name is used
     // per operation, so retrying an interrupted upload may create a duplicate;
     // old-backup retention removes excess copies after a confirmed upload.
