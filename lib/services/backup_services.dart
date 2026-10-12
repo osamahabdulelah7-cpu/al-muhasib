@@ -184,6 +184,12 @@ class BackupBundleService {
       try { await file.delete(); } catch (_) {}
       throw Exception('فشل حفظ النسخة كاملة: $written/${encoded.length} بايت');
     }
+    // Do not report a bundle as created until the on-disk archive passes the
+    // same integrity checks required before restore or cloud upload.
+    if (!await verifyBundle(file)) {
+      try { await file.delete(); } catch (_) {}
+      throw Exception('فشل فحص سلامة النسخة الاحتياطية بعد حفظها');
+    }
     return file;
   }
 
