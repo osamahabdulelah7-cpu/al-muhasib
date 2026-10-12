@@ -618,19 +618,21 @@ class AutoBackupService {
     }
   }
 
+  @visibleForTesting
+  static bool isAttemptThrottled(DateTime? last, DateTime now) {
+    if (last == null) return false;
+    final diff = now.difference(last);
+    // Clock changes can put the saved attempt in the future. Treat that
+    // as throttled too, rather than allowing an immediate repeated attempt.
+    return diff.isNegative || diff < _minRetryInterval;
+  }
+
   static Future<bool> _beginThrottledBackupAttempt() async {
     final prefs = await SharedPreferences.getInstance();
     final lastText = prefs.getString(_prefLastAttempt);
     final last = lastText == null ? null : DateTime.tryParse(lastText);
     final now = DateTime.now();
-    if (last != null) {
-      final diff = now.difference(last);
-      // Clock changes can put the saved attempt in the future. Treat that
-      // as throttled too, rather than allowing an immediate repeated attempt.
-      if (diff.isNegative || diff < _minRetryInterval) {
-        return false;
-      }
-    }
+    if (isAttemptThrottled(last, now)) return false;
     await prefs.setString(_prefLastAttempt, now.toIso8601String());
     return true;
   }
