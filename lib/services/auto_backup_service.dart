@@ -6,6 +6,8 @@ class AutoBackupService {
   static const String _prefMinute = 'auto_backup_minute';
   static const String _prefFolderPath = 'auto_backup_folder_path';
   static const String _prefLastBackup = 'auto_backup_last_time';
+  static const String _prefLastAttempt = 'auto_backup_last_attempt';
+  static const Duration _minRetryInterval = Duration(minutes: 15);
   static const String _prefLastDbModified = 'auto_backup_last_db_modified';
   static const String _prefDbFingerprint = 'auto_backup_db_fingerprint';
   static const String _prefLastDestinationError = 'auto_backup_last_destination_error';
@@ -432,7 +434,7 @@ class AutoBackupService {
       File sourceFile, String folderSetting) async {
     final saf = Saf();
     final folderUri = _safUri(folderSetting);
-    final fileName = p.basename(sourceFile.path);
+    var fileName = p.basename(sourceFile.path);
     final tempDir = await getTemporaryDirectory();
     final verificationCopy = File(p.join(tempDir.path,
         'verify_${DateTime.now().microsecondsSinceEpoch}_$fileName'));
@@ -458,10 +460,11 @@ class AutoBackupService {
       } finally {
         try { if (await verificationCopy.exists()) await verificationCopy.delete(); } catch (_) {}
       }
-      // Never delete an existing document merely because the provider failed
-      // to read it; delete only after a successful read proves it is corrupt.
+      // Keep the existing document on any failed verification. A provider can
+      // return incomplete bytes transiently; never destroy the only old copy.
       if (copiedForVerification && !validExistingCopy) {
-        try { await saf.delete(entry.uri); } catch (_) {}
+        debugPrint('النسخة الموجودة على SD لم تجتز التحقق؛ سيتم الاحتفاظ بها وإضافة نسخة منفصلة');
+        fileName = '${p.basenameWithoutExtension(fileName)}_retry_${DateTime.now().microsecondsSinceEpoch}${p.extension(fileName)}';
       } else if (!copiedForVerification) {
         throw Exception('تعذر قراءة النسخة الموجودة على بطاقة SD؛ لم يتم حذفها: $readError');
       }
@@ -615,6 +618,25 @@ class AutoBackupService {
     }
   }
 
+  @visibleForTesting
+  static bool isAttemptThrottled(DateTime? last, DateTime now) {
+    if (last == null) return false;
+    final diff = now.difference(last);
+    // Clock changes can put the saved attempt in the future. Treat that
+    // as throttled too, rather than allowing an immediate repeated attempt.
+    return diff.isNegative || diff < _minRetryInterval;
+  }
+
+  static Future<bool> _beginThrottledBackupAttempt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastText = prefs.getString(_prefLastAttempt);
+    final last = lastText == null ? null : DateTime.tryParse(lastText);
+    final now = DateTime.now();
+    if (isAttemptThrottled(last, now)) return false;
+    await prefs.setString(_prefLastAttempt, now.toIso8601String());
+    return true;
+  }
+
   static Future<String?> checkAndRunBackup() async {
     try {
       final settings = await getSettings();
@@ -634,6 +656,7 @@ class AutoBackupService {
           (settings['lastDestinationError'] as String? ?? '').isNotEmpty;
       if (now.isBefore(todayTarget)) {
         if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          if (!await _beginThrottledBackupAttempt()) return null;
           return await _retryPendingDestination(selectedFolder);
         }
         return null;
@@ -643,10 +666,12 @@ class AutoBackupService {
 
       if (!shouldBackup) {
         if (hasPendingDestinationError && selectedFolder.isNotEmpty) {
+          if (!await _beginThrottledBackupAttempt()) return null;
           return await _retryPendingDestination(selectedFolder);
         }
         return null;
       }
+      if (!await _beginThrottledBackupAttempt()) return null;
       // This is a daily schedule, not a change-only sync. Create a verified
       // snapshot even when the database fingerprint matches yesterday.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
@@ -918,7 +943,10 @@ class AutoBackupService {
       return dir.listSync()
           .whereType<File>()
           .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
-          .where((f) => p.extension(f.path).toLowerCase() == '.alb')
+          .where((f) {
+            final ext = p.extension(f.path).toLowerCase();
+            return ext == '.alb' || ext == '.db';
+          })
           .length;
     } catch (_) {
       return 0;

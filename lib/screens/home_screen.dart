@@ -68,6 +68,9 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _checkAutoBackup() async {
     try {
       final settings = await AutoBackupService.getSettings();
+      if (settings['enabled'] != true && settings['driveEnabled'] != true) {
+        return;
+      }
       final wasEnabled = settings['enabled'] as bool;
       final lastBackupBefore = settings['lastBackup'] as String;
       final error = await AutoBackupService.checkAndRunBackup();

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:al_muhasib/main.dart';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<File> _makeBundle({
@@ -81,6 +82,130 @@ Future<File> _makeBundle({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('cleanup stages run sequentially in the declared order', () async {
+    final order = <String>[];
+    await runCleanupStagesInOrderForTesting([
+      () async { order.add('cancel-schedules'); },
+      () async { order.add('delete-database'); },
+      () async { order.add('delete-files'); },
+      () async { order.add('clear-preferences'); },
+    ]);
+    expect(order, <String>[
+      'cancel-schedules',
+      'delete-database',
+      'delete-files',
+      'clear-preferences',
+    ]);
+  });
+
+  group('AutoBackupService.isAttemptThrottled', () {
+    final now = DateTime(2026, 10, 12, 12);
+
+    test('allows the first attempt when no previous attempt exists', () {
+      expect(AutoBackupService.isAttemptThrottled(null, now), isFalse);
+    });
+
+    test('throttles an attempt made less than 15 minutes ago', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.subtract(const Duration(minutes: 14, seconds: 59)),
+          now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('allows an attempt after the 15-minute interval', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.subtract(const Duration(minutes: 15)),
+          now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('throttles when the saved attempt is in the future', () {
+      expect(
+        AutoBackupService.isAttemptThrottled(
+          now.add(const Duration(minutes: 1)),
+          now,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  test('countBackups counts ALB and DB backup files only', () async {
+    final documents = await Directory.systemTemp.createTemp('backup_count_test_');
+    const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+      if (call.method == 'getApplicationDocumentsDirectory') {
+        return documents.path;
+      }
+      throw MissingPluginException('Unexpected method: ${call.method}');
+    });
+
+    try {
+      final backups = Directory('${documents.path}/AlMuhasib/Backups');
+      await backups.create(recursive: true);
+      await File('${backups.path}/al_muhasib_one.alb').writeAsString('bundle');
+      await File('${backups.path}/al_muhasib_two.db').writeAsString('database');
+      await File('${backups.path}/al_muhasib_notes.txt').writeAsString('not a backup');
+
+      expect(await AutoBackupService.countBackups(), 2);
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, null);
+      await documents.delete(recursive: true);
+    }
+  });
+
+  group('BackupBundleService.writeEncodedBundleForTesting', () {
+    test('returns only a written bundle that passes integrity verification', () async {
+      final source = await _makeBundle();
+      final output = await Directory.systemTemp.createTemp('verified_bundle_');
+      try {
+        final result = await BackupBundleService.writeEncodedBundleForTesting(
+          await source.readAsBytes(), output);
+        expect(await result.exists(), isTrue);
+        expect(await BackupBundleService.verifyBundle(result), isTrue);
+      } finally {
+        await source.parent.delete(recursive: true);
+        await output.delete(recursive: true);
+      }
+    });
+
+    test('removes output when written bytes fail integrity verification', () async {
+      final output = await Directory.systemTemp.createTemp('invalid_bundle_');
+      try {
+        await expectLater(
+          BackupBundleService.writeEncodedBundleForTesting(<int>[1, 2, 3, 4], output),
+          throwsA(isA<Exception>()),
+        );
+        expect(await output.list().toList(), isEmpty);
+      } finally {
+        await output.delete(recursive: true);
+      }
+    });
+
+    test('fails when the output directory path is an ordinary file', () async {
+      final root = await Directory.systemTemp.createTemp('bundle_output_failure_');
+      final file = File('${root.path}/not_a_directory');
+      await file.writeAsString('keep');
+      try {
+        await expectLater(
+          BackupBundleService.writeEncodedBundleForTesting(<int>[1, 2, 3], Directory(file.path)),
+          throwsA(anything),
+        );
+        expect(await file.readAsString(), 'keep');
+      } finally {
+        await root.delete(recursive: true);
+      }
+    });
+  });
+
   group('BackupBundleService.verifyBundle', () {
     test('accepts a valid bundle', () async {
       final file = await _makeBundle();
@@ -136,6 +261,20 @@ void main() {
         expect(await BackupBundleService.verifyBundle(file), isFalse);
       } finally {
         await file.parent.delete(recursive: true);
+      }
+    });
+
+    test('rejects a truncated bundle after a previously valid header', () async {
+      final source = await _makeBundle();
+      final dir = await Directory.systemTemp.createTemp('truncated_bundle_');
+      final file = File('${dir.path}/truncated.alb');
+      try {
+        final bytes = await source.readAsBytes();
+        await file.writeAsBytes(bytes.take(24).toList(), flush: true);
+        expect(await BackupBundleService.verifyBundle(file), isFalse);
+      } finally {
+        await source.parent.delete(recursive: true);
+        await dir.delete(recursive: true);
       }
     });
 

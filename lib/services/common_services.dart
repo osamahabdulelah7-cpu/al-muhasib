@@ -218,7 +218,6 @@ class NotificationService {
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
 @pragma('vm:entry-point')
-@pragma('vm:entry-point')
 Future<void> exactBackupAlarmCallback() async {
   WidgetsFlutterBinding.ensureInitialized();
   ui.DartPluginRegistrant.ensureInitialized();
@@ -235,7 +234,7 @@ Future<void> exactBackupAlarmCallback() async {
   try {
     final settings = await AutoBackupService.getSettings();
     if (settings['enabled'] == true) {
-      final err = await AutoBackupService.checkAndRunBackup();
+      final err = await AutoBackupService.performScheduledBackup();
       if (err != null) {
         try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', err); } catch (_) {}
       } else {

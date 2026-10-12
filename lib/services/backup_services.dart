@@ -1,5 +1,14 @@
 part of '../main.dart';
 
+@visibleForTesting
+Future<void> runCleanupStagesInOrderForTesting(
+    List<Future<void> Function()> stages) async {
+  for (final stage in stages) {
+    await stage();
+  }
+}
+
+
 class ImageStorageService {
   static Future<Directory> get _root async {
     final dir = await getApplicationDocumentsDirectory();
@@ -174,12 +183,31 @@ class BackupBundleService {
     final encoded = ZipEncoder().encode(archive);
     if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     final outDir = outputDirectory ?? await getTemporaryDirectory();
+    return writeEncodedBundleForTesting(encoded, outDir);
+  }
+
+  @visibleForTesting
+  static Future<File> writeEncodedBundleForTesting(
+      List<int> encoded, Directory outDir) async {
+    if (encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     if (!await outDir.exists()) await outDir.create(recursive: true);
     final now = DateTime.now();
     final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
     final file = File(p.join(outDir.path, name));
-    await file.writeAsBytes(encoded, flush: true);
-    return file;
+    try {
+      await file.writeAsBytes(encoded, flush: true);
+      final written = await file.length();
+      if (written != encoded.length) {
+        throw Exception('فشل حفظ النسخة كاملة: $written/${encoded.length} بايت');
+      }
+      if (!await verifyBundle(file)) {
+        throw Exception('فشل فحص سلامة النسخة الاحتياطية بعد حفظها');
+      }
+      return file;
+    } catch (_) {
+      try { if (await file.exists()) await file.delete(); } catch (_) {}
+      rethrow;
+    }
   }
 
   static Future<File> _extractDatabase(File bundle) async {
@@ -578,25 +606,24 @@ class GoogleDriveService {
             throw Exception('تعذر تجديد جلسة Google؛ افتح التطبيق وسجّل الدخول مجدداً');
           }
         }
-        if (attempt > 0) {
-          // A timed-out create request may have reached Drive even if its
-          // response was lost. Reconcile by unique operation name and size
-          // after restoring authentication, avoiding duplicate uploads.
-          try {
-            final existing = await _driveApi!.files.list(
-              spaces: 'appDataFolder',
-              q: "name = '$fileName'",
-              $fields: 'files(id,name,size,md5Checksum)',
-            ).timeout(const Duration(seconds: 20));
-            final confirmed = (existing.files ?? []).any((f) =>
-                (f.id ?? '').isNotEmpty &&
-                f.name == fileName &&
-                f.size == fileContent.length.toString() &&
-                f.md5Checksum == expectedMd5);
-            if (confirmed) return null;
-          } catch (reconcileError) {
-            debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
-          }
+        // Reconcile before every create attempt. If listing fails because
+        // of a transient network issue, the create request is attempted and
+        // the surrounding retry loop handles any resulting failure.
+        try {
+          final existing = await _driveApi!.files.list(
+            spaces: 'appDataFolder',
+            q: "name = '$fileName'",
+            $fields: 'files(id,name,size,md5Checksum)',
+          ).timeout(const Duration(seconds: 20));
+          final confirmed = (existing.files ?? []).any((f) =>
+              (f.id ?? '').isNotEmpty &&
+              f.name == fileName &&
+              f.size == fileContent.length.toString() &&
+              f.md5Checksum == expectedMd5);
+          if (confirmed) return null;
+        } catch (reconcileError) {
+          debugPrint('تعذر التحقق من نتيجة محاولة Drive السابقة: $reconcileError');
+          rethrow;
         }
         final driveFile = drive.File()
           ..name = fileName
@@ -767,23 +794,44 @@ class GoogleDriveService {
       }
     }
     if (deleteLocalData) {
-      try {
-        await AppDBHelper.instance.deleteAllLocalData();
-      } catch (e) {
-        errors.add('تعذر حذف البيانات المحلية: $e');
-      }
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.clear();
-      } catch (e) {
-        errors.add('تعذر حذف التفضيلات: $e');
-      }
-      try {
-        await AutoBackupService.cancelDailyBackup();
-        await AutoBackupService.cancelDriveBackup();
-      } catch (e) {
-        errors.add('تعذر إلغاء الجدولة: $e');
-      }
+      // Keep cleanup stages sequential: scheduled work is cancelled before
+      // storage is removed, and preferences are cleared only after cleanup.
+      await runCleanupStagesInOrderForTesting([
+        () async {
+          try {
+            await AutoBackupService.cancelDailyBackup();
+            await AutoBackupService.cancelDriveBackup();
+          } catch (e) {
+            errors.add('تعذر إلغاء الجدولة: $e');
+          }
+        },
+        () async {
+          try {
+            await AppDBHelper.instance.deleteAllLocalData();
+          } catch (e) {
+            errors.add('تعذر حذف البيانات المحلية: $e');
+          }
+        },
+        () async {
+          try {
+            final docs = await getApplicationDocumentsDirectory();
+            for (final folder in ['app_data', 'AlMuhasib']) {
+              final dir = Directory(p.join(docs.path, folder));
+              if (await dir.exists()) await dir.delete(recursive: true);
+            }
+          } catch (e) {
+            errors.add('تعذر حذف ملفات التطبيق: $e');
+          }
+        },
+        () async {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.clear();
+          } catch (e) {
+            errors.add('تعذر حذف التفضيلات: $e');
+          }
+        },
+      ]);
     }
     try {
       await signOut();
