@@ -49,7 +49,7 @@ class BackupOptionsScreen extends StatelessWidget {
             subtitle: const Text('النسخ إلى Google Drive والاستعادة منه'),
             trailing: const Icon(Icons.chevron_left),
             onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
+              MaterialPageRoute(builder: (_) => const AutoBackupScreen(driveOnly: true))),
           ),
         ],
       ),
