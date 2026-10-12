@@ -267,6 +267,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   String? _userEmail;
   bool _loading = true;
   bool _hasExactAlarm = false;
+  bool _scheduledTimeEnabled = true;
+  bool _repeatEnabled = false;
+  int _repeatValue = 60;
+  String _repeatUnit = 'minutes';
+  final TextEditingController _repeatController = TextEditingController(text: '60');
 
   @override
   void initState() {
@@ -298,6 +303,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _signedIn = signedIn;
       _userEmail = GoogleDriveService.userEmail;
       _hasExactAlarm = hasExact;
+      _scheduledTimeEnabled = settings['scheduledTimeEnabled'] == true;
+      _repeatEnabled = settings['repeatEnabled'] == true;
+      _repeatValue = settings['repeatValue'] as int? ?? 60;
+      _repeatController.text = _repeatValue.toString();
+      _repeatUnit = settings['repeatUnit'] as String? ?? 'minutes';
       _loading = false;
     });
   }
@@ -941,13 +951,13 @@ Widget build(BuildContext context) {
                   color: Color(0xFFFFEBEE), shape: BoxShape.circle),
               child: const Icon(Icons.alarm, color: Colors.red, size: 26),
             ),
-            title: const Text('حفظ البيانات يومياً',
+            title: const Text('النسخ التلقائي للهاتف',
                 style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark)),
             subtitle: const Text(
-                'حفظ البيانات تلقائياً مرة واحدة باليوم (بشرط تغيرت البيانات)',
+                'نسخ تلقائي إلى مجلد حفظ البيانات عند تفعيل الجدولة',
                 style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
           ),
         ),
@@ -1016,9 +1026,24 @@ Widget build(BuildContext context) {
           ),
         ),
         const Divider(height: 1),
+        SwitchListTile(
+          value: _scheduledTimeEnabled,
+          activeColor: AppColors.primary,
+          secondary: const Icon(Icons.schedule, color: Color(0xFF1976D2), size: 28),
+          title: const Text('تفعيل تحديد وقت النسخ',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          subtitle: const Text('تشغيل أو إيقاف النسخ المرتبط بالوقت المحدد'),
+          onChanged: (value) async {
+            await AutoBackupService.saveSettings(scheduledTimeEnabled: value);
+            if (!mounted) return;
+            setState(() => _scheduledTimeEnabled = value);
+            await AutoBackupService.scheduleDailyBackup();
+          },
+        ),
         Container(
           color: Colors.white,
           child: ListTile(
+            enabled: _scheduledTimeEnabled,
             leading: Container(
               width: 45,
               height: 45,
@@ -1039,6 +1064,64 @@ Widget build(BuildContext context) {
             ),
             onTap: _pickTime,
           ),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          value: _repeatEnabled,
+          activeColor: AppColors.primary,
+          secondary: const Icon(Icons.repeat, color: Color(0xFF1976D2), size: 28),
+          title: const Text('تفعيل تكرار النسخ التلقائي',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          subtitle: Text('التكرار الحالي: كل ' + _repeatValue.toString() + ' ' + (_repeatUnit == 'hours' ? 'ساعة' : _repeatUnit == 'days' ? 'يوم' : 'دقيقة')),
+          onChanged: (value) async {
+            await AutoBackupService.saveSettings(repeatEnabled: value);
+            if (!mounted) return;
+            setState(() => _repeatEnabled = value);
+            await AutoBackupService.scheduleDailyBackup();
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _repeatController,
+                enabled: _repeatEnabled,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'قيمة فترة التكرار',
+                  helperText: 'الحد الأدنى الفعلي على Android هو 15 دقيقة',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (text) async {
+                  final parsed = int.tryParse(text);
+                  if (parsed == null || parsed < 1 || parsed > 10080) {
+                    _repeatController.text = _repeatValue.toString();
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل رقمًا من 1 إلى 10080')));
+                    return;
+                  }
+                  setState(() => _repeatValue = parsed);
+                  await AutoBackupService.saveSettings(repeatValue: parsed);
+                  await AutoBackupService.scheduleDailyBackup();
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            DropdownButton<String>(
+              value: _repeatUnit,
+              items: const [
+                DropdownMenuItem(value: 'minutes', child: Text('دقيقة')),
+                DropdownMenuItem(value: 'hours', child: Text('ساعة')),
+                DropdownMenuItem(value: 'days', child: Text('يوم')),
+              ],
+              onChanged: _repeatEnabled ? (unit) async {
+                if (unit == null) return;
+                setState(() => _repeatUnit = unit);
+                await AutoBackupService.saveSettings(repeatUnit: unit);
+                await AutoBackupService.scheduleDailyBackup();
+              } : null,
+            ),
+          ]),
         ),
         const Divider(height: 1),
         if (_enabled && !_hasExactAlarm)
