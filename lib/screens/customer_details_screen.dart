@@ -953,6 +953,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       if (newPath != null) await ImageStorageService.deleteRelative(newPath);
       rethrow;
     }
+    InstantBackupService.markChanged();
     if (oldPath != null && oldPath != newPath) {
       await ImageStorageService.deleteRelative(oldPath);
     }
