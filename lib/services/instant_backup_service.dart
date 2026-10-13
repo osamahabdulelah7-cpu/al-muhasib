@@ -2,31 +2,20 @@ part of '../main.dart';
 
 /// نسخ احتياطي فوري بعد تعديل البيانات (إضافة فوق النظام الحالي، لا يستبدله).
 ///
-/// الفكرة: على بعض الهواتف (مثل Samsung القديمة) يلغي النظام المنبهات والمهام
-/// المجدولة عند إغلاق التطبيق بالسحب، لذلك لا يمكن الاعتماد على الجدولة وحدها.
-/// هذه الخدمة تنسخ البيانات مباشرة داخل التطبيق بعد كل تعديل (بعد تأخير قصير
-/// لتجميع التعديلات المتتابعة)، وتحاول مرة أخرى عند خروج التطبيق للخلفية
-/// وعند فتحه من جديد إن بقي تعديل لم يُنسخ.
-///
 /// لا تعمل إلا إذا كان "النسخ التلقائي للهاتف" مفعّلاً، وتستخدم نفس دالة النسخ
 /// الحالية (performBackup) بنفس الوجهة والتحقق من سلامة الملف.
 ///
 /// الاحتفاظ: خمس نسخ فورية (اسمها يبدأ بـ instant_al_muhasib_) منفصلة تماماً عن
-/// خمس النسخ العادية/اليومية (al_muhasib_)، فيكون المجموع عشر نسخ. النسخ الفورية
-/// لا تغيّر سجل النسخ اليومي ولا تحذف أو تستهلك النسخ العادية.
+/// خمس النسخ العادية/اليومية (al_muhasib_)، فيكون المجموع عشر نسخ.
 class InstantBackupService {
   InstantBackupService._();
 
   static const String _prefPending = 'instant_backup_pending';
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
 
-  // مدة الانتظار بعد آخر تعديل لتجميع التعديلات المتتابعة في نسخة واحدة.
   static const Duration _debounce = Duration(seconds: 8);
-  // أقل فاصل بين نسختين فوريتين.
   static const Duration _minGap = Duration(minutes: 1);
-  // نص تعيده performBackup عندما تنجح النسخة الداخلية ويفشل المسار الخارجي فقط.
   static const String _internalOkPrefix = 'تم إنشاء نسخة داخلية سليمة';
-  // بادئة مميزة تفصل النسخ الفورية عن النسخ العادية التي تدير الخمس الأخرى.
   static const String _namePrefix = 'instant_al_muhasib_';
   static const int _maxInstantBackups = 5;
 
@@ -39,7 +28,7 @@ class InstantBackupService {
     unawaited(_markChanged());
   }
 
-  /// تُستدعى عند فتح التطبيق وعند خروجه للخلفية لنسخ أي تعديل معلّق فوراً.
+  /// تُستدعى عند فتح التطبيق وعند خروجه للخلفية.
   static Future<void> flushIfPending() async {
     _timer?.cancel();
     await _run(ignoreGap: true);
@@ -116,7 +105,6 @@ class InstantBackupService {
       name.startsWith(_namePrefix) && p.extension(name).toLowerCase() == '.alb';
 
   /// يُبقي أحدث خمس نسخ فورية فقط (داخلياً وفي مجلد الحفظ الخارجي).
-  /// لا يلمس أي ملف لا يبدأ اسمه بـ instant_al_muhasib_.
   static Future<void> _pruneOldInstantBackups(String folder) async {
     try {
       final internalDir = await AutoBackupService.internalBackupDirectory();
