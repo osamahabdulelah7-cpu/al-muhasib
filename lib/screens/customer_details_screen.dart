@@ -1405,22 +1405,52 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final workbook = excel_lib.Excel.createExcel();
       final sheet = workbook['كشف الحساب'];
       try { workbook.delete('Sheet1'); } catch (_) {}
+
+      final blue = excel_lib.ExcelColor.fromHexString('#0000FF');
+      final black = excel_lib.ExcelColor.fromHexString('#000000');
+      final border = excel_lib.Border(
+        borderStyle: excel_lib.BorderStyle.Thin, borderColorHex: black);
+      final strongBorder = excel_lib.Border(
+        borderStyle: excel_lib.BorderStyle.Medium, borderColorHex: black);
+      final titleStyle = excel_lib.CellStyle(
+        bold: true, fontSize: 16, fontColorHex: blue,
+        horizontalAlign: excel_lib.HorizontalAlign.Center,
+        verticalAlign: excel_lib.VerticalAlign.Center);
+      final headerStyle = excel_lib.CellStyle(
+        bold: true, fontSize: 12, fontColorHex: blue,
+        horizontalAlign: excel_lib.HorizontalAlign.Center,
+        verticalAlign: excel_lib.VerticalAlign.Center,
+        topBorder: strongBorder, bottomBorder: strongBorder,
+        leftBorder: border, rightBorder: border);
+      final dataStyle = excel_lib.CellStyle(
+        horizontalAlign: excel_lib.HorizontalAlign.Center,
+        verticalAlign: excel_lib.VerticalAlign.Center,
+        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
+        topBorder: border, bottomBorder: border,
+        leftBorder: border, rightBorder: border);
+      final totalStyle = excel_lib.CellStyle(
+        bold: true, fontColorHex: blue,
+        horizontalAlign: excel_lib.HorizontalAlign.Center,
+        verticalAlign: excel_lib.VerticalAlign.Center,
+        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
+        topBorder: strongBorder, bottomBorder: strongBorder,
+        leftBorder: border, rightBorder: border);
+
       sheet.appendRow([
         excel_lib.TextCellValue('كشف حساب - ${widget.customer['name']}'),
-        excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''), excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''), excel_lib.TextCellValue(''),
       ]);
       sheet.merge(excel_lib.CellIndex.indexByString('A1'),
           excel_lib.CellIndex.indexByString('E1'));
       sheet.appendRow([
         excel_lib.TextCellValue('التاريخ'),
         excel_lib.TextCellValue('التفاصيل'),
-        excel_lib.TextCellValue('له'),
         excel_lib.TextCellValue('عليه'),
+        excel_lib.TextCellValue('له'),
         excel_lib.TextCellValue('الرصيد'),
       ]);
+
       double runningBalance = 0;
       for (final tx in txs) {
         final isGive = tx['type'] == 'give';
@@ -1434,55 +1464,72 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         sheet.appendRow([
           excel_lib.TextCellValue(dateOnly),
           excel_lib.TextCellValue((tx['details'] ?? '').toString()),
-          isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
           isGive ? excel_lib.TextCellValue('-') : excel_lib.DoubleCellValue(amount),
+          isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
           excel_lib.DoubleCellValue(runningBalance.abs()),
         ]);
       }
+
+      final totalRow = txs.length + 3;
       sheet.appendRow([
         excel_lib.TextCellValue('إجمالي العمليات'),
         excel_lib.TextCellValue(''),
-        excel_lib.DoubleCellValue(totalGive),
         excel_lib.DoubleCellValue(totalTake),
+        excel_lib.DoubleCellValue(totalGive),
         excel_lib.DoubleCellValue(finalBal.abs()),
       ]);
+      sheet.merge(excel_lib.CellIndex.indexByString('A${totalRow}'),
+          excel_lib.CellIndex.indexByString('B${totalRow}'));
+      final balanceRow = totalRow + 1;
+      final balanceLabel = finalBal == 0 ? 'الرصيد الإجمالي' :
+          (finalBal > 0 ? 'الرصيد الإجمالي - له' : 'الرصيد الإجمالي - عليه');
       sheet.appendRow([
-        excel_lib.TextCellValue('الرصيد الإجمالي - عليه'),
-        excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''),
-        excel_lib.DoubleCellValue(finalBal.abs()),
+        excel_lib.TextCellValue(balanceLabel),
+        excel_lib.TextCellValue(''), excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''), excel_lib.DoubleCellValue(finalBal.abs()),
       ]);
-      final bytes = workbook.encode();
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('فشل إنشاء محتوى ملف Excel');
+      sheet.merge(excel_lib.CellIndex.indexByString('A${balanceRow}'),
+          excel_lib.CellIndex.indexByString('D${balanceRow}'));
+
+      for (var col = 0; col < 5; col++) {
+        sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0)).cellStyle = titleStyle;
+        sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 1)).cellStyle = headerStyle;
       }
+      for (var row = 2; row < txs.length + 2; row++) {
+        for (var col = 0; col < 5; col++) {
+          sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row)).cellStyle = dataStyle;
+        }
+      }
+      for (var col = 0; col < 5; col++) {
+        sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: totalRow - 1)).cellStyle = totalStyle;
+        sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: balanceRow - 1)).cellStyle = totalStyle;
+      }
+      sheet.setColumnWidth(0, 16);
+      sheet.setColumnWidth(1, 30);
+      sheet.setColumnWidth(2, 14);
+      sheet.setColumnWidth(3, 14);
+      sheet.setColumnWidth(4, 16);
+      sheet.setRowHeight(0, 30);
+      sheet.setRowHeight(1, 25);
+
+      final bytes = workbook.encode();
+      if (bytes == null || bytes.isEmpty) throw Exception('فشل إنشاء محتوى ملف Excel');
       final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'excel'));
       if (!await tempDir.exists()) await tempDir.create(recursive: true);
-      final safeName = widget.customer['name'].toString()
-          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final file = File(p.join(tempDir.path,
-          'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx'));
+      final safeName = widget.customer['name'].toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final file = File(p.join(tempDir.path, 'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx'));
       await file.writeAsBytes(bytes, flush: true);
-      if (!await file.exists() || await file.length() <= 0) {
-        throw Exception('لم تُحفظ بيانات ملف Excel بشكل صحيح');
-      }
-      final openResult = await OpenFile.open(file.path,
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      if (!await file.exists() || await file.length() <= 0) throw Exception('لم تُحفظ بيانات ملف Excel بشكل صحيح');
+      final openResult = await OpenFile.open(file.path, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       if (openResult.type != ResultType.done && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('تم إنشاء ملف Excel لكن تعذر فتحه مباشرة: ${openResult.message}'),
-          backgroundColor: AppColors.red,
-        ));
+          backgroundColor: AppColors.red));
       }
     } catch (e, st) {
-      debugPrint('Excel export error: $e\\n$st');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('تعذر تصدير Excel: $e'),
-          backgroundColor: AppColors.red,
-        ));
-      }
+      debugPrint('Excel export error: $e\n$st');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('تعذر تصدير Excel: $e'), backgroundColor: AppColors.red));
     }
   }
 
