@@ -1443,12 +1443,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ]);
       sheet.merge(excel_lib.CellIndex.indexByString('A1'),
           excel_lib.CellIndex.indexByString('E1'));
+      // Column mapping requested: A=الرصيد, B=له, C=عليه, D=التفاصيل, E=التاريخ.
       sheet.appendRow([
-        excel_lib.TextCellValue('التاريخ'),
-        excel_lib.TextCellValue('التفاصيل'),
-        excel_lib.TextCellValue('عليه'),
-        excel_lib.TextCellValue('له'),
         excel_lib.TextCellValue('الرصيد'),
+        excel_lib.TextCellValue('له'),
+        excel_lib.TextCellValue('عليه'),
+        excel_lib.TextCellValue('التفاصيل'),
+        excel_lib.TextCellValue('التاريخ'),
       ]);
 
       double runningBalance = 0;
@@ -1462,34 +1463,34 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           dateOnly = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
         sheet.appendRow([
-          excel_lib.TextCellValue(dateOnly),
-          excel_lib.TextCellValue((tx['details'] ?? '').toString()),
-          isGive ? excel_lib.TextCellValue('-') : excel_lib.DoubleCellValue(amount),
-          isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
           excel_lib.DoubleCellValue(runningBalance.abs()),
+          isGive ? excel_lib.DoubleCellValue(amount) : excel_lib.TextCellValue('-'),
+          isGive ? excel_lib.TextCellValue('-') : excel_lib.DoubleCellValue(amount),
+          excel_lib.TextCellValue((tx['details'] ?? '').toString()),
+          excel_lib.TextCellValue(dateOnly),
         ]);
       }
 
       final totalRow = txs.length + 3;
       sheet.appendRow([
+        excel_lib.DoubleCellValue(finalBal.abs()),
+        excel_lib.DoubleCellValue(totalGive),
+        excel_lib.DoubleCellValue(totalTake),
         excel_lib.TextCellValue('إجمالي العمليات'),
         excel_lib.TextCellValue(''),
-        excel_lib.DoubleCellValue(totalTake),
-        excel_lib.DoubleCellValue(totalGive),
-        excel_lib.DoubleCellValue(finalBal.abs()),
       ]);
-      sheet.merge(excel_lib.CellIndex.indexByString('A${totalRow}'),
-          excel_lib.CellIndex.indexByString('B${totalRow}'));
       final balanceRow = totalRow + 1;
       final balanceLabel = finalBal == 0 ? 'الرصيد الإجمالي' :
           (finalBal > 0 ? 'الرصيد الإجمالي - له' : 'الرصيد الإجمالي - عليه');
       sheet.appendRow([
+        excel_lib.DoubleCellValue(finalBal.abs()),
+        excel_lib.TextCellValue(''),
+        excel_lib.TextCellValue(''),
         excel_lib.TextCellValue(balanceLabel),
-        excel_lib.TextCellValue(''), excel_lib.TextCellValue(''),
-        excel_lib.TextCellValue(''), excel_lib.DoubleCellValue(finalBal.abs()),
+        excel_lib.TextCellValue(''),
       ]);
-      sheet.merge(excel_lib.CellIndex.indexByString('A${balanceRow}'),
-          excel_lib.CellIndex.indexByString('D${balanceRow}'));
+      sheet.merge(excel_lib.CellIndex.indexByString('D${balanceRow}'),
+          excel_lib.CellIndex.indexByString('E${balanceRow}'));
 
       for (var col = 0; col < 5; col++) {
         sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0)).cellStyle = titleStyle;
@@ -1504,11 +1505,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: totalRow - 1)).cellStyle = totalStyle;
         sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: balanceRow - 1)).cellStyle = totalStyle;
       }
-      sheet.setColumnWidth(0, 16);
-      sheet.setColumnWidth(1, 30);
-      sheet.setColumnWidth(2, 14);
-      sheet.setColumnWidth(3, 14);
-      sheet.setColumnWidth(4, 16);
+      sheet.setColumnWidth(0, 16); // A: الرصيد
+      sheet.setColumnWidth(1, 14); // B: له
+      sheet.setColumnWidth(2, 14); // C: عليه
+      sheet.setColumnWidth(3, 30); // D: التفاصيل
+      sheet.setColumnWidth(4, 16); // E: التاريخ
       sheet.setRowHeight(0, 30);
       sheet.setRowHeight(1, 25);
 
