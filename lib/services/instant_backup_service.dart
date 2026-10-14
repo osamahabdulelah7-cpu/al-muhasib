@@ -12,6 +12,8 @@ class InstantBackupService {
 
   static const String _prefPending = 'instant_backup_pending';
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
+  static const String _prefDrivePending = 'instant_drive_backup_pending';
+  static const String _prefDriveLastRunMs = 'instant_drive_backup_last_run_ms';
 
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
@@ -20,6 +22,9 @@ class InstantBackupService {
   static const int _maxInstantBackups = 5;
 
   static Timer? _timer;
+  static Timer? _driveTimer;
+  static bool _driveRunning = false;
+  static bool _driveRerun = false;
   static bool _running = false;
   static bool _rerun = false;
 
@@ -31,14 +36,17 @@ class InstantBackupService {
   /// تُستدعى عند فتح التطبيق وعند خروجه للخلفية.
   static Future<void> flushIfPending() async {
     _timer?.cancel();
-    await _run(ignoreGap: true);
+    _driveTimer?.cancel();
+    await Future.wait([_run(ignoreGap: true), _runDrive(ignoreGap: true)]);
   }
 
   static Future<void> _markChanged() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefPending, true);
+      await prefs.setBool(_prefDrivePending, true);
       _schedule(_debounce);
+      _scheduleDrive(_debounce);
     } catch (e) {
       debugPrint('تعذر تسجيل تعديل للنسخ الفوري: $e');
     }
@@ -97,6 +105,106 @@ class InstantBackupService {
       if (_rerun) {
         _rerun = false;
         _schedule(_debounce);
+      }
+    }
+  }
+
+  static void _scheduleDrive(Duration delay) {
+    _driveTimer?.cancel();
+    _driveTimer = Timer(delay, () => unawaited(_runDrive(ignoreGap: false)));
+  }
+
+  /// Drive has an independent pending flag so a network failure never causes
+  /// an already-successful local backup to be repeated just to retry Drive.
+  static Future<void> _runDrive({required bool ignoreGap}) async {
+    if (_driveRunning) {
+      _driveRerun = true;
+      return;
+    }
+    _driveRunning = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      if (prefs.getBool(_prefDrivePending) != true) return;
+
+      final settings = await AutoBackupService.getSettings();
+      if (settings['driveEnabled'] != true) return;
+
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final since = nowMs - (prefs.getInt(_prefDriveLastRunMs) ?? 0);
+      if (!ignoreGap && since >= 0 && since < _minGap.inMilliseconds) {
+        _scheduleDrive(Duration(milliseconds: _minGap.inMilliseconds - since + 500));
+        return;
+      }
+
+      await prefs.setBool(_prefDrivePending, false);
+      await prefs.setInt(_prefDriveLastRunMs, nowMs);
+      if (!GoogleDriveService.isSignedIn &&
+          !await GoogleDriveService.trySilentSignIn()) {
+        throw Exception('تعذر تسجيل الدخول إلى Google؛ سيتم إعادة محاولة النسخ عند توفر الجلسة');
+      }
+
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      try {
+        await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+      final tempDir = await getTemporaryDirectory();
+      final bundle = await BackupBundleService.createBundle(
+        outputDirectory: tempDir,
+        namePrefix: _namePrefix,
+      );
+      try {
+        if (!await BackupBundleService.verifyBundle(bundle)) {
+          throw Exception('فشل التحقق من سلامة النسخة الفورية قبل رفعها إلى Drive');
+        }
+        await NotificationService.showBackupInProgress(drive: true);
+        String? error;
+        try {
+          error = await GoogleDriveService.uploadBackup(bundle, namePrefix: _namePrefix);
+        } finally {
+          await NotificationService.cancelDriveNotification();
+        }
+        if (error != null) throw Exception(error);
+
+        // Only after Drive confirms size and checksum may older instant copies
+        // be pruned. Ordinary scheduled Drive backups are left untouched.
+        await _pruneOldInstantDriveBackups();
+      } finally {
+        try { if (await bundle.exists()) await bundle.delete(); } catch (_) {}
+      }
+    } catch (e, st) {
+      debugPrint('فشل النسخ الفوري إلى Google Drive: $e\n$st');
+      try {
+        (await SharedPreferences.getInstance()).setBool(_prefDrivePending, true);
+      } catch (_) {}
+    } finally {
+      _driveRunning = false;
+      if (_driveRerun) {
+        _driveRerun = false;
+        _scheduleDrive(_debounce);
+      }
+    }
+  }
+
+  static Future<void> _pruneOldInstantDriveBackups() async {
+    final backups = await GoogleDriveService.listBackups();
+    final instant = backups.where((item) {
+      final name = item['name']?.toString() ?? '';
+      return name.startsWith(_namePrefix) &&
+          p.extension(name).toLowerCase() == '.alb';
+    }).toList()
+      ..sort((a, b) {
+        final at = a['createdTime']?.toString() ?? '';
+        final bt = b['createdTime']?.toString() ?? '';
+        return bt.compareTo(at);
+      });
+    if (GoogleDriveService.lastListBackupsError != null) {
+      throw Exception('تعذر التحقق من نسخ Drive القديمة؛ لن نحذف أي نسخة');
+    }
+    for (final old in instant.skip(_maxInstantBackups)) {
+      final id = old['id']?.toString() ?? '';
+      if (id.isNotEmpty && !await GoogleDriveService.deleteBackup(id)) {
+        debugPrint('تعذر حذف نسخة Drive الفورية القديمة: ${old['name']}');
       }
     }
   }
