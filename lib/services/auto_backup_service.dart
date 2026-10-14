@@ -30,6 +30,8 @@ class AutoBackupService {
   static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
   static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
   static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
+  static bool _localCheckRunning = false;
+  static bool _driveCheckRunning = false;
 
   static Future<Map<String, dynamic>> getSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -643,6 +645,8 @@ class AutoBackupService {
   }
 
   static Future<String?> checkAndRunBackup() async {
+    if (_localCheckRunning) return null;
+    _localCheckRunning = true;
     try {
       final settings = await getSettings();
       if (settings['enabled'] != true) return null;
@@ -692,9 +696,13 @@ class AutoBackupService {
     } catch (e, st) {
       debugPrint('❌ فشل النسخ التلقائي المحلي: $e\\n$st');
       return 'فشل النسخ التلقائي المحلي: $e';
+    } finally {
+      _localCheckRunning = false;
     }
   }
   static Future<String?> checkAndRunDriveBackup() async {
+    if (_driveCheckRunning) return null;
+    _driveCheckRunning = true;
     try {
       final settings = await getSettings();
       if (settings['driveEnabled'] != true) return null;
@@ -747,6 +755,8 @@ class AutoBackupService {
       }
     } catch (e) {
       return '$e';
+    } finally {
+      _driveCheckRunning = false;
     }
   }
 
