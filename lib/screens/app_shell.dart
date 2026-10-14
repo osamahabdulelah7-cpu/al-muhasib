@@ -22,6 +22,7 @@ class _AlMuhasibAppState extends State<AlMuhasibApp>
     // WorkManager runs the queued backup independently of the UI process.
     if (state == AppLifecycleState.paused) {
       unawaited(AutoBackupService.scheduleBackupOnExit());
+      unawaited(InstantBackupService.flushIfPending());
     }
   }
 

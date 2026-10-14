@@ -141,7 +141,10 @@ class BackupBundleService {
     }
   }
 
-  static Future<File> createBundle({Directory? outputDirectory}) async {
+  static Future<File> createBundle({
+    Directory? outputDirectory,
+    String namePrefix = 'al_muhasib_',
+  }) async {
     await AppDBHelper.instance.syncPersonalDataToDatabase();
     try {
       await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
@@ -183,16 +186,17 @@ class BackupBundleService {
     final encoded = ZipEncoder().encode(archive);
     if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     final outDir = outputDirectory ?? await getTemporaryDirectory();
-    return writeEncodedBundleForTesting(encoded, outDir);
+    return writeEncodedBundleForTesting(encoded, outDir, namePrefix: namePrefix);
   }
 
   @visibleForTesting
   static Future<File> writeEncodedBundleForTesting(
-      List<int> encoded, Directory outDir) async {
+      List<int> encoded, Directory outDir,
+      {String namePrefix = 'al_muhasib_'}) async {
     if (encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     if (!await outDir.exists()) await outDir.create(recursive: true);
     final now = DateTime.now();
-    final name = 'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
+    final name = '$namePrefix${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
     final file = File(p.join(outDir.path, name));
     try {
       await file.writeAsBytes(encoded, flush: true);
@@ -577,7 +581,7 @@ class GoogleDriveService {
     }
   }
 
-  static Future<String?> uploadBackup(File backupFile) async {
+  static Future<String?> uploadBackup(File backupFile, {String namePrefix = 'al_muhasib_'}) async {
     if (_driveApi == null) {
       final signedIn = await trySilentSignIn();
       if (!signedIn || _driveApi == null) return 'الرجاء تسجيل الدخول إلى Google مجدداً';
@@ -587,7 +591,7 @@ class GoogleDriveService {
     final ext = p.extension(backupFile.path).toLowerCase();
     final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
     final fileName =
-        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
+        '${namePrefix}${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
     if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
       return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
     }

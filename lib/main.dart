@@ -32,6 +32,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 part 'services/common_services.dart';
 part 'services/backup_services.dart';
 part 'services/auto_backup_service.dart';
+part 'services/instant_backup_service.dart';
 part 'data/app_database.dart';
 part 'data/app_account_provider.dart';
 part 'screens/app_shell.dart';
@@ -98,6 +99,13 @@ void main() {
       await AutoBackupService.scheduleDailyBackup();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
+    }
+
+    // نسخ أي تعديل سابق لم يُنسخ لأن التطبيق أُغلق قبل تنفيذ النسخ الفوري.
+    try {
+      await InstantBackupService.flushIfPending();
+    } catch (e, st) {
+      debugPrint('⚠️ تعذر تشغيل النسخ الفوري عند بدء التطبيق: $e\n$st');
     }
   }, (error, stack) {
     debugPrint('ZoneError: $error\n$stack');

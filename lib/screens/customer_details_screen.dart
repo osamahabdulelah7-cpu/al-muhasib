@@ -953,6 +953,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       if (newPath != null) await ImageStorageService.deleteRelative(newPath);
       rethrow;
     }
+    InstantBackupService.markChanged();
     if (oldPath != null && oldPath != newPath) {
       await ImageStorageService.deleteRelative(oldPath);
     }
@@ -1343,12 +1344,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       ListTile(
                         leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
                         title: const Text('PDF'),
-                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, true); },
+                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, true, shareFile: true); },
                       ),
                       ListTile(
                         leading: const Icon(Icons.table_view, color: Colors.green),
                         title: const Text('Excel'),
-                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, false); },
+                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, false, shareFile: true); },
                       ),
                     ])),
                   );
@@ -1363,7 +1364,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _runReportExport(List<Map<String, dynamic>> allTxs,
-      DateTime start, DateTime end, bool usePeriod, bool pdf) async {
+      DateTime start, DateTime end, bool usePeriod, bool pdf,
+      {bool shareFile = false}) async {
     if (usePeriod && start.isAfter(end)) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تاريخ البداية يجب ألا يكون بعد تاريخ النهاية')));
@@ -1386,9 +1388,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     _reportStartDate = start;
     _reportEndDate = end;
     if (pdf) {
-      await _exportToPdf(selected, give, take, balance);
+      await _exportToPdf(selected, give, take, balance, shareFile: shareFile);
     } else {
-      await _exportToExcel(selected, give, take, balance);
+      await _exportToExcel(selected, give, take, balance, shareFile: shareFile);
     }
   }
 
@@ -1397,7 +1399,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       List<Map<String, dynamic>> txs,
       double totalGive,
       double totalTake,
-      double finalBal) async {
+      double finalBal, {bool shareFile = false}) async {
     try {
       if (txs.isEmpty) {
         throw Exception('لا توجد حركات لتصديرها في هذا الحساب أو ضمن الفترة المحددة');
@@ -1521,11 +1523,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final file = File(p.join(tempDir.path, 'كشف_${safeName}_${DateTime.now().millisecondsSinceEpoch}.xlsx'));
       await file.writeAsBytes(bytes, flush: true);
       if (!await file.exists() || await file.length() <= 0) throw Exception('لم تُحفظ بيانات ملف Excel بشكل صحيح');
-      final openResult = await OpenFile.open(file.path, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      if (openResult.type != ResultType.done && mounted) {
+      if (shareFile) {
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+          text: 'كشف حساب ${widget.customer['name']}',
+          subject: 'كشف حساب ${widget.customer['name']}',
+        );
+      } else {
+        final openResult = await OpenFile.open(file.path, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        if (openResult.type != ResultType.done && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('تم إنشاء ملف Excel لكن تعذر فتحه مباشرة: ${openResult.message}'),
           backgroundColor: AppColors.red));
+        }
       }
     } catch (e, st) {
       debugPrint('Excel export error: $e\n$st');
@@ -1536,7 +1546,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   // ============ PDF محسّن مع حذف تلقائي ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
-      double totalTake, double finalBal) async {
+      double totalTake, double finalBal, {bool shareFile = false}) async {
     if (mounted) {
       showDialog(
         context: context,
@@ -1823,8 +1833,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           'كشف_${widget.customer['name']}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final file = File(p.join(tempDir.path, fileName));
       await file.writeAsBytes(bytes);
-      await OpenFile.open(file.path);
-      Future.delayed(const Duration(minutes: 10), () async {
+      if (shareFile) {
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'application/pdf')],
+          text: 'كشف حساب ${widget.customer['name']}',
+          subject: 'كشف حساب ${widget.customer['name']}',
+        );
+      } else {
+        await OpenFile.open(file.path);
+      }
+      if (!shareFile) Future.delayed(const Duration(minutes: 10), () async {
         try {
           if (await file.exists()) {
             await file.delete();

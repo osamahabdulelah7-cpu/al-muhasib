@@ -33,6 +33,7 @@ class AppAccountProvider extends ChangeNotifier {
       maxOrder = int.parse(maxResult.first['max_order'].toString());
     }
     await db.insert('categories', {'name': name, 'sort_order': maxOrder + 1});
+    InstantBackupService.markChanged();
     await loadCategories();
   }
 
@@ -40,6 +41,7 @@ class AppAccountProvider extends ChangeNotifier {
     final db = await AppDBHelper.instance.database;
     await db.update('categories', {'name': newName},
         where: 'id = ?', whereArgs: [id]);
+    InstantBackupService.markChanged();
     await loadCategories();
   }
 
@@ -49,6 +51,7 @@ class AppAccountProvider extends ChangeNotifier {
       await db.update('categories', {'sort_order': i + 1},
           where: 'id = ?', whereArgs: [orderedIds[i]]);
     }
+    InstantBackupService.markChanged();
     await loadCategories();
   }
 
@@ -71,6 +74,7 @@ class AppAccountProvider extends ChangeNotifier {
     // الحذف الآمن: لا نحذف الحسابات والمعاملات تلقائياً مع التصنيف.
     if (customerCount > 0) return false;
     await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+    InstantBackupService.markChanged();
     await loadCategories();
     await loadCustomers();
     return true;
@@ -85,6 +89,7 @@ class AppAccountProvider extends ChangeNotifier {
   Future<void> addCurrency(String name, String symbol) async {
     final db = await AppDBHelper.instance.database;
     await db.insert('currencies', {'name': name, 'symbol': symbol});
+    InstantBackupService.markChanged();
     await loadCurrencies();
   }
 
@@ -133,6 +138,7 @@ class AppAccountProvider extends ChangeNotifier {
       'category_id': categoryId,
       'last_activity': null,
     });
+    InstantBackupService.markChanged();
     await loadCustomers();
   }
 
@@ -159,6 +165,7 @@ class AppAccountProvider extends ChangeNotifier {
         },
         where: 'id = ?',
         whereArgs: [id]);
+    InstantBackupService.markChanged();
     await loadCustomers();
     return true;
   }
@@ -169,6 +176,7 @@ class AppAccountProvider extends ChangeNotifier {
         'SELECT COUNT(*) FROM transactions WHERE customer_id = ?', [id])) ?? 0;
     if (count > 0) return false;
     final deleted = await db.delete('customers', where: 'id = ?', whereArgs: [id]);
+    if (deleted > 0) InstantBackupService.markChanged();
     await loadCustomers();
     return deleted > 0;
   }
@@ -230,6 +238,7 @@ class AppAccountProvider extends ChangeNotifier {
       if (imagePath != null) await ImageStorageService.deleteRelative(imagePath);
       rethrow;
     }
+    InstantBackupService.markChanged();
     await loadTransactions(customerId);
     await loadCustomers();
   }
@@ -289,6 +298,7 @@ class AppAccountProvider extends ChangeNotifier {
       if (newImagePath != null) await ImageStorageService.deleteRelative(newImagePath);
       rethrow;
     }
+    InstantBackupService.markChanged();
     if (imageData != null && oldImagePath != null && oldImagePath != newImagePath) {
       await ImageStorageService.deleteRelative(oldImagePath);
     }
@@ -323,6 +333,7 @@ class AppAccountProvider extends ChangeNotifier {
         whereArgs: [customerId],
       );
     });
+    InstantBackupService.markChanged();
     if (oldImagePath != null) await ImageStorageService.deleteRelative(oldImagePath);
     await loadTransactions(customerId);
     await loadCustomers();
@@ -507,19 +518,22 @@ class AppAccountProvider extends ChangeNotifier {
         int foundHeaders = 0;
         for (int j = 0; j < row.length; j++) {
           final cellText = row[j]?.value?.toString().trim() ?? '';
-          if (cellText == 'التاريخ') {
+          // Normalize Arabic headings so decorative tatweel/kashida and
+          // diacritics do not prevent matching Excel column names.
+          final normalizedHeader = _normalizeExcelHeader(cellText);
+          if (normalizedHeader == _normalizeExcelHeader('التاريخ')) {
             colDate = j;
             foundHeaders++;
-          } else if (cellText == 'التفاصيل') {
+          } else if (normalizedHeader == _normalizeExcelHeader('التفاصيل')) {
             colDetails = j;
             foundHeaders++;
-          } else if (cellText == 'عليه') {
+          } else if (normalizedHeader == _normalizeExcelHeader('عليه')) {
             colTake = j;
             foundHeaders++;
-          } else if (cellText == 'له') {
+          } else if (normalizedHeader == _normalizeExcelHeader('له')) {
             colGive = j;
             foundHeaders++;
-          } else if (cellText == 'اسم الحساب') {
+          } else if (normalizedHeader == _normalizeExcelHeader('اسم الحساب')) {
             colCustomerName = j;
             foundHeaders++;
           }
@@ -687,8 +701,16 @@ class AppAccountProvider extends ChangeNotifier {
       'accountName': displayName,
     };
     });
+    InstantBackupService.markChanged();
     await loadInitialData();
     return importResult;
+  }
+
+  String _normalizeExcelHeader(String value) {
+    return value
+        .replaceAll(RegExp(r'[ـ\u064B-\u065F\u0670\u06D6-\u06ED]'), '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .trim();
   }
 
   String _normalizeDate(String dateStr) {

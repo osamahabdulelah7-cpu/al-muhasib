@@ -182,29 +182,11 @@ class AutoBackupService {
       try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       return;
     }
-    if (settings['repeatEnabled'] == true) {
-      try {
-        await Workmanager().registerPeriodicTask(
-          _workManagerUniqueName,
-          _workManagerTaskName,
-          frequency: _configuredRepeatInterval(settings),
-          existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
-          constraints: Constraints(
-            networkType: NetworkType.notRequired,
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          backoffPolicy: BackoffPolicy.linear,
-          backoffPolicyDelay: const Duration(minutes: 15),
-        );
-      } catch (e) {
-        debugPrint('تعذر تسجيل WorkManager الدوري: $e');
-      }
-    } else {
-      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-    }
+    // تكرار النسخ الدوري أُلغي من التطبيق؛ احتفظ فقط بالجدولة المحددة.
+    // إلغاء أي مهمة دورية قديمة كانت مفعّلة في إصدار سابق.
+    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefRepeatEnabled, false);
     var exactScheduled = false;
     try {
       exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
@@ -844,13 +826,18 @@ class AutoBackupService {
     return dir;
   }
 
-  static Future<String?> performBackup(String folderPath) async {
+  static Future<String?> performBackup(
+    String folderPath, {
+    String namePrefix = 'al_muhasib_',
+    bool recordSchedule = true,
+  }) async {
     try {
       final db = await AppDBHelper.instance.database;
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
       final internalDir = await internalBackupDirectory();
-      final internalFile = await BackupBundleService.createBundle(outputDirectory: internalDir);
+      final internalFile = await BackupBundleService.createBundle(
+          outputDirectory: internalDir, namePrefix: namePrefix);
       if (!await BackupBundleService.verifyBundle(internalFile)) {
         try { await internalFile.delete(); } catch (_) {}
         throw Exception('فشل التحقق من سلامة النسخة الداخلية');
@@ -859,14 +846,16 @@ class AutoBackupService {
       // The internal copy is a complete destination in its own right. Record
       // success only after its integrity check, before attempting optional targets.
       await _cleanOldLocalBackups(internalDir.path);
-      final now = DateTime.now();
-      final dbFile = await _getDatabaseFile();
-      final lastModified = (await dbFile.stat()).modified.toIso8601String();
-      await saveSettings(
-        lastBackup: now.toIso8601String(),
-        lastDbModified: lastModified,
-        dbFingerprint: await _getDatabaseFingerprint(),
-      );
+      if (recordSchedule) {
+        final now = DateTime.now();
+        final dbFile = await _getDatabaseFile();
+        final lastModified = (await dbFile.stat()).modified.toIso8601String();
+        await saveSettings(
+          lastBackup: now.toIso8601String(),
+          lastDbModified: lastModified,
+          dbFingerprint: await _getDatabaseFingerprint(),
+        );
+      }
 
       final selected = folderPath.trim();
       final internalOnly = selected.isEmpty ||
