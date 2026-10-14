@@ -234,9 +234,34 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
   }
 
   Future<void> _disable() async {
-    final password = _passwordController.text;
+    final controller = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إيقاف الحماية'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          textDirection: TextDirection.ltr,
+          decoration: const InputDecoration(labelText: 'كلمة المرور الحالية'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (password == null) return;
     if (!await AppLockService.verifyPassword(password)) {
-      _message('أدخل كلمة المرور الحالية لإيقاف الحماية');
+      _message('كلمة المرور الحالية غير صحيحة');
       return;
     }
     await AppLockService.disable();
