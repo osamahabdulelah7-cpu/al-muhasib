@@ -141,10 +141,24 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ExcelImportGuideScreen(
+        builder: (_) => ExcelImportOptionsScreen(
           onImport: () {
             Navigator.pop(context);
             _pickExcelFile(context);
+          },
+          onViewRequirements: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ExcelImportGuideScreen(
+                  onImport: () {
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                    _pickExcelFile(context);
+                  },
+                ),
+              ),
+            );
           },
         ),
       ),
@@ -1341,6 +1355,93 @@ class ExcelImportGuideScreen extends StatelessWidget {
               onPressed: onImport,
               icon: const Icon(Icons.file_open),
               label: const Text('الانتقال إلى استيراد ملف Excel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class ExcelImportOptionsScreen extends StatelessWidget {
+  final VoidCallback onImport;
+  final VoidCallback onViewRequirements;
+  const ExcelImportOptionsScreen({
+    super.key,
+    required this.onImport,
+    required this.onViewRequirements,
+  });
+
+  Widget _option({
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leading: Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE7F2EB),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 29),
+        ),
+        title: Text(title, textAlign: TextAlign.right,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(description, textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 12)),
+        ),
+        trailing: const Icon(Icons.chevron_left, color: AppColors.primary),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('استيراد Excel'),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const SizedBox(height: 10),
+            Center(child: Image.asset('assets/icon.png', width: 94, height: 94)),
+            const SizedBox(height: 14),
+            const Text('استيراد البيانات',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primary)),
+            const SizedBox(height: 8),
+            Text('اختر الطريقة المناسبة لاستيراد بياناتك.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 28),
+            _option(
+              icon: Icons.file_upload_outlined,
+              title: 'الاستيراد',
+              description: 'اختيار ملف Excel بصيغة XLSX من الهاتف وبدء الاستيراد.',
+              onTap: onImport,
+            ),
+            _option(
+              icon: Icons.fact_check_outlined,
+              title: 'شروط قبول الاكسل',
+              description: 'عرض صور النموذجين وتنزيل ملفات Excel النموذجية الجاهزة.',
+              onTap: onViewRequirements,
             ),
           ],
         ),
