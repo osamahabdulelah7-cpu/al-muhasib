@@ -190,14 +190,17 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
     final password = _passwordController.text;
     final confirm = _confirmController.text;
     if (password.trim().isEmpty) {
+      setState(() => _saving = false);
       _message('أدخل كلمة المرور الجديدة');
       return;
     }
     if (password != confirm) {
+      setState(() => _saving = false);
       _message('كلمتا المرور غير متطابقتين');
       return;
     }
     if (_addHint && _hintController.text.isEmpty && !_hasHint) {
+      setState(() => _saving = false);
       _message('أدخل التلميح أو أوقف خيار التلميح');
       return;
     }
