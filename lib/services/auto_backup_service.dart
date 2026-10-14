@@ -798,7 +798,7 @@ class AutoBackupService {
           .where((f) {
             final name = p.basename(f.path);
             final ext = p.extension(f.path).toLowerCase();
-            return name.startsWith('al_muhasib_') &&
+            return (name.startsWith('al_muhasib(') || name.startsWith('al_muhasib_')) &&
                 (ext == '.alb' || ext == '.db');
           })
           .toList()
