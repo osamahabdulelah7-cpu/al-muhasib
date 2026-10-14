@@ -1199,7 +1199,6 @@ class ExcelImportGuideScreen extends StatelessWidget {
       fontWeight: FontWeight.bold,
       fontSize: 11,
     );
-    final border = Border.all(color: const Color(0xFFD1DDD6), width: 0.7);
     return Card(
       elevation: 1,
       margin: const EdgeInsets.only(bottom: 16),
