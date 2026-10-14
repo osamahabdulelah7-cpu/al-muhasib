@@ -91,7 +91,7 @@ class _AlMuhasibAppState extends State<AlMuhasibApp>
         ),
         useMaterial3: false,
       ),
-      home: const HomeScreen(),
+      home: const AppLockGate(child: HomeScreen()),
     );
   }
 }
