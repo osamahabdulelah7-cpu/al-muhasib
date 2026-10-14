@@ -135,10 +135,14 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    if (_locked && _lockConfigured) {
-      return AppLockScreen(onUnlocked: _unlock);
-    }
-    return widget.child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (_locked && _lockConfigured)
+          Positioned.fill(child: AppLockScreen(onUnlocked: _unlock)),
+      ],
+    );
   }
 }
 
