@@ -195,9 +195,17 @@ class BackupBundleService {
       {String namePrefix = 'al_muhasib_'}) async {
     if (encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     if (!await outDir.exists()) await outDir.create(recursive: true);
-    final now = DateTime.now();
-    final name = '$namePrefix${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}.alb';
-    final file = File(p.join(outDir.path, name));
+    var now = DateTime.now();
+    final cleanPrefix = namePrefix.replaceFirst(RegExp(r'_+$'), '');
+    String buildName(DateTime value) =>
+        '$cleanPrefix(${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')})(${value.hour.toString().padLeft(2, '0')}-${value.minute.toString().padLeft(2, '0')}-${value.second.toString().padLeft(2, '0')}).alb';
+    var name = buildName(now);
+    var file = File(p.join(outDir.path, name));
+    while (await file.exists()) {
+      now = now.add(const Duration(seconds: 1));
+      name = buildName(now);
+      file = File(p.join(outDir.path, name));
+    }
     try {
       await file.writeAsBytes(encoded, flush: true);
       final written = await file.length();
@@ -590,8 +598,9 @@ class GoogleDriveService {
     final now = DateTime.now();
     final ext = p.extension(backupFile.path).toLowerCase();
     final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
+    final cleanPrefix = namePrefix.replaceFirst(RegExp(r'_+$'), '');
     final fileName =
-        '${namePrefix}${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
+        '$cleanPrefix(${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')})(${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')})$safeExt';
     if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
       return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
     }
