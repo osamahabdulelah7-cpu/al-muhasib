@@ -182,29 +182,11 @@ class AutoBackupService {
       try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       return;
     }
-    if (settings['repeatEnabled'] == true) {
-      try {
-        await Workmanager().registerPeriodicTask(
-          _workManagerUniqueName,
-          _workManagerTaskName,
-          frequency: _configuredRepeatInterval(settings),
-          existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
-          constraints: Constraints(
-            networkType: NetworkType.notRequired,
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          backoffPolicy: BackoffPolicy.linear,
-          backoffPolicyDelay: const Duration(minutes: 15),
-        );
-      } catch (e) {
-        debugPrint('تعذر تسجيل WorkManager الدوري: $e');
-      }
-    } else {
-      await Workmanager().cancelByUniqueName(_workManagerUniqueName);
-    }
+    // تكرار النسخ الدوري أُلغي من التطبيق؛ احتفظ فقط بالجدولة المحددة.
+    // إلغاء أي مهمة دورية قديمة كانت مفعّلة في إصدار سابق.
+    await Workmanager().cancelByUniqueName(_workManagerUniqueName);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefRepeatEnabled, false);
     var exactScheduled = false;
     try {
       exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
