@@ -2,6 +2,7 @@ part of '../main.dart';
 
 /// Local-only app lock. Passwords and hints are stored as salted SHA-256 hashes.
 class AppLockService {
+  static final ValueNotifier<bool> configuredNotifier = ValueNotifier<bool>(false);
   static const _enabledKey = 'app_lock_enabled_v1';
   static const _passwordHashKey = 'app_lock_password_hash_v1';
   static const _passwordSaltKey = 'app_lock_password_salt_v1';
@@ -35,6 +36,7 @@ class AppLockService {
     await prefs.setString(_passwordSaltKey, passwordSalt);
     await prefs.setString(_passwordHashKey, _hash(password, passwordSalt));
     await prefs.setBool(_enabledKey, true);
+    configuredNotifier.value = true;
     if (enableHint && hint != null && hint.isNotEmpty) {
       final hintSalt = _makeSalt();
       await prefs.setString(_hintSaltKey, hintSalt);
@@ -64,6 +66,7 @@ class AppLockService {
   static Future<void> disable() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_enabledKey, false);
+    configuredNotifier.value = false;
   }
 }
 
@@ -84,7 +87,16 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    AppLockService.configuredNotifier.addListener(_onLockConfigurationChanged);
     _refreshLockState(initial: true);
+  }
+
+  void _onLockConfigurationChanged() {
+    if (!mounted) return;
+    setState(() {
+      _lockConfigured = AppLockService.configuredNotifier.value;
+      _locked = _lockConfigured;
+    });
   }
 
   Future<void> _refreshLockState({bool initial = false}) async {
@@ -92,6 +104,7 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _lockConfigured = enabled;
+      AppLockService.configuredNotifier.value = enabled;
       if (enabled && initial) _locked = true;
       _loading = false;
     });
@@ -99,8 +112,7 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused) {
       if (_lockConfigured) setState(() => _locked = true);
     }
   }
@@ -112,6 +124,7 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AppLockService.configuredNotifier.removeListener(_onLockConfigurationChanged);
     super.dispose();
   }
 
