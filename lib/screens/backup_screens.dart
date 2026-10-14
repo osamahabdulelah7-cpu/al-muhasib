@@ -234,16 +234,34 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             itemCount: files.length,
             itemBuilder: (ctx, index) {
               final file = files[index];
-              return ListTile(
-                leading: const Icon(Icons.backup),
-                title: Text(p.basename(file.path), style: const TextStyle(fontSize: 11)),
-                subtitle: FutureBuilder<int>(
-                  future: file.length(),
-                  builder: (ctx, snapshot) => Text(snapshot.hasData
-                      ? (snapshot.data! / 1024).toStringAsFixed(1) + ' KB'
-                      : 'جارٍ قراءة الحجم...', style: const TextStyle(fontSize: 9)),
-                ),
-                onTap: () { Navigator.pop(ctx); _restoreLocalBackupFile(file); },
+              return FutureBuilder<FileStat>(
+                future: file.stat(),
+                builder: (ctx, snapshot) {
+                  final stat = snapshot.data;
+                  final localTime = stat?.modified.toLocal();
+                  final dateText = localTime == null
+                      ? 'التاريخ غير متاح'
+                      : '${localTime.year}-${localTime.month.toString().padLeft(2, '0')}-${localTime.day.toString().padLeft(2, '0')} ${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
+                  final sizeText = stat == null
+                      ? 'جارٍ قراءة الحجم...'
+                      : 'الحجم: ${(stat.size / (1024 * 1024)).toStringAsFixed(2)} MB';
+                  return ListTile(
+                    leading: const Icon(Icons.backup),
+                    title: Text(p.basename(file.path),
+                        style: const TextStyle(fontSize: 12),
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(sizeText, style: const TextStyle(fontSize: 11)),
+                        const SizedBox(height: 3),
+                        Text('◷ $dateText', style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                    onTap: () { Navigator.pop(ctx); _restoreLocalBackupFile(file); },
+                  );
+                },
               );
             },
           ),
@@ -525,14 +543,14 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               final created = b['createdTime'] as String;
               String formattedDate = '';
               try {
-                final dt = DateTime.parse(created);
+                final dt = DateTime.parse(created).toLocal();
                 formattedDate =
                     '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
                     '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
               } catch (_) {
                 formattedDate = created;
               }
-              final sizeKB = (int.tryParse(size) ?? 0) / 1024;
+              final sizeMB = (int.tryParse(size) ?? 0) / (1024 * 1024);
               return ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -542,10 +560,20 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   child:
                       const Icon(Icons.description, color: AppColors.drive),
                 ),
-                title: Text(formattedDate,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${sizeKB.toStringAsFixed(1)} KB • $name',
-                    style: const TextStyle(fontSize: 11)),
+                title: Text(name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('الحجم: ${sizeMB.toStringAsFixed(2)} MB',
+                        style: const TextStyle(fontSize: 11)),
+                    const SizedBox(height: 3),
+                    Text('◷ $formattedDate', style: const TextStyle(fontSize: 11)),
+                  ],
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _restoreFromDrive(b);
