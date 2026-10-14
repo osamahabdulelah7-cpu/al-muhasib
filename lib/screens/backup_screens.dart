@@ -247,9 +247,16 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                       : 'الحجم: ${(stat.size / (1024 * 1024)).toStringAsFixed(2)} MB';
                   return ListTile(
                     leading: const Icon(Icons.backup),
-                    title: Text(p.basename(file.path),
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    title: Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Text(
+                        p.basename(file.path),
+                        textAlign: TextAlign.left,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -560,10 +567,16 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   child:
                       const Icon(Icons.description, color: AppColors.drive),
                 ),
-                title: Text(name,
+                title: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Text(
+                    name,
+                    textAlign: TextAlign.left,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textDark),
+                  ),
+                ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
