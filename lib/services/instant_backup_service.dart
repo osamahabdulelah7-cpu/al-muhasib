@@ -20,7 +20,7 @@ class InstantBackupService {
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
   static const String _internalOkPrefix = 'تم إنشاء نسخة داخلية سليمة';
-  static const String _namePrefix = 'instant_al_muhasib_';
+  static const String _namePrefix = 'GO_al_muhasib_';
   static const int _maxInstantBackups = 5;
 
   static Timer? _timer;
@@ -210,7 +210,7 @@ class InstantBackupService {
     final backups = await GoogleDriveService.listBackups();
     final instant = backups.where((item) {
       final name = item['name']?.toString() ?? '';
-      return name.startsWith(_namePrefix) &&
+      return (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
           p.extension(name).toLowerCase() == '.alb';
     }).toList()
       ..sort((a, b) {
@@ -230,7 +230,8 @@ class InstantBackupService {
   }
 
   static bool _isInstantName(String name) =>
-      name.startsWith(_namePrefix) && p.extension(name).toLowerCase() == '.alb';
+      (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
+      p.extension(name).toLowerCase() == '.alb';
 
   /// يُبقي أحدث خمس نسخ فورية فقط (داخلياً وفي مجلد الحفظ الخارجي).
   static Future<void> _pruneOldInstantBackups(String folder) async {
