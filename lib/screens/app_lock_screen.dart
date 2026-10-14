@@ -102,9 +102,9 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   Future<void> _refreshLockState({bool initial = false}) async {
     final enabled = await AppLockService.isEnabled();
     if (!mounted) return;
+    AppLockService.configuredNotifier.value = enabled;
     setState(() {
       _lockConfigured = enabled;
-      AppLockService.configuredNotifier.value = enabled;
       if (enabled && initial) _locked = true;
       _loading = false;
     });
