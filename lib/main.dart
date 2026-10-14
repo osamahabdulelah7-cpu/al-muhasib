@@ -36,6 +36,7 @@ part 'services/instant_backup_service.dart';
 part 'data/app_database.dart';
 part 'data/app_account_provider.dart';
 part 'screens/app_shell.dart';
+part 'screens/app_lock_screen.dart';
 part 'screens/home_screen.dart';
 part 'screens/backup_screens.dart';
 part 'screens/customer_details_screen.dart';
