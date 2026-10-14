@@ -581,7 +581,7 @@ class GoogleDriveService {
     }
   }
 
-  static Future<String?> uploadBackup(File backupFile) async {
+  static Future<String?> uploadBackup(File backupFile, {String namePrefix = 'al_muhasib_'}) async {
     if (_driveApi == null) {
       final signedIn = await trySilentSignIn();
       if (!signedIn || _driveApi == null) return 'الرجاء تسجيل الدخول إلى Google مجدداً';
@@ -591,7 +591,7 @@ class GoogleDriveService {
     final ext = p.extension(backupFile.path).toLowerCase();
     final safeExt = (ext == '.alb' || ext == '.db') ? ext : '.alb';
     final fileName =
-        'al_muhasib_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
+        '${namePrefix}${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}_${now.second.toString().padLeft(2, '0')}-${now.millisecond.toString().padLeft(3, '0')}$safeExt';
     if (safeExt == '.alb' && !await BackupBundleService.verifyBundle(backupFile)) {
       return 'رفض رفع النسخة إلى Google Drive لأن فحص سلامة ملف .alb فشل';
     }
