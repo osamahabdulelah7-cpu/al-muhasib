@@ -14,6 +14,8 @@ class InstantBackupService {
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
   static const String _prefDrivePending = 'instant_drive_backup_pending';
   static const String _prefDriveLastRunMs = 'instant_drive_backup_last_run_ms';
+  static const String _prefLastFingerprint = 'instant_backup_last_fingerprint';
+  static const String _prefDriveLastFingerprint = 'instant_drive_backup_last_fingerprint';
 
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
@@ -82,6 +84,16 @@ class InstantBackupService {
       await prefs.setBool(_prefPending, false);
       await prefs.setInt(_prefLastRunMs, nowMs);
 
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      final fingerprint = await AutoBackupService._getDatabaseFingerprint();
+      final previousFingerprint = prefs.getString(_prefLastFingerprint);
+      if (fingerprint != null && fingerprint == previousFingerprint) {
+        // A queued change can be a no-op (for example, repeated notifications).
+        // Do not create another identical snapshot.
+        await prefs.setBool(_prefPending, false);
+        return;
+      }
+
       final folder = (settings['folderPath'] as String? ?? '').trim();
       final error = await AutoBackupService.performBackup(
         folder,
@@ -94,6 +106,7 @@ class InstantBackupService {
         await prefs.setBool(_prefPending, true);
         return;
       }
+      if (fingerprint != null) await prefs.setString(_prefLastFingerprint, fingerprint);
       await _pruneOldInstantBackups(folder);
     } catch (e, st) {
       debugPrint('خطأ في النسخ الفوري: $e\n$st');
@@ -148,6 +161,12 @@ class InstantBackupService {
       try {
         await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
       } catch (_) {}
+      final fingerprint = await AutoBackupService._getDatabaseFingerprint();
+      final previousFingerprint = prefs.getString(_prefDriveLastFingerprint);
+      if (fingerprint != null && fingerprint == previousFingerprint) {
+        await prefs.setBool(_prefDrivePending, false);
+        return;
+      }
       final tempDir = await getTemporaryDirectory();
       final bundle = await BackupBundleService.createBundle(
         outputDirectory: tempDir,
@@ -168,6 +187,7 @@ class InstantBackupService {
 
         // Only after Drive confirms size and checksum may older instant copies
         // be pruned. Ordinary scheduled Drive backups are left untouched.
+        if (fingerprint != null) await prefs.setString(_prefDriveLastFingerprint, fingerprint);
         await _pruneOldInstantDriveBackups();
       } finally {
         try { if (await bundle.exists()) await bundle.delete(); } catch (_) {}
