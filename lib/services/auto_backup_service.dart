@@ -769,7 +769,7 @@ class AutoBackupService {
         final name = (b['name'] as String?) ?? '';
         final ext = p.extension(name).toLowerCase();
         // Instant snapshots have their own independent five-file retention.
-        if (name.startsWith('instant_al_muhasib_')) return false;
+        if (name.startsWith('GO_al_muhasib') || name.startsWith('instant_al_muhasib_')) return false;
         return ext == '.alb' || ext == '.db';
       }).toList()
         ..sort((a, b) {
