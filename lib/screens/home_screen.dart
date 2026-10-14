@@ -573,6 +573,25 @@ class _HomeScreenState extends State<HomeScreen>
                       builder: (_) => const BackupOptionsScreen()));
             },
           ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.lock_outline, color: AppColors.primary),
+            ),
+            title: const Text('الحماية بكلمة مرور',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AppLockSettingsScreen()),
+              );
+            },
+          ),
           const Spacer(),
           Container(
             padding: const EdgeInsets.all(15),
