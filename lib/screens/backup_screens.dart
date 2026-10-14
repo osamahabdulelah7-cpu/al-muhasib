@@ -82,21 +82,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _loading = true;
   bool _hasExactAlarm = false;
   bool _scheduledTimeEnabled = true;
-  bool _repeatEnabled = false;
-  int _repeatValue = 1;
-  String _repeatUnit = 'days';
-  final TextEditingController _repeatController = TextEditingController(text: '1');
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
-  }
-
-  @override
-  void dispose() {
-    _repeatController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -124,10 +114,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _userEmail = GoogleDriveService.userEmail;
       _hasExactAlarm = hasExact;
       _scheduledTimeEnabled = settings['scheduledTimeEnabled'] == true;
-      _repeatEnabled = settings['repeatEnabled'] == true;
-      _repeatValue = settings['repeatValue'] as int? ?? 1;
-      _repeatController.text = _repeatValue.toString();
-      _repeatUnit = settings['repeatUnit'] as String? ?? 'days';
       _loading = false;
     });
   }
@@ -139,13 +125,11 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await AutoBackupService.saveSettings(
       enabled: value,
       scheduledTimeEnabled: value,
-      repeatEnabled: value,
     );
     if (!mounted) return;
     setState(() {
       _enabled = value;
       _scheduledTimeEnabled = value;
-      _repeatEnabled = value;
     });
     // The scheduler is shared by local and Drive backups. Disabling one
     // destination must not cancel jobs still needed by the other.
@@ -242,7 +226,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('النسخ المحفوظة داخل التطبيق'),
+        title: const Text('النسخ المحفوظة داخل التطبيق', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: double.maxFinite,
           height: 360,
@@ -252,12 +236,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               final file = files[index];
               return ListTile(
                 leading: const Icon(Icons.backup),
-                title: Text(p.basename(file.path)),
+                title: Text(p.basename(file.path), style: const TextStyle(fontSize: 11)),
                 subtitle: FutureBuilder<int>(
                   future: file.length(),
                   builder: (ctx, snapshot) => Text(snapshot.hasData
                       ? (snapshot.data! / 1024).toStringAsFixed(1) + ' KB'
-                      : 'جارٍ قراءة الحجم...'),
+                      : 'جارٍ قراءة الحجم...', style: const TextStyle(fontSize: 9)),
                 ),
                 onTap: () { Navigator.pop(ctx); _restoreLocalBackupFile(file); },
               );
@@ -788,7 +772,7 @@ Widget build(BuildContext context) {
                     color: AppColors.textDark)),
             subtitle: const Text(
                 'نسخ تلقائي إلى مجلد حفظ البيانات عند تفعيل الجدولة',
-                style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
           ),
         ),
         const Divider(height: 1),
@@ -815,7 +799,7 @@ Widget build(BuildContext context) {
                       ? 'بطاقة SD / مجلد خارجي (صلاحية مستمرة)'
                       : '$_folderPath/'),
               style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 9,
                   color: _folderPath.isEmpty
                       ? AppColors.red
                       : AppColors.textMuted),
@@ -863,7 +847,7 @@ Widget build(BuildContext context) {
           secondary: const Icon(Icons.schedule, color: Color(0xFF1976D2), size: 28),
           title: const Text('تفعيل تحديد وقت النسخ',
               style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
-          subtitle: const Text('تشغيل أو إيقاف النسخ المرتبط بالوقت المحدد'),
+          subtitle: const Text('تشغيل أو إيقاف النسخ المرتبط بالوقت المحدد', style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
           onChanged: _enabled ? (value) async {
             await AutoBackupService.saveSettings(scheduledTimeEnabled: value);
             if (!mounted) return;
@@ -891,79 +875,12 @@ Widget build(BuildContext context) {
             subtitle: Text(
               '${_selectedTime.hour.toString().padLeft(2, '0')}:'
               '${_selectedTime.minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
             ),
             onTap: _pickTime,
           ),
         ),
         const Divider(height: 1),
-        SwitchListTile(
-          value: _repeatEnabled,
-          activeColor: const Color(0xFF1976D2),
-          tileColor: Colors.white,
-          secondary: const Icon(Icons.repeat, color: Color(0xFF1976D2), size: 28),
-          title: const Text('تفعيل تكرار النسخ التلقائي',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
-          subtitle: Text('التكرار الحالي: كل ' + _repeatValue.toString() + ' ' + (_repeatUnit == 'hours' ? 'ساعة' : _repeatUnit == 'days' ? 'يوم' : 'دقيقة')),
-          onChanged: _enabled ? (value) async {
-            await AutoBackupService.saveSettings(repeatEnabled: value);
-            if (!mounted) return;
-            setState(() => _repeatEnabled = value);
-            await AutoBackupService.scheduleDailyBackup();
-          } : null,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Row(children: [
-            SizedBox(
-              width: 132,
-              child: TextField(
-                controller: _repeatController,
-                enabled: _enabled && _repeatEnabled,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'فترة التكرار',
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (text) async {
-                  final parsed = int.tryParse(text);
-                  if (parsed == null || parsed < 1 || parsed > 10080) return;
-                  setState(() => _repeatValue = parsed);
-                  await AutoBackupService.saveSettings(repeatValue: parsed);
-                  await AutoBackupService.scheduleDailyBackup();
-                },
-                onSubmitted: (text) async {
-                  final parsed = int.tryParse(text);
-                  if (parsed == null || parsed < 1 || parsed > 10080) {
-                    _repeatController.text = _repeatValue.toString();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل رقمًا من 1 إلى 10080')));
-                    return;
-                  }
-                  setState(() => _repeatValue = parsed);
-                  await AutoBackupService.saveSettings(repeatValue: parsed);
-                  await AutoBackupService.scheduleDailyBackup();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            DropdownButton<String>(
-              value: _repeatUnit,
-              items: const [
-                DropdownMenuItem(value: 'minutes', child: Text('دقيقة')),
-                DropdownMenuItem(value: 'hours', child: Text('ساعة')),
-                DropdownMenuItem(value: 'days', child: Text('يوم')),
-              ],
-              onChanged: (_enabled && _repeatEnabled) ? (unit) async {
-                if (unit == null) return;
-                setState(() => _repeatUnit = unit);
-                await AutoBackupService.saveSettings(repeatUnit: unit);
-                await AutoBackupService.scheduleDailyBackup();
-              } : null,
-            ),
-          ]),
-        ),
         const Divider(height: 1),
         if (_enabled && !_hasExactAlarm)
           Container(
@@ -1160,7 +1077,7 @@ Widget build(BuildContext context) {
             subtitle: Text(
               '${_driveTime.hour.toString().padLeft(2, '0')}:'
               '${_driveTime.minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
             ),
             onTap: _signedIn ? _pickDriveTime : null,
           ),
