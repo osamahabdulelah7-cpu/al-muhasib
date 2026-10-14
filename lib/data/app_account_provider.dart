@@ -518,19 +518,22 @@ class AppAccountProvider extends ChangeNotifier {
         int foundHeaders = 0;
         for (int j = 0; j < row.length; j++) {
           final cellText = row[j]?.value?.toString().trim() ?? '';
-          if (cellText == 'التاريخ') {
+          // Normalize Arabic headings so decorative tatweel/kashida and
+          // diacritics do not prevent matching Excel column names.
+          final normalizedHeader = _normalizeExcelHeader(cellText);
+          if (normalizedHeader == _normalizeExcelHeader('التاريخ')) {
             colDate = j;
             foundHeaders++;
-          } else if (cellText == 'التفاصيل') {
+          } else if (normalizedHeader == _normalizeExcelHeader('التفاصيل')) {
             colDetails = j;
             foundHeaders++;
-          } else if (cellText == 'عليه') {
+          } else if (normalizedHeader == _normalizeExcelHeader('عليه')) {
             colTake = j;
             foundHeaders++;
-          } else if (cellText == 'له') {
+          } else if (normalizedHeader == _normalizeExcelHeader('له')) {
             colGive = j;
             foundHeaders++;
-          } else if (cellText == 'اسم الحساب') {
+          } else if (normalizedHeader == _normalizeExcelHeader('اسم الحساب')) {
             colCustomerName = j;
             foundHeaders++;
           }
@@ -701,6 +704,13 @@ class AppAccountProvider extends ChangeNotifier {
     InstantBackupService.markChanged();
     await loadInitialData();
     return importResult;
+  }
+
+  String _normalizeExcelHeader(String value) {
+    return value
+        .replaceAll(RegExp(r'[ـ\u064B-\u065F\u0670\u06D6-\u06ED]'), '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .trim();
   }
 
   String _normalizeDate(String dateStr) {
