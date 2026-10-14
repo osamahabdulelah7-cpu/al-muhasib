@@ -137,7 +137,21 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _importFromExcel(BuildContext context) async {
+  void _openExcelImportOptions(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExcelImportGuideScreen(
+          onImport: () {
+            Navigator.pop(context);
+            _pickExcelFile(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickExcelFile(BuildContext context) async {
     final provider = Provider.of<AppAccountProvider>(context, listen: false);
     if (provider.categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -524,7 +538,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
               Navigator.pop(context);
-              _importFromExcel(context);
+              _openExcelImportOptions(context);
             },
           ),
           ListTile(
@@ -1111,3 +1125,226 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ==================== BackupOptionsScreen ====================
+
+
+class ExcelImportGuideScreen extends StatelessWidget {
+  final VoidCallback onImport;
+  const ExcelImportGuideScreen({super.key, required this.onImport});
+
+  Future<void> _shareTemplate({
+    required BuildContext context,
+    required List<String> headers,
+    required String fileName,
+    required String sheetName,
+  }) async {
+    try {
+      final workbook = excel_lib.Excel.createExcel();
+      final sheet = workbook[sheetName];
+      sheet.appendRow(headers.map((value) => excel_lib.TextCellValue(value)).toList());
+      for (var row = 0; row < 15; row++) {
+        sheet.appendRow(List<excel_lib.CellValue?>.generate(
+          headers.length,
+          (_) => excel_lib.TextCellValue(''),
+        ));
+      }
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('تعذر إنشاء ملف Excel');
+      final directory = await getTemporaryDirectory();
+      final file = File(p.join(directory.path, fileName));
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+        text: 'نموذج Excel فارغ جاهز للتعبئة والاستيراد في تطبيق المحاسب',
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تعذر تجهيز نموذج Excel: $error'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _templateCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required List<String> headers,
+    required String fileName,
+    required String sheetName,
+    required bool singleAccount,
+  }) {
+    final headerStyle = const TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.bold,
+      fontSize: 11,
+    );
+    final border = Border.all(color: const Color(0xFFD1DDD6), width: 0.7);
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(title, textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                ),
+                const SizedBox(width: 10),
+                CircleAvatar(
+                  radius: 19,
+                  backgroundColor: const Color(0xFFE7F2EB),
+                  child: Text(singleAccount ? '1' : '2',
+                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Text(subtitle, textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FBF8),
+                border: Border.all(color: const Color(0xFFD1DDD6)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Image.asset('assets/icon.png', width: 54, height: 54, fit: BoxFit.contain),
+                  if (singleAccount) ...[
+                    const SizedBox(height: 4),
+                    const Text('كشف حساب - [اسم الحساب]',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                  ],
+                  const SizedBox(height: 10),
+                  Table(
+                    textDirection: TextDirection.rtl,
+                    border: TableBorder.all(color: const Color(0xFFCCD8D1), width: 0.7),
+                    defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                    columnWidths: {
+                      for (var i = 0; i < headers.length; i++)
+                        i: const FlexColumnWidth(),
+                    },
+                    children: [
+                      TableRow(
+                        decoration: const BoxDecoration(color: AppColors.primary),
+                        children: headers.map((header) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 3),
+                          child: Text(header, textAlign: TextAlign.center, style: headerStyle),
+                        )).toList(),
+                      ),
+                      for (var row = 0; row < 7; row++)
+                        TableRow(
+                          children: headers.map((_) => const SizedBox(height: 25)).toList(),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 46,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                ),
+                onPressed: () => _shareTemplate(
+                  context: context,
+                  headers: headers,
+                  fileName: fileName,
+                  sheetName: sheetName,
+                ),
+                icon: const Icon(Icons.download),
+                label: const Text('تحميل نموذج Excel', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('شروط قبول Excel'),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7F2EB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD1DDD6)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.description, color: AppColors.primary, size: 30),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('صيغة الملف المدعومة للاستيراد: XLSX',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                        SizedBox(height: 4),
+                        Text('اختر النموذج المناسب، عبّئ الصفوف الفارغة ثم استورد الملف.',
+                          style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _templateCard(
+              context: context,
+              title: 'النموذج الأول: استيراد حساب واحد',
+              subtitle: 'يُستخرج اسم الحساب من عنوان كشف الحساب.',
+              headers: const ['التاريخ', 'التفاصيل', 'عليه', 'له', 'الرصيد'],
+              fileName: 'نموذج_استيراد_حساب_واحد.xlsx',
+              sheetName: 'كشف حساب',
+              singleAccount: true,
+            ),
+            _templateCard(
+              context: context,
+              title: 'النموذج الثاني: استيراد عدة حسابات',
+              subtitle: 'اكتب اسم الحساب في كل صف من صفوف الحركات.',
+              headers: const ['التاريخ', 'اسم الحساب', 'التفاصيل', 'عليه', 'له'],
+              fileName: 'نموذج_استيراد_عدة_حسابات.xlsx',
+              sheetName: 'استيراد',
+              singleAccount: false,
+            ),
+            const SizedBox(height: 4),
+            OutlinedButton.icon(
+              onPressed: onImport,
+              icon: const Icon(Icons.file_open),
+              label: const Text('الانتقال إلى استيراد ملف Excel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
