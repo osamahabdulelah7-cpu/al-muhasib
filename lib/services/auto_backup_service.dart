@@ -756,7 +756,10 @@ class AutoBackupService {
       // Retain five backup snapshots total per destination, regardless of
       // whether an older snapshot used the legacy .db or current .alb format.
       final snapshots = backups.where((b) {
-        final ext = p.extension((b['name'] as String?) ?? '').toLowerCase();
+        final name = (b['name'] as String?) ?? '';
+        final ext = p.extension(name).toLowerCase();
+        // Instant snapshots have their own independent five-file retention.
+        if (name.startsWith('instant_al_muhasib_')) return false;
         return ext == '.alb' || ext == '.db';
       }).toList()
         ..sort((a, b) {
