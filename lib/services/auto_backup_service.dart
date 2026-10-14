@@ -23,7 +23,6 @@ class AutoBackupService {
   static const String _prefDriveDbFingerprint = 'drive_backup_db_fingerprint';
   static const int _maxLocalBackups = 5;
   static const int _maxDriveBackups = 5;
-  static const String _workManagerTaskName = 'al_muhasib_daily_backup';
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
   static const String _workManagerTimedTaskName = 'al_muhasib_backup_at_time';
   static const String _workManagerTimedUniqueName = 'al_muhasib_backup_at_time_unique';
@@ -154,21 +153,6 @@ class AutoBackupService {
     } catch (_) {
       return null;
     }
-  }
-
-  static Duration _configuredRepeatInterval(Map<String, dynamic> settings) {
-    if (settings['repeatEnabled'] != true) return const Duration(minutes: 15);
-    final value = (settings['repeatValue'] as int? ?? 60).clamp(1, 10080);
-    final unit = settings['repeatUnit'] as String? ?? 'minutes';
-    final requested = unit == 'hours'
-        ? Duration(hours: value)
-        : unit == 'days'
-            ? Duration(days: value)
-            : Duration(minutes: value);
-    // Android WorkManager enforces a 15-minute minimum periodic interval.
-    return requested < const Duration(minutes: 15)
-        ? const Duration(minutes: 15)
-        : requested;
   }
 
   // ============ جدولة المهام الخلفية ============
