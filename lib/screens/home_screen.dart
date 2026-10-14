@@ -1150,10 +1150,14 @@ class ExcelImportGuideScreen extends StatelessWidget {
     required List<String> headers,
     required String fileName,
     required String sheetName,
+    String? accountTitle,
   }) async {
     try {
       final workbook = excel_lib.Excel.createExcel();
       final sheet = workbook[sheetName];
+      if (accountTitle != null) {
+        sheet.appendRow([excel_lib.TextCellValue(accountTitle)]);
+      }
       sheet.appendRow(headers.map((value) => excel_lib.TextCellValue(value)).toList());
       for (var row = 0; row < 15; row++) {
         sheet.appendRow(List<excel_lib.CellValue?>.generate(
@@ -1281,6 +1285,7 @@ class ExcelImportGuideScreen extends StatelessWidget {
                   headers: headers,
                   fileName: fileName,
                   sheetName: sheetName,
+                  accountTitle: singleAccount ? 'كشف حساب - [اسم الحساب]' : null,
                 ),
                 icon: const Icon(Icons.download),
                 label: const Text('تحميل نموذج Excel', style: TextStyle(fontWeight: FontWeight.bold)),
