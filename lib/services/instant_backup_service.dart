@@ -122,14 +122,17 @@ class InstantBackupService {
     }
   }
 
+  // Instant after-edit backups are local-only. Google Drive keeps
+  // receiving ordinary/scheduled backups through AutoBackupService.
   static void _scheduleDrive(Duration delay) {
     _driveTimer?.cancel();
-    _driveTimer = Timer(delay, () => unawaited(_runDrive(ignoreGap: false)));
   }
 
   /// Drive has an independent pending flag so a network failure never causes
   /// an already-successful local backup to be repeated just to retry Drive.
   static Future<void> _runDrive({required bool ignoreGap}) async {
+    // Deliberately disabled: never upload GO_ instant snapshots to Drive.
+    return;
     if (_driveRunning) {
       _driveRerun = true;
       return;
