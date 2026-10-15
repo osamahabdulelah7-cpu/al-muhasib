@@ -73,6 +73,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
   String _folderPath = '', _lastBackup = '';
   int _backupCount = 0;
+  int _instantBackupCount = 0;
+  bool _instantEnabled = false;
   bool _driveEnabled = false;
   TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
   String _driveLastBackup = '';
@@ -92,6 +94,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   Future<void> _loadSettings() async {
     final settings = await AutoBackupService.getSettings();
     final count = await AutoBackupService.countBackups();
+    final instantCount = await InstantBackupService.countBackups();
+    final instantEnabled = await InstantBackupService.isEnabled();
     final driveCount = await AutoBackupService.countDriveBackups();
     final signedIn = GoogleDriveService.isSignedIn ||
         await GoogleDriveService.trySilentSignIn();
@@ -104,6 +108,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _folderPath = settings['folderPath'] as String;
       _lastBackup = settings['lastBackup'] as String;
       _backupCount = count;
+      _instantBackupCount = instantCount;
+      _instantEnabled = instantEnabled;
       _driveEnabled = settings['driveEnabled'] as bool;
       _driveTime = TimeOfDay(
           hour: settings['driveHour'] as int,
@@ -187,103 +193,8 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   }
 
   Future<void> _showRestoreOptionsDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('استعادة النسخة الاحتياطية'),
-        content: const Text('اختر مصدر النسخة التي تريد استعادتها.'),
-        actions: [
-          TextButton.icon(
-            onPressed: () { material.Navigator.pop(ctx); _showAppRestoreList(); },
-            icon: const Icon(Icons.storage),
-            label: const Text('من التطبيق'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () { material.Navigator.pop(ctx); _restoreFromPhone(); },
-            icon: const Icon(Icons.folder_open),
-            label: const Text('من الهاتف'),
-          ),
-          TextButton(onPressed: () => material.Navigator.pop(ctx), child: const Text('إلغاء')),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAppRestoreList() async {
-    final dir = await AutoBackupService.internalBackupDirectory();
-    final files = (await dir.list().where((entity) => entity is File).cast<File>().toList())
-        .where((file) {
-          final name = p.basename(file.path);
-          final isBackupName = name.startsWith('al_muhasib(') ||
-              name.startsWith('al_muhasib_') ||
-              name.startsWith('GO_al_muhasib(') ||
-              name.startsWith('GO_al_muhasib_') ||
-              name.startsWith('instant_al_muhasib_');
-          return isBackupName && p.extension(file.path).toLowerCase() == '.alb';
-        })
-        .toList()
-      ..sort((a, b) => b.path.compareTo(a.path));
-    if (!mounted) return;
-    if (files.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('لا توجد نسخ محفوظة داخل التطبيق'),
-        backgroundColor: AppColors.red,
-      ));
-      return;
-    }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('النسخ المحفوظة داخل التطبيق', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 360,
-          child: ListView.builder(
-            itemCount: files.length,
-            itemBuilder: (ctx, index) {
-              final file = files[index];
-              return FutureBuilder<FileStat>(
-                future: file.stat(),
-                builder: (ctx, snapshot) {
-                  final stat = snapshot.data;
-                  final localTime = stat?.modified.toLocal();
-                  final dateText = localTime == null
-                      ? 'التاريخ غير متاح'
-                      : '${localTime.year}-${localTime.month.toString().padLeft(2, '0')}-${localTime.day.toString().padLeft(2, '0')} ${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
-                  final sizeText = stat == null
-                      ? 'جارٍ قراءة الحجم...'
-                      : 'الحجم: ${(stat.size / (1024 * 1024)).toStringAsFixed(2)} MB';
-                  return ListTile(
-                    leading: const Icon(Icons.backup),
-                    title: Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Text(
-                        p.basename(file.path),
-                        textAlign: TextAlign.left,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(sizeText, style: const TextStyle(fontSize: 11)),
-                        const SizedBox(height: 3),
-                        Text('◷ $dateText', style: const TextStyle(fontSize: 11)),
-                      ],
-                    ),
-                    onTap: () { material.Navigator.pop(ctx); _restoreLocalBackupFile(file); },
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [TextButton(onPressed: () => material.Navigator.pop(ctx), child: const Text('إلغاء'))],
-      ),
-    );
+    // Local restoration is intentionally file-picker-only; no in-app list.
+    await _restoreFromPhone();
   }
 
   Future<void> _restoreFromPhone() async {
@@ -888,6 +799,32 @@ Widget build(BuildContext context) {
                 );
               }
             },
+          ),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          value: _instantEnabled,
+          activeColor: AppColors.green,
+          tileColor: Colors.white,
+          secondary: const Icon(Icons.flash_on, color: AppColors.green, size: 28),
+          title: const Text('النسخ الفوري عند تعديل البيانات',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          subtitle: const Text('مستقل عن النسخ التلقائي ويستخدم مجلد الحفظ نفسه',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+          onChanged: (value) async {
+            await InstantBackupService.setEnabled(value);
+            if (!mounted) return;
+            setState(() => _instantEnabled = value);
+          },
+        ),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: const Icon(Icons.flash_on, color: AppColors.green, size: 26),
+            title: const Text('عدد النسخ الفورية',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+            subtitle: Text('$_instantBackupCount / 5 ملف',
+                style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
           ),
         ),
         const Divider(height: 1),
