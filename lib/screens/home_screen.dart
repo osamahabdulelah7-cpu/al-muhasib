@@ -1289,26 +1289,6 @@ class ExcelImportGuideScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 46,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                ),
-                onPressed: () => _shareTemplate(
-                  context: context,
-                  headers: headers,
-                  fileName: fileName,
-                  sheetName: sheetName,
-                  accountTitle: singleAccount ? 'كشف حساب - [اسم الحساب]' : null,
-                ),
-                icon: const Icon(Icons.download),
-                label: const Text('تحميل نموذج Excel', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
           ],
         ),
       ),
