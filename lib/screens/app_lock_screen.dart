@@ -182,7 +182,7 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
       _saving = false;
     });
     _message('تم حفظ إعدادات الحماية');
-    Navigator.pop(context, true);
+    material.Navigator.pop(context, true);
   }
 
   Future<void> _disable() async {
@@ -202,11 +202,11 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => material.Navigator.pop(dialogContext),
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            onPressed: () => material.Navigator.pop(dialogContext, controller.text),
             child: const Text('تأكيد'),
           ),
         ],
@@ -222,7 +222,7 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
     if (!mounted) return;
     setState(() => _enabled = false);
     _message('تم إيقاف الحماية');
-    Navigator.pop(context, true);
+    material.Navigator.pop(context, true);
   }
 
   void _message(String message) {
@@ -426,7 +426,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       _saving = false;
     });
     _message('تم حفظ إعدادات الحماية');
-    Navigator.pop(context, true);
+    material.Navigator.pop(context, true);
   }
 
   Future<void> _disable() async {
@@ -444,11 +444,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => material.Navigator.pop(dialogContext),
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            onPressed: () => material.Navigator.pop(dialogContext, controller.text),
             child: const Text('تأكيد'),
           ),
         ],
@@ -464,7 +464,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (!mounted) return;
     setState(() => _enabled = false);
     _message('تم إيقاف الحماية');
-    Navigator.pop(context, true);
+    material.Navigator.pop(context, true);
   }
 
   void _message(String message) {
