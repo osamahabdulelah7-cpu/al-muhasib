@@ -995,16 +995,22 @@ class AutoBackupService {
 
   static Future<int> countBackups() async {
     try {
-      final dir = await internalBackupDirectory();
-      return dir.listSync()
-          .whereType<File>()
-          .where((f) => p.basename(f.path).startsWith('al_muhasib_'))
-          .where((f) {
-            final ext = p.extension(f.path).toLowerCase();
-            return ext == '.alb' || ext == '.db';
-          })
-          .length;
-    } catch (_) {
+      final settings = await getSettings();
+      final folder = (settings['folderPath'] as String? ?? '').trim();
+      if (folder.isEmpty) return 0;
+      bool isOrdinaryBackup(String name) =>
+          (name.startsWith('al_muhasib_') || name.startsWith('al_muhasib(')) &&
+          p.extension(name).toLowerCase() == '.alb';
+      if (_isSafFolder(folder)) {
+        final entries = await Saf().list(_safUri(folder));
+        return entries.where((e) => !e.isDir && isOrdinaryBackup(e.name)).length;
+      }
+      final dir = Directory(folder);
+      if (!await dir.exists()) return 0;
+      return dir.listSync().whereType<File>()
+          .where((file) => isOrdinaryBackup(p.basename(file.path))).length;
+    } catch (e) {
+      debugPrint('تعذر حساب النسخ المحلية في مجلد الحفظ: $e');
       return 0;
     }
   }
