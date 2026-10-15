@@ -150,9 +150,9 @@ void main() {
     });
 
     try {
-      await AutoBackupService.saveSettings(folderPath: documents.path);
       final backups = Directory('${documents.path}/AlMuhasib/Backups');
       await backups.create(recursive: true);
+      await AutoBackupService.saveSettings(folderPath: backups.path);
       await File('${backups.path}/al_muhasib_one.alb').writeAsString('bundle');
       await File('${backups.path}/al_muhasib_two.db').writeAsString('database');
       await File('${backups.path}/al_muhasib_notes.txt').writeAsString('not a backup');
