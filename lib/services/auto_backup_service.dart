@@ -828,18 +828,39 @@ class AutoBackupService {
     String namePrefix = 'al_muhasib_',
     bool recordSchedule = true,
   }) async {
+    File? stagedFile;
     try {
-      // createBundle already syncs personal data, checkpoints WAL, writes the
-      // bundle, and verifies its integrity. Avoid repeating those expensive
-      // operations here; duplicate checkpoints and ZIP verification made both
-      // manual and instant local backups unnecessarily slow.
-      final internalDir = await internalBackupDirectory();
-      final internalFile = await BackupBundleService.createBundle(
-          outputDirectory: internalDir, namePrefix: namePrefix);
+      final selected = folderPath.trim();
+      if (selected.isEmpty) {
+        throw Exception('اختر مجلد الحفظ الخارجي أولاً؛ لا تُحفظ النسخ العادية داخل مساحة التطبيق.');
+      }
+      final tempDir = await getTemporaryDirectory();
+      stagedFile = await BackupBundleService.createBundle(
+        outputDirectory: tempDir,
+        namePrefix: namePrefix,
+      );
+      if (!await BackupBundleService.verifyBundle(stagedFile)) {
+        throw Exception('فشل التحقق من سلامة النسخة الجديدة');
+      }
 
-      // The internal copy is a complete destination in its own right. Record
-      // success only after its integrity check, before attempting optional targets.
-      await _cleanOldLocalBackups(internalDir.path);
+      if (_isSafFolder(selected)) {
+        await _writeVerifiedSafBackup(stagedFile, selected);
+      } else {
+        final targetDir = Directory(selected);
+        if (!await _isWritableDirectory(targetDir.path)) {
+          throw Exception('مجلد الحفظ المحدد غير قابل للكتابة');
+        }
+        final targetFile = File(p.join(targetDir.path, p.basename(stagedFile.path)));
+        await stagedFile.copy(targetFile.path);
+        if (!await BackupBundleService.verifyBundle(targetFile)) {
+          try { await targetFile.delete(); } catch (_) {}
+          throw Exception('فشل التحقق من النسخة بعد حفظها في المجلد المحدد');
+        }
+        // Retention runs only after the new copy has passed integrity checks.
+        await _cleanOldLocalBackups(selected);
+      }
+
+      await saveSettings(lastDestinationError: '');
       if (recordSchedule) {
         final now = DateTime.now();
         final dbFile = await _getDatabaseFile();
@@ -850,38 +871,15 @@ class AutoBackupService {
           dbFingerprint: await _getDatabaseFingerprint(),
         );
       }
-
-      final selected = folderPath.trim();
-      final internalOnly = selected.isEmpty ||
-          p.normalize(selected) == p.normalize(internalDir.path);
-      try {
-        if (selected.isNotEmpty && _isSafFolder(selected)) {
-          await _writeVerifiedSafBackup(internalFile, selected);
-        } else if (!internalOnly) {
-          final targetDir = Directory(selected);
-          if (!await _isWritableDirectory(targetDir.path)) {
-            throw Exception('المجلد المحدد غير قابل للكتابة');
-          }
-          final targetFile = File(p.join(targetDir.path, p.basename(internalFile.path)));
-          await internalFile.copy(targetFile.path);
-          if (!await BackupBundleService.verifyBundle(targetFile)) {
-            try { await targetFile.delete(); } catch (_) {}
-            throw Exception('فشل التحقق من النسخة في المجلد المحدد');
-          }
-          await _cleanOldLocalBackups(selected);
-        }
-        // Clear stale external-destination errors when the user has
-        // switched back to internal-only backups as well.
-        await saveSettings(lastDestinationError: '');
-      } catch (destinationError, destinationStack) {
-        await saveSettings(lastDestinationError: destinationError.toString());
-        debugPrint('النسخة الداخلية سليمة، لكن فشل النسخ إلى الوجهة المحددة: $destinationError\n$destinationStack');
-        return 'تم إنشاء نسخة داخلية سليمة والتحقق منها، لكن فشل الحفظ في الوجهة المحددة: $destinationError';
-      }
       return null;
     } catch (e, st) {
-      debugPrint('فشل النسخ المحلي: $e\n$st');
-      return 'فشل إنشاء أو التحقق من النسخة الداخلية: $e';
+      debugPrint('فشل النسخ المحلي: $e\\n$st');
+      try { await saveSettings(lastDestinationError: e.toString()); } catch (_) {}
+      return 'فشل إنشاء النسخة أو حفظها والتحقق منها: $e';
+    } finally {
+      if (stagedFile != null) {
+        try { if (await stagedFile.exists()) await stagedFile.delete(); } catch (_) {}
+      }
     }
   }
 
