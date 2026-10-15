@@ -76,7 +76,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             title: const Text('تعديل العملية',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _showEditTransactionDialog(context, tx);
             },
           ),
@@ -92,7 +92,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 style: TextStyle(
                     fontWeight: FontWeight.bold, color: AppColors.red)),
             onTap: () async {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               await provider.deleteTransaction(
                 int.parse(tx['id'].toString()),
                 int.parse(widget.customer['id'].toString()),
@@ -211,7 +211,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           title: Row(children: [
             IconButton(
                 icon: const Icon(Icons.close, size: 22),
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints()),
             const Spacer(),
@@ -336,7 +336,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     size: 32, color: AppColors.primary),
                                 label: const Text('الكاميرا'),
                                 onPressed: () async {
-                                  Navigator.pop(imageCtx);
+                                  material.Navigator.pop(imageCtx);
                                   final img =
                                       await ImagePicker().pickImage(
                                           source: ImageSource.camera,
@@ -357,7 +357,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     size: 32, color: AppColors.primary),
                                 label: const Text('الهاتف'),
                                 onPressed: () async {
-                                  Navigator.pop(imageCtx);
+                                  material.Navigator.pop(imageCtx);
                                   final img =
                                       await ImagePicker().pickImage(
                                           source: ImageSource.gallery,
@@ -417,7 +417,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        Navigator.pop(ctx);
+                        material.Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.red,
@@ -451,7 +451,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        Navigator.pop(ctx);
+                        material.Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.green,
@@ -506,7 +506,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           title: Row(children: [
             IconButton(
                 icon: const Icon(Icons.close, size: 22),
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints()),
             const Spacer(),
@@ -626,7 +626,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     size: 32, color: AppColors.primary),
                                 label: const Text('الكاميرا'),
                                 onPressed: () async {
-                                  Navigator.pop(imageCtx);
+                                  material.Navigator.pop(imageCtx);
                                   final img =
                                       await ImagePicker().pickImage(
                                           source: ImageSource.camera,
@@ -647,7 +647,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     size: 32, color: AppColors.primary),
                                 label: const Text('الهاتف'),
                                 onPressed: () async {
-                                  Navigator.pop(imageCtx);
+                                  material.Navigator.pop(imageCtx);
                                   final img =
                                       await ImagePicker().pickImage(
                                           source: ImageSource.gallery,
@@ -702,7 +702,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (ctx.mounted) material.Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.red,
@@ -734,7 +734,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           dateStr,
                           imageData: selectedImageBase64,
                         );
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (ctx.mounted) material.Navigator.pop(ctx);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.green,
@@ -823,7 +823,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _showEditTransactionDialog(context, tx);
             },
             child: const Text('تعديل',
@@ -831,7 +831,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.green),
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => material.Navigator.pop(ctx),
             child: const Text('موافق'),
           ),
         ],
@@ -872,7 +872,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               leading: const Icon(Icons.visibility, color: AppColors.green),
               title: const Text('فتح الصورة'),
               onTap: () {
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
                 _showFullImage(context, imageData);
               },
             ),
@@ -880,9 +880,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               leading: const Icon(Icons.delete, color: AppColors.red),
               title: const Text('حذف الصورة'),
               onTap: () async {
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
                 await _updateTransactionImage(provider, txId, null);
-                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) material.Navigator.pop(context);
               },
             ),
           ],
@@ -890,14 +890,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             leading: const Icon(Icons.camera_alt, color: AppColors.primary),
             title: const Text('الكاميرا'),
             onTap: () async {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               final img = await ImagePicker().pickImage(
                   source: ImageSource.camera, imageQuality: 60, maxWidth: 1600, maxHeight: 1600);
               if (img != null) {
                 final bytes = await img.readAsBytes();
                 await _updateTransactionImage(
                     provider, txId, base64Encode(bytes));
-                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) material.Navigator.pop(context);
               }
             },
           ),
@@ -906,14 +906,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 const Icon(Icons.photo_library, color: AppColors.primary),
             title: const Text('الهاتف'),
             onTap: () async {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               final img = await ImagePicker().pickImage(
                   source: ImageSource.gallery, imageQuality: 60, maxWidth: 1600, maxHeight: 1600);
               if (img != null) {
                 final bytes = await img.readAsBytes();
                 await _updateTransactionImage(
                     provider, txId, base64Encode(bytes));
-                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) material.Navigator.pop(context);
               }
             },
           ),
@@ -1015,7 +1015,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ]),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => material.Navigator.pop(context),
         ),
         actions: [
           IconButton(
@@ -1321,14 +1321,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
                   title: const Text('PDF'),
-                  onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, true); },
+                  onTap: () { material.Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, true); },
                 )),
                 const SizedBox(width: 16),
                 Expanded(child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.table_view, color: Colors.green),
                   title: const Text('Excel'),
-                  onTap: () { Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, false); },
+                  onTap: () { material.Navigator.pop(dialogContext); _runReportExport(allTxs, start, end, usePeriod, false); },
                 )),
               ]),
               ListTile(
@@ -1337,19 +1337,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 title: const Text('مشاركة عبر واتساب'),
                 subtitle: const Text('اختر PDF أو Excel'),
                 onTap: () {
-                  Navigator.pop(dialogContext);
+                  material.Navigator.pop(dialogContext);
                   showModalBottomSheet<void>(
                     context: context,
                     builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
                       ListTile(
                         leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
                         title: const Text('PDF'),
-                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, true, shareFile: true); },
+                        onTap: () { material.Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, true, shareFile: true); },
                       ),
                       ListTile(
                         leading: const Icon(Icons.table_view, color: Colors.green),
                         title: const Text('Excel'),
-                        onTap: () { Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, false, shareFile: true); },
+                        onTap: () { material.Navigator.pop(ctx); _runReportExport(allTxs, start, end, usePeriod, false, shareFile: true); },
                       ),
                     ])),
                   );
@@ -1357,7 +1357,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
             ]),
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق'))],
+          actions: [TextButton(onPressed: () => material.Navigator.pop(dialogContext), child: const Text('إغلاق'))],
         ),
       ),
     );
@@ -1826,7 +1826,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
 
       final bytes = await pdf.save();
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) material.Navigator.of(context, rootNavigator: true).pop();
       final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'pdf'));
       if (!await tempDir.exists()) await tempDir.create(recursive: true);
       final fileName =
@@ -1850,7 +1850,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         } catch (_) {}
       });
     } catch (e, st) {
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) material.Navigator.of(context, rootNavigator: true).pop();
       debugPrint('PDF Error: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
