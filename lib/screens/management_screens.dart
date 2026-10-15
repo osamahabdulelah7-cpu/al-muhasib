@@ -11,7 +11,7 @@ class CategoriesScreen extends StatelessWidget {
         title: const Text('إدارة التصنيفات'),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+            onPressed: () => material.Navigator.pop(context)),
       ),
       body: provider.categories.isEmpty
           ? Center(
@@ -68,7 +68,7 @@ class CategoriesScreen extends StatelessWidget {
             leading: const Icon(Icons.edit, color: AppColors.primary),
             title: const Text('تعديل الاسم'),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _showEditDialog(context, provider, cat);
             },
           ),
@@ -76,7 +76,7 @@ class CategoriesScreen extends StatelessWidget {
             leading: const Icon(Icons.swap_vert, color: AppColors.goldDark),
             title: const Text('إعادة الترتيب'),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _showReorderDialog(context, provider);
             },
           ),
@@ -84,7 +84,7 @@ class CategoriesScreen extends StatelessWidget {
             leading: const Icon(Icons.delete, color: AppColors.red),
             title: const Text('حذف'),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _confirmDelete(context, provider, cat);
             },
           ),
@@ -104,7 +104,7 @@ class CategoriesScreen extends StatelessWidget {
         content: TextField(controller: controller),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
@@ -112,7 +112,7 @@ class CategoriesScreen extends StatelessWidget {
               if (controller.text.trim().isNotEmpty) {
                 provider.updateCategory(int.parse(cat['id'].toString()),
                     controller.text.trim());
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
               }
             },
             child: const Text('حفظ'),
@@ -158,14 +158,14 @@ class CategoriesScreen extends StatelessWidget {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 child: const Text('إلغاء')),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
               onPressed: () {
                 provider.reorderCategories(
                     tempCats.map((c) => int.parse(c['id'].toString())).toList());
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
               },
               child: const Text('حفظ'),
             ),
@@ -190,13 +190,13 @@ class CategoriesScreen extends StatelessWidget {
             : 'هل أنت متأكد من حذف التصنيف؟'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () async {
               if (count > 0) {
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('لا يمكن حذف تصنيف يحتوي على حسابات. انقل الحسابات أولاً.'),
                   backgroundColor: AppColors.red,
@@ -205,7 +205,7 @@ class CategoriesScreen extends StatelessWidget {
               }
               final success = await provider.deleteCategory(catId);
               if (context.mounted) {
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
                 if (!success) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('لا يمكن حذف آخر تصنيف في التطبيق'),
@@ -231,7 +231,7 @@ class CategoriesScreen extends StatelessWidget {
         content: TextField(controller: controller),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
@@ -239,7 +239,7 @@ class CategoriesScreen extends StatelessWidget {
               if (controller.text.trim().isNotEmpty) {
                 Provider.of<AppAccountProvider>(context, listen: false)
                     .addCategory(controller.text.trim());
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
               }
             },
             child: const Text('حفظ'),
@@ -262,7 +262,7 @@ class CurrenciesScreen extends StatelessWidget {
         title: const Text('إدارة العملات'),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+            onPressed: () => material.Navigator.pop(context)),
       ),
       body: provider.currencies.isEmpty
           ? const Center(child: Text('لا توجد عملات'))
@@ -309,7 +309,7 @@ class CurrenciesScreen extends StatelessWidget {
         ]),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
@@ -319,7 +319,7 @@ class CurrenciesScreen extends StatelessWidget {
                 Provider.of<AppAccountProvider>(context, listen: false)
                     .addCurrency(
                         nameCtrl.text.trim(), symbolCtrl.text.trim());
-                Navigator.pop(ctx);
+                material.Navigator.pop(ctx);
               }
             },
             child: const Text('حفظ'),

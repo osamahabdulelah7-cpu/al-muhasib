@@ -13,9 +13,7 @@ class InstantBackupService {
   static const String _prefPending = 'instant_backup_pending';
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
   static const String _prefDrivePending = 'instant_drive_backup_pending';
-  static const String _prefDriveLastRunMs = 'instant_drive_backup_last_run_ms';
   static const String _prefLastFingerprint = 'instant_backup_last_fingerprint';
-  static const String _prefDriveLastFingerprint = 'instant_drive_backup_last_fingerprint';
 
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
@@ -25,8 +23,6 @@ class InstantBackupService {
 
   static Timer? _timer;
   static Timer? _driveTimer;
-  static bool _driveRunning = false;
-  static bool _driveRerun = false;
   static bool _running = false;
   static bool _rerun = false;
 
@@ -132,29 +128,6 @@ class InstantBackupService {
   /// an already-successful local backup to be repeated just to retry Drive.
   static Future<void> _runDrive({required bool ignoreGap}) async {
     // Instant after-edit backups are local-only; Drive uploads are disabled.
-  }
-
-  static Future<void> _pruneOldInstantDriveBackups() async {
-    final backups = await GoogleDriveService.listBackups();
-    final instant = backups.where((item) {
-      final name = item['name']?.toString() ?? '';
-      return (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
-          p.extension(name).toLowerCase() == '.alb';
-    }).toList()
-      ..sort((a, b) {
-        final at = a['createdTime']?.toString() ?? '';
-        final bt = b['createdTime']?.toString() ?? '';
-        return bt.compareTo(at);
-      });
-    if (GoogleDriveService.lastListBackupsError != null) {
-      throw Exception('تعذر التحقق من نسخ Drive القديمة؛ لن نحذف أي نسخة');
-    }
-    for (final old in instant.skip(_maxInstantBackups)) {
-      final id = old['id']?.toString() ?? '';
-      if (id.isNotEmpty && !await GoogleDriveService.deleteBackup(id)) {
-        debugPrint('تعذر حذف نسخة Drive الفورية القديمة: ${old['name']}');
-      }
-    }
   }
 
   static bool _isInstantName(String name) =>
