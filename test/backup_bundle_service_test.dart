@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<File> _makeBundle({
   bool corruptPayload = false,
@@ -136,7 +137,8 @@ void main() {
     });
   });
 
-  test('countBackups counts ALB and DB backup files only', () async {
+  test('countBackups counts external ALB backup files only', () async {
+    SharedPreferences.setMockInitialValues({});
     final documents = await Directory.systemTemp.createTemp('backup_count_test_');
     const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -148,13 +150,16 @@ void main() {
     });
 
     try {
+      await AutoBackupService.saveSettings(folderPath: documents.path);
       final backups = Directory('${documents.path}/AlMuhasib/Backups');
       await backups.create(recursive: true);
       await File('${backups.path}/al_muhasib_one.alb').writeAsString('bundle');
       await File('${backups.path}/al_muhasib_two.db').writeAsString('database');
       await File('${backups.path}/al_muhasib_notes.txt').writeAsString('not a backup');
 
-      expect(await AutoBackupService.countBackups(), 2);
+      // Counts are now based on the selected shared destination, and legacy
+      // .db files are not counted as verified .alb bundles.
+      expect(await AutoBackupService.countBackups(), 1);
     } finally {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(pathProviderChannel, null);
