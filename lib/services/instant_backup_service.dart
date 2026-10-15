@@ -165,7 +165,10 @@ class InstantBackupService {
   }
 
   static bool _isInstantName(String name) =>
-      (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
+      (name.startsWith(_namePrefix) ||
+       name.startsWith('GO_al_muhasib(') ||
+       name.startsWith('instant_al_muhasib_') ||
+       name.startsWith('instant_al_muhasib(')) &&
       p.extension(name).toLowerCase() == '.alb';
 
   /// يُبقي أحدث خمس نسخ فورية في مجلد الحفظ الخارجي المشترك فقط.
