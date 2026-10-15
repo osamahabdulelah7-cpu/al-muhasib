@@ -1170,7 +1170,7 @@ Widget build(BuildContext context) {
                       TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
-        if (!widget.driveOnly && _folderPath.isNotEmpty)
+        if (!widget.driveOnly)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ElevatedButton.icon(
@@ -1187,7 +1187,7 @@ Widget build(BuildContext context) {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
-        if (!widget.driveOnly && _folderPath.isNotEmpty)
+        if (!widget.driveOnly)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
