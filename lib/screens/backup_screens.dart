@@ -197,6 +197,41 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     await _restoreFromPhone();
   }
 
+  Future<void> _rollbackLastRestore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('التراجع عن آخر استعادة'),
+        content: const Text('سيتم إرجاع البيانات إلى الحالة المحفوظة مباشرة قبل آخر استعادة ناجحة. هل تريد المتابعة؟'),
+        actions: [
+          TextButton(onPressed: () => material.Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          ElevatedButton(onPressed: () => material.Navigator.pop(ctx, true), child: const Text('تراجع')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final error = await AutoBackupService.rollbackLastRestore();
+    if (!mounted) return;
+    material.Navigator.of(context, rootNavigator: true).pop();
+    if (error == null) {
+      try {
+        await Provider.of<AppAccountProvider>(context, listen: false).loadInitialData();
+      } catch (e) {
+        debugPrint('تعذر تحديث البيانات بعد التراجع: $e');
+      }
+      await _loadSettings();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(error ?? 'تم التراجع عن آخر استعادة بنجاح'),
+      backgroundColor: error == null ? AppColors.green : AppColors.red,
+    ));
+  }
+
   Future<void> _restoreFromPhone() async {
     try {
       // Avoid Android document-provider failures from FileType.custom filters.
@@ -1150,6 +1185,22 @@ Widget build(BuildContext context) {
               icon: const Icon(Icons.restore),
               label: const Text('استعادة',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        if (!widget.driveOnly && _folderPath.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: OutlinedButton.icon(
+              onPressed: _rollbackLastRestore,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.red,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                minimumSize: const Size(double.infinity, 48),
+                side: const BorderSide(color: AppColors.red),
+              ),
+              icon: const Icon(Icons.history),
+              label: const Text('التراجع عن آخر عملية استعادة',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ),
           ),
         if (widget.driveOnly && _signedIn)
