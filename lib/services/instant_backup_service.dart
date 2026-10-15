@@ -145,6 +145,25 @@ class InstantBackupService {
     // Instant after-edit backups are local-only; Drive uploads are disabled.
   }
 
+  static Future<int> countBackups() async {
+    try {
+      final settings = await AutoBackupService.getSettings();
+      final folder = (settings['folderPath'] as String? ?? '').trim();
+      if (folder.isEmpty) return 0;
+      if (AutoBackupService._isSafFolder(folder)) {
+        final entries = await Saf().list(AutoBackupService._safUri(folder));
+        return entries.where((e) => !e.isDir && _isInstantName(e.name)).length;
+      }
+      final dir = Directory(folder);
+      if (!await dir.exists()) return 0;
+      return dir.listSync().whereType<File>()
+          .where((f) => _isInstantName(p.basename(f.path))).length;
+    } catch (e) {
+      debugPrint('تعذر حساب النسخ الفورية: $e');
+      return 0;
+    }
+  }
+
   static bool _isInstantName(String name) =>
       (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
       p.extension(name).toLowerCase() == '.alb';
