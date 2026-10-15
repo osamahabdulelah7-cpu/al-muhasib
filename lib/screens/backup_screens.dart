@@ -10,7 +10,7 @@ class BackupOptionsScreen extends StatelessWidget {
         title: const Text('النسخ الاحتياطي والاستعادة'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => material.Navigator.pop(context),
         ),
       ),
       body: ListView(
@@ -30,7 +30,7 @@ class BackupOptionsScreen extends StatelessWidget {
             title: const Text('من الهاتف', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
             subtitle: const Text('مجلد الحفظ والنسخ المحلي والاستعادة والنسخ التلقائي'),
             trailing: const Icon(Icons.chevron_left),
-            onTap: () => Navigator.push(context,
+            onTap: () => material.Navigator.push(context,
               MaterialPageRoute(builder: (_) => const AutoBackupScreen())),
           ),
           const SizedBox(height: 8),
@@ -48,7 +48,7 @@ class BackupOptionsScreen extends StatelessWidget {
             title: const Text('من Google Drive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
             subtitle: const Text('النسخ إلى Google Drive والاستعادة منه'),
             trailing: const Icon(Icons.chevron_left),
-            onTap: () => Navigator.push(context,
+            onTap: () => material.Navigator.push(context,
               MaterialPageRoute(builder: (_) => const AutoBackupScreen(driveOnly: true))),
           ),
         ],
@@ -194,16 +194,16 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         content: const Text('اختر مصدر النسخة التي تريد استعادتها.'),
         actions: [
           TextButton.icon(
-            onPressed: () { Navigator.pop(ctx); _showAppRestoreList(); },
+            onPressed: () { material.Navigator.pop(ctx); _showAppRestoreList(); },
             icon: const Icon(Icons.storage),
             label: const Text('من التطبيق'),
           ),
           ElevatedButton.icon(
-            onPressed: () { Navigator.pop(ctx); _restoreFromPhone(); },
+            onPressed: () { material.Navigator.pop(ctx); _restoreFromPhone(); },
             icon: const Icon(Icons.folder_open),
             label: const Text('من الهاتف'),
           ),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          TextButton(onPressed: () => material.Navigator.pop(ctx), child: const Text('إلغاء')),
         ],
       ),
     );
@@ -274,14 +274,14 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                         Text('◷ $dateText', style: const TextStyle(fontSize: 11)),
                       ],
                     ),
-                    onTap: () { Navigator.pop(ctx); _restoreLocalBackupFile(file); },
+                    onTap: () { material.Navigator.pop(ctx); _restoreLocalBackupFile(file); },
                   );
                 },
               );
             },
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء'))],
+        actions: [TextButton(onPressed: () => material.Navigator.pop(ctx), child: const Text('إلغاء'))],
       ),
     );
   }
@@ -323,10 +323,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         title: const Text('تأكيد الاستعادة'),
         content: const Text('سيتم استبدال البيانات الحالية. هل تريد المتابعة؟'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          TextButton(onPressed: () => material.Navigator.pop(ctx, false), child: const Text('إلغاء')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => material.Navigator.pop(ctx, true),
             child: const Text('استعادة'),
           ),
         ],
@@ -356,7 +356,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         } catch (refreshError) {
           debugPrint('تمت الاستعادة لكن تعذر تحديث واجهة البيانات: $refreshError');
         }
-        Navigator.of(context, rootNavigator: true).pop();
+        material.Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('تمت الاستعادة بنجاح'),
           backgroundColor: AppColors.green,
@@ -364,7 +364,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       }
     } catch (e) {
       if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
+        material.Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('فشلت الاستعادة: ' + e.toString()),
           backgroundColor: AppColors.red,
@@ -383,7 +383,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             child: CircularProgressIndicator(color: AppColors.gold)));
     final error = await AutoBackupService.runBackupNow();
     if (!mounted) return;
-    Navigator.pop(context);
+    material.Navigator.pop(context);
     if (error == null) {
       await _loadSettings();
       if (mounted) {
@@ -492,7 +492,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             child: CircularProgressIndicator(color: AppColors.drive)));
     final error = await AutoBackupService.runDriveBackupNow();
     if (!mounted) return;
-    Navigator.pop(context);
+    material.Navigator.pop(context);
     if (error == null) {
       await _loadSettings();
       if (mounted) {
@@ -527,7 +527,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             child: CircularProgressIndicator(color: AppColors.drive)));
     final backups = await GoogleDriveService.listBackups();
     if (!mounted) return;
-    Navigator.pop(context);
+    material.Navigator.pop(context);
     if (backups.isEmpty) {
       final listError = GoogleDriveService.lastListBackupsError;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -598,7 +598,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
                   ],
                 ),
                 onTap: () async {
-                  Navigator.pop(ctx);
+                  material.Navigator.pop(ctx);
                   await _restoreFromDrive(b);
                 },
               );
@@ -607,7 +607,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child:
                   const Text('إلغاء', style: TextStyle(color: Colors.grey))),
         ],
@@ -631,7 +631,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => material.Navigator.pop(ctx, false),
             child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
@@ -639,7 +639,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
               backgroundColor: AppColors.red,
               foregroundColor: Colors.white,
             ),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => material.Navigator.pop(ctx, true),
             child: const Text('استعادة'),
           ),
         ],
@@ -688,7 +688,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         try { if (await file.exists()) await file.delete(); } catch (_) {}
       }
       if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
+        material.Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(message),
           backgroundColor: success ? AppColors.green : AppColors.red,
@@ -746,12 +746,12 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => material.Navigator.pop(ctx, false),
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => material.Navigator.pop(ctx, true),
             child: const Text('حذف نهائي'),
           ),
         ],
@@ -765,7 +765,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     );
     final result = await GoogleDriveService.deleteAccountAndData();
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
+    material.Navigator.of(context, rootNavigator: true).pop();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(result.success
           ? 'تم حذف الحساب والبيانات بنجاح'
@@ -773,7 +773,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       backgroundColor: result.success ? AppColors.green : AppColors.red,
       duration: const Duration(seconds: 8),
     ));
-    if (result.success && mounted) Navigator.pop(context);
+    if (result.success && mounted) material.Navigator.pop(context);
   }
 
 Widget build(BuildContext context) {
@@ -785,7 +785,7 @@ Widget build(BuildContext context) {
         title: Text(widget.driveOnly ? 'خيارات حفظ البيانات على Google Drive' : 'خيارات حفظ البيانات'),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+            onPressed: () => material.Navigator.pop(context)),
       ),
       body: ListView(children: [
         if (!widget.driveOnly) ...[
@@ -873,14 +873,14 @@ Widget build(BuildContext context) {
                     actions: [
                       TextButton(
                           onPressed: () {
-                            Navigator.pop(ctx);
+                            material.Navigator.pop(ctx);
                             _pickFolder();
                           },
                           child: const Text('تغيير المجلد')),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.gold),
-                        onPressed: () => Navigator.pop(ctx),
+                        onPressed: () => material.Navigator.pop(ctx),
                         child: const Text('حسناً'),
                       ),
                     ],
