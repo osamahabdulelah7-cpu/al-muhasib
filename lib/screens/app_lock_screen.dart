@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-/// Local-only app lock. Passwords and hints are stored as salted SHA-256 hashes.
+/// Local-only app lock. Numeric passwords are stored as salted SHA-256 hashes.
 class AppLockService {
   static final ValueNotifier<bool> configuredNotifier = ValueNotifier<bool>(false);
   static const _enabledKey = 'app_lock_enabled_v1';
@@ -15,50 +15,28 @@ class AppLockService {
         (prefs.getString(_passwordHashKey) ?? '').isNotEmpty;
   }
 
-  static Future<bool> hasHint() async {
-    final prefs = await SharedPreferences.getInstance();
-    return (prefs.getString(_hintHashKey) ?? '').isNotEmpty;
-  }
-
   static String _makeSalt() =>
       '${DateTime.now().microsecondsSinceEpoch}-${DateTime.now().millisecondsSinceEpoch}';
 
   static String _hash(String value, String salt) =>
       crypto.sha256.convert(utf8.encode('$salt:$value')).toString();
 
-  static Future<void> configure({
-    required String password,
-    String? hint,
-    required bool enableHint,
-  }) async {
+  static Future<void> configure({required String password}) async {
     final prefs = await SharedPreferences.getInstance();
     final passwordSalt = _makeSalt();
     await prefs.setString(_passwordSaltKey, passwordSalt);
     await prefs.setString(_passwordHashKey, _hash(password, passwordSalt));
     await prefs.setBool(_enabledKey, true);
     configuredNotifier.value = true;
-    if (enableHint && hint != null && hint.isNotEmpty) {
-      final hintSalt = _makeSalt();
-      await prefs.setString(_hintSaltKey, hintSalt);
-      await prefs.setString(_hintHashKey, _hash(hint, hintSalt));
-    } else {
-      await prefs.remove(_hintSaltKey);
-      await prefs.remove(_hintHashKey);
-    }
+    // Remove legacy recovery hints; the feature is intentionally retired.
+    await prefs.remove('app_lock_hint_salt_v1');
+    await prefs.remove('app_lock_hint_hash_v1');
   }
 
   static Future<bool> verifyPassword(String value) async {
     final prefs = await SharedPreferences.getInstance();
     final salt = prefs.getString(_passwordSaltKey);
     final expected = prefs.getString(_passwordHashKey);
-    if (salt == null || expected == null) return false;
-    return _hash(value, salt) == expected;
-  }
-
-  static Future<bool> verifyHint(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    final salt = prefs.getString(_hintSaltKey);
-    final expected = prefs.getString(_hintHashKey);
     if (salt == null || expected == null) return false;
     return _hash(value, salt) == expected;
   }
@@ -156,10 +134,7 @@ class AppLockSettingsScreen extends StatefulWidget {
 class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
-  final _hintController = TextEditingController();
   bool _enabled = false;
-  bool _hasHint = false;
-  bool _addHint = false;
   bool _loading = true;
   bool _saving = false;
   bool _obscurePassword = true;
@@ -172,12 +147,9 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
 
   Future<void> _load() async {
     final enabled = await AppLockService.isEnabled();
-    final hasHint = await AppLockService.hasHint();
     if (!mounted) return;
     setState(() {
       _enabled = enabled;
-      _hasHint = hasHint;
-      _addHint = hasHint;
       _loading = false;
     });
   }
@@ -186,47 +158,28 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
   void dispose() {
     _passwordController.dispose();
     _confirmController.dispose();
-    _hintController.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final password = _passwordController.text;
     final confirm = _confirmController.text;
-    if (password.trim().isEmpty) {
-      setState(() => _saving = false);
+    if (password.isEmpty) {
       _message('أدخل كلمة المرور الجديدة');
       return;
     }
+    if (!RegExp(r'^[0-9]+$').hasMatch(password)) {
+      _message('كلمة المرور يجب أن تتكون من أرقام فقط');
+      return;
+    }
     if (password != confirm) {
-      setState(() => _saving = false);
       _message('كلمتا المرور غير متطابقتين');
       return;
     }
-    if (_addHint && _hintController.text.isEmpty && !_hasHint) {
-      setState(() => _saving = false);
-      _message('أدخل التلميح أو أوقف خيار التلميح');
-      return;
-    }
-    if (_addHint && _hintController.text.isEmpty && _hasHint) {
-      // Existing hint remains unchanged when the user leaves the field blank.
-      final prefs = await SharedPreferences.getInstance();
-      final passwordSalt = '${DateTime.now().microsecondsSinceEpoch}-${DateTime.now().millisecondsSinceEpoch}';
-      await prefs.setString('app_lock_password_salt_v1', passwordSalt);
-      await prefs.setString('app_lock_password_hash_v1',
-          crypto.sha256.convert(utf8.encode('$passwordSalt:$password')).toString());
-      await prefs.setBool('app_lock_enabled_v1', true);
-    } else {
-      await AppLockService.configure(
-        password: password,
-        hint: _hintController.text,
-        enableHint: _addHint,
-      );
-    }
+    await AppLockService.configure(password: password);
     if (!mounted) return;
     setState(() {
       _enabled = true;
-      _hasHint = _addHint;
       _saving = false;
     });
     _message('تم حفظ إعدادات الحماية');
@@ -303,6 +256,8 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
             TextField(
               controller: _passwordController,
               obscureText: _obscurePassword,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               textDirection: TextDirection.ltr,
               decoration: InputDecoration(
                 labelText: _enabled ? 'كلمة المرور الجديدة' : 'كلمة المرور',
@@ -316,27 +271,16 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
             TextField(
               controller: _confirmController,
               obscureText: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               textDirection: TextDirection.ltr,
               decoration: const InputDecoration(labelText: 'تأكيد كلمة المرور'),
             ),
             const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('إضافة تلميح بديل لفتح التطبيق'),
-              subtitle: const Text('اختياري؛ سيعمل التلميح ككلمة مرور بديلة'),
-              value: _addHint,
-              onChanged: (value) => setState(() => _addHint = value),
+            const Text(
+              'استخدم أرقامًا فقط. ستظهر لوحة المفاتيح الرقمية عند إدخال كلمة المرور.',
+              textAlign: TextAlign.center,
             ),
-            if (_addHint) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _hintController,
-                decoration: InputDecoration(
-                  labelText: _hasHint ? 'تلميح جديد (اتركه فارغًا للإبقاء على الحالي)' : 'التلميح البديل',
-                  helperText: 'يمكن أن يكون حرفًا أو كلمة أو جملة. يجب إدخاله لاحقًا كما هو.',
-                ),
-              ),
-            ],
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _saving ? null : () async {
@@ -376,7 +320,6 @@ class AppLockScreen extends StatefulWidget {
 
 class _AppLockScreenState extends State<AppLockScreen> {
   final _entryController = TextEditingController();
-  bool _useHint = false;
   bool _busy = false;
   String? _error;
   int _failedAttempts = 0;
@@ -393,9 +336,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       _busy = true;
       _error = null;
     });
-    final valid = _useHint
-        ? await AppLockService.verifyHint(_entryController.text)
-        : await AppLockService.verifyPassword(_entryController.text);
+    final valid = await AppLockService.verifyPassword(_entryController.text);
     if (!mounted) return;
     if (valid) {
       widget.onUnlocked();
@@ -428,15 +369,17 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     const Text('تطبيق المحاسب محمي',
                         style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Text(_useHint ? 'أدخل التلميح البديل' : 'أدخل كلمة المرور'),
+                    const Text('أدخل كلمة المرور الرقمية'),
                     const SizedBox(height: 20),
                     TextField(
                       controller: _entryController,
                       obscureText: true,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       textDirection: TextDirection.ltr,
                       onSubmitted: (_) => _submit(),
                       decoration: InputDecoration(
-                        labelText: _useHint ? 'التلميح' : 'كلمة المرور',
+                        labelText: 'كلمة المرور',
                         errorText: _error,
                       ),
                     ),
@@ -450,23 +393,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             : const Text('فتح التطبيق'),
                       ),
                     ),
-                    FutureBuilder<bool>(
-                      future: AppLockService.hasHint(),
-                      builder: (context, snapshot) {
-                        if (snapshot.data != true) return const SizedBox.shrink();
-                        return TextButton(
-                          onPressed: _busy ? null : () => setState(() {
-                            _useHint = !_useHint;
-                            _entryController.clear();
-                            _error = null;
-                          }),
-                          child: Text(_useHint ? 'استخدام كلمة المرور' : 'نسيت كلمة المرور؟ إدخال التلميح'),
-                        );
-                      },
-                    ),
                     if (_failedAttempts >= 5)
                       const Text(
-                        'تذكّر اختيار كلمة مرور وتلميح لا يعرفهما الآخرون.',
+                        'تأكد من حفظ كلمة المرور الرقمية في مكان آمن.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppColors.red),
                       ),
