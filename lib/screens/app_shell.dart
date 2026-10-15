@@ -233,7 +233,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
       final data = await cropped.toByteData(format: ui.ImageByteFormat.png);
       cropped.dispose();
       if (data == null) throw Exception('تعذر تجهيز الصورة');
-      if (mounted) Navigator.of(context).pop(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+      if (mounted) material.Navigator.of(context).pop(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -322,7 +322,7 @@ class _LogoCropScreenState extends State<LogoCropScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                      onPressed: _saving ? null : () => material.Navigator.of(context).pop(),
                       child: const Text('إلغاء'),
                     ),
                   ),
@@ -496,12 +496,12 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
         content: const Text('اختر شكل إطار القص الذي تريد استخدامه للشعار.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'circle'),
+            onPressed: () => material.Navigator.pop(ctx, 'circle'),
             child: const Text('دائري'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
-            onPressed: () => Navigator.pop(ctx, 'square'),
+            onPressed: () => material.Navigator.pop(ctx, 'square'),
             child: const Text('مربع'),
           ),
         ],
@@ -511,7 +511,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
 
     final sourceBytes = await img.readAsBytes();
     if (!mounted) return;
-    final croppedBytes = await Navigator.of(context).push<Uint8List>(
+    final croppedBytes = await material.Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         builder: (_) => LogoCropScreen(imageBytes: sourceBytes, shape: shape),
       ),
@@ -563,7 +563,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
         content: Text('✅ تم حفظ البيانات'),
         backgroundColor: AppColors.green,
       ));
-      Navigator.pop(context);
+      material.Navigator.pop(context);
     }
   }
 
@@ -665,7 +665,7 @@ class _PersonalDataScreenState extends State<PersonalDataScreen> {
         title: const Text('البيانات الشخصية'),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
+            onPressed: () => material.Navigator.pop(context)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
