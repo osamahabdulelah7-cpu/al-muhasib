@@ -829,16 +829,13 @@ class AutoBackupService {
     bool recordSchedule = true,
   }) async {
     try {
-      final db = await AppDBHelper.instance.database;
-      await AppDBHelper.instance.syncPersonalDataToDatabase();
-      await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      // createBundle already syncs personal data, checkpoints WAL, writes the
+      // bundle, and verifies its integrity. Avoid repeating those expensive
+      // operations here; duplicate checkpoints and ZIP verification made both
+      // manual and instant local backups unnecessarily slow.
       final internalDir = await internalBackupDirectory();
       final internalFile = await BackupBundleService.createBundle(
           outputDirectory: internalDir, namePrefix: namePrefix);
-      if (!await BackupBundleService.verifyBundle(internalFile)) {
-        try { await internalFile.delete(); } catch (_) {}
-        throw Exception('فشل التحقق من سلامة النسخة الداخلية');
-      }
 
       // The internal copy is a complete destination in its own right. Record
       // success only after its integrity check, before attempting optional targets.
