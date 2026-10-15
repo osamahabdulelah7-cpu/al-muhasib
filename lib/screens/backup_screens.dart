@@ -370,6 +370,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       }
     }
     await InstantBackupService.setDriveEnabled(value);
+    if (value) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('instant_drive_backup_pending', true);
+    }
     if (!mounted) return;
     setState(() => _instantDriveEnabled = value);
     if (value) {
