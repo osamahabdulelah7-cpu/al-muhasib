@@ -10,6 +10,7 @@ part of '../main.dart';
 class InstantBackupService {
   InstantBackupService._();
 
+  static const String _prefEnabled = 'instant_backup_enabled';
   static const String _prefPending = 'instant_backup_pending';
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
   static const String _prefDrivePending = 'instant_drive_backup_pending';
@@ -17,7 +18,6 @@ class InstantBackupService {
 
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
-  static const String _internalOkPrefix = 'تم إنشاء نسخة داخلية سليمة';
   static const String _namePrefix = 'GO_al_muhasib_';
   static const int _maxInstantBackups = 5;
 
@@ -25,6 +25,20 @@ class InstantBackupService {
   static Timer? _driveTimer;
   static bool _running = false;
   static bool _rerun = false;
+
+  static Future<bool> isEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefEnabled) ?? false;
+  }
+
+  static Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefEnabled, value);
+    if (!value) {
+      _timer?.cancel();
+      await prefs.setBool(_prefPending, false);
+    }
+  }
 
   /// تُستدعى بعد أي تعديل على البيانات.
   static void markChanged() {
@@ -41,9 +55,11 @@ class InstantBackupService {
   static Future<void> _markChanged() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_prefPending, true);
+      if (prefs.getBool(_prefEnabled) == true) {
+        await prefs.setBool(_prefPending, true);
+        _schedule(_debounce);
+      }
       await prefs.setBool(_prefDrivePending, true);
-      _schedule(_debounce);
       _scheduleDrive(_debounce);
     } catch (e) {
       debugPrint('تعذر تسجيل تعديل للنسخ الفوري: $e');
@@ -66,8 +82,8 @@ class InstantBackupService {
       await prefs.reload();
       if (prefs.getBool(_prefPending) != true) return;
 
+      if (prefs.getBool(_prefEnabled) != true) return;
       final settings = await AutoBackupService.getSettings();
-      if (settings['enabled'] != true) return;
 
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final since = nowMs - (prefs.getInt(_prefLastRunMs) ?? 0);
@@ -96,8 +112,7 @@ class InstantBackupService {
         namePrefix: _namePrefix,
         recordSchedule: false,
       );
-      final internalOk = error == null || error.startsWith(_internalOkPrefix);
-      if (!internalOk) {
+      if (error != null) {
         debugPrint('فشل النسخ الفوري: $error');
         await prefs.setBool(_prefPending, true);
         return;
@@ -134,16 +149,9 @@ class InstantBackupService {
       (name.startsWith(_namePrefix) || name.startsWith('instant_al_muhasib_')) &&
       p.extension(name).toLowerCase() == '.alb';
 
-  /// يُبقي أحدث خمس نسخ فورية فقط (داخلياً وفي مجلد الحفظ الخارجي).
+  /// يُبقي أحدث خمس نسخ فورية في مجلد الحفظ الخارجي المشترك فقط.
   static Future<void> _pruneOldInstantBackups(String folder) async {
     try {
-      final internalDir = await AutoBackupService.internalBackupDirectory();
-      try {
-        await _pruneDirectory(internalDir);
-      } catch (e) {
-        debugPrint('تعذر تنظيف النسخ الفورية الداخلية: $e');
-      }
-
       if (folder.isEmpty) return;
       try {
         if (AutoBackupService._isSafFolder(folder)) {
@@ -159,7 +167,7 @@ class InstantBackupService {
               debugPrint('تعذر حذف نسخة فورية قديمة ${old.name}: $e');
             }
           }
-        } else if (p.normalize(folder) != p.normalize(internalDir.path)) {
+        } else {
           await _pruneDirectory(Directory(folder));
         }
       } catch (e) {
