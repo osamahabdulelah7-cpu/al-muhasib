@@ -15,6 +15,8 @@ class InstantBackupService {
   static const String _prefLastRunMs = 'instant_backup_last_run_ms';
   static const String _prefDrivePending = 'instant_drive_backup_pending';
   static const String _prefLastFingerprint = 'instant_backup_last_fingerprint';
+  static const String _prefDriveEnabled = 'instant_drive_backup_enabled';
+  static const String _prefDriveFingerprint = 'instant_drive_backup_last_fingerprint';
 
   static const Duration _debounce = Duration(seconds: 8);
   static const Duration _minGap = Duration(minutes: 1);
@@ -29,6 +31,20 @@ class InstantBackupService {
   static Future<bool> isEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_prefEnabled) ?? false;
+  }
+
+  static Future<bool> isDriveEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefDriveEnabled) ?? false;
+  }
+
+  static Future<void> setDriveEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefDriveEnabled, value);
+    if (!value) {
+      _driveTimer?.cancel();
+      await prefs.setBool(_prefDrivePending, false);
+    }
   }
 
   static Future<void> setEnabled(bool value) async {
@@ -59,8 +75,10 @@ class InstantBackupService {
         await prefs.setBool(_prefPending, true);
         _schedule(_debounce);
       }
-      await prefs.setBool(_prefDrivePending, true);
-      _scheduleDrive(_debounce);
+      if (prefs.getBool(_prefDriveEnabled) == true) {
+        await prefs.setBool(_prefDrivePending, true);
+        _scheduleDrive(_debounce);
+      }
     } catch (e) {
       debugPrint('تعذر تسجيل تعديل للنسخ الفوري: $e');
     }
@@ -133,16 +151,52 @@ class InstantBackupService {
     }
   }
 
-  // Instant after-edit backups are local-only. Google Drive keeps
-  // receiving ordinary/scheduled backups through AutoBackupService.
   static void _scheduleDrive(Duration delay) {
     _driveTimer?.cancel();
+    _driveTimer = Timer(delay, () => unawaited(_runDrive(ignoreGap: false)));
   }
 
-  /// Drive has an independent pending flag so a network failure never causes
-  /// an already-successful local backup to be repeated just to retry Drive.
+  /// Upload an independent instant snapshot to Drive. A failed upload remains
+  /// pending and never affects local backup state.
   static Future<void> _runDrive({required bool ignoreGap}) async {
-    // Instant after-edit backups are local-only; Drive uploads are disabled.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    if (prefs.getBool(_prefDriveEnabled) != true ||
+        prefs.getBool(_prefDrivePending) != true) return;
+    if (!GoogleDriveService.isSignedIn &&
+        !await GoogleDriveService.trySilentSignIn()) {
+      debugPrint('النسخ الفوري إلى Drive مؤجل حتى تسجيل الدخول');
+      return;
+    }
+    try {
+      await AppDBHelper.instance.syncPersonalDataToDatabase();
+      final fingerprint = await AutoBackupService._getDatabaseFingerprint();
+      final previous = prefs.getString(_prefDriveFingerprint);
+      if (fingerprint != null && fingerprint == previous) {
+        await prefs.setBool(_prefDrivePending, false);
+        return;
+      }
+      final bundle = await BackupBundleService.createBundle();
+      try {
+        if (!await BackupBundleService.verifyBundle(bundle)) {
+          throw Exception('فشل التحقق من ملف النسخة الفورية');
+        }
+        final error = await GoogleDriveService.uploadBackup(
+          bundle, namePrefix: 'GO_al_muhasib_',
+        );
+        if (error != null) throw Exception(error);
+        if (fingerprint != null) {
+          await prefs.setString(_prefDriveFingerprint, fingerprint);
+        }
+        await prefs.setBool(_prefDrivePending, false);
+        await AutoBackupService.cleanOldInstantDriveBackups();
+      } finally {
+        try { await bundle.delete(); } catch (_) {}
+      }
+    } catch (e, st) {
+      debugPrint('فشل النسخ الفوري على Drive، ستبقى المحاولة معلقة: $e\\n$st');
+      await prefs.setBool(_prefDrivePending, true);
+    }
   }
 
   static Future<int> countBackups() async {
