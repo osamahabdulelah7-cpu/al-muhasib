@@ -76,6 +76,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   int _instantBackupCount = 0;
   bool _instantEnabled = false;
   bool _driveEnabled = false;
+  bool _instantDriveEnabled = false;
   TimeOfDay _driveTime = const TimeOfDay(hour: 4, minute: 0);
   String _driveLastBackup = '';
   int _driveBackupCount = 0;
@@ -96,6 +97,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     final count = await AutoBackupService.countBackups();
     final instantCount = await InstantBackupService.countBackups();
     final instantEnabled = await InstantBackupService.isEnabled();
+    final instantDriveEnabled = await InstantBackupService.isDriveEnabled();
     final driveCount = await AutoBackupService.countDriveBackups();
     final signedIn = GoogleDriveService.isSignedIn ||
         await GoogleDriveService.trySilentSignIn();
@@ -111,6 +113,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _instantBackupCount = instantCount;
       _instantEnabled = instantEnabled;
       _driveEnabled = settings['driveEnabled'] as bool;
+      _instantDriveEnabled = instantDriveEnabled;
       _driveTime = TimeOfDay(
           hour: settings['driveHour'] as int,
           minute: settings['driveMinute'] as int);
@@ -346,6 +349,32 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('❌ فشل: $error'), backgroundColor: AppColors.red));
       }
+    }
+  }
+
+  Future<void> _toggleInstantDriveEnabled(bool value) async {
+    if (value && !GoogleDriveService.isSignedIn) {
+      if (!await GoogleDriveService.signIn()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('❌ لم يتم تسجيل الدخول إلى Google'),
+          backgroundColor: AppColors.red,
+        ));
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _signedIn = true;
+          _userEmail = GoogleDriveService.userEmail;
+        });
+      }
+    }
+    await InstantBackupService.setDriveEnabled(value);
+    if (!mounted) return;
+    setState(() => _instantDriveEnabled = value);
+    if (value) {
+      // Process a pending change now that Drive is enabled.
+      await InstantBackupService.flushIfPending();
     }
   }
 
@@ -1082,6 +1111,33 @@ Widget build(BuildContext context) {
         const Divider(height: 1),
         Container(
           color: Colors.white,
+          child: SwitchListTile(
+            value: _instantDriveEnabled,
+            onChanged: _signedIn || !_instantDriveEnabled
+                ? _toggleInstantDriveEnabled
+                : null,
+            activeColor: AppColors.drive,
+            secondary: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+              child: const Icon(Icons.bolt, color: AppColors.drive, size: 26),
+            ),
+            title: const Text('النسخ الفوري على Drive',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: const Text(
+              'نسخة مستقلة عند تغيّر البيانات، بعد التحقق من سلامتها',
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        Container(
+          color: Colors.white,
           child: ListTile(
             enabled: _signedIn,
             leading: Container(
@@ -1221,6 +1277,19 @@ Widget build(BuildContext context) {
                 label: const Text('رفع نسخة على Drive الآن',
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _rollbackLastRestore,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.red,
+                  side: const BorderSide(color: AppColors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                icon: const Icon(Icons.undo),
+                label: const Text('التراجع عن آخر استعادة من Drive',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(height: 10),
               ElevatedButton.icon(
