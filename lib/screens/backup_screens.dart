@@ -212,7 +212,15 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   Future<void> _showAppRestoreList() async {
     final dir = await AutoBackupService.internalBackupDirectory();
     final files = (await dir.list().where((entity) => entity is File).cast<File>().toList())
-        .where((file) => p.extension(file.path).toLowerCase() == '.alb')
+        .where((file) {
+          final name = p.basename(file.path);
+          final isBackupName = name.startsWith('al_muhasib(') ||
+              name.startsWith('al_muhasib_') ||
+              name.startsWith('GO_al_muhasib(') ||
+              name.startsWith('GO_al_muhasib_') ||
+              name.startsWith('instant_al_muhasib_');
+          return isBackupName && p.extension(file.path).toLowerCase() == '.alb';
+        })
         .toList()
       ..sort((a, b) => b.path.compareTo(a.path));
     if (!mounted) return;
@@ -545,7 +553,9 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
             separatorBuilder: (ctx, i) => const Divider(height: 1),
             itemBuilder: (ctx, i) {
               final b = backups[i];
-              final name = b['name'] as String;
+              final name = (b['name'] as String?)?.trim().isNotEmpty == true
+                  ? (b['name'] as String).trim()
+                  : 'نسخة احتياطية بدون اسم';
               final size = b['size'] as String;
               final created = b['createdTime'] as String;
               String formattedDate = '';
