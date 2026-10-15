@@ -138,22 +138,22 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _openExcelImportOptions(BuildContext context) {
-    Navigator.push(
+    material.Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ExcelImportOptionsScreen(
           onImport: () {
-            Navigator.pop(context);
+            material.Navigator.pop(context);
             _pickExcelFile(context);
           },
           onViewRequirements: () {
-            Navigator.push(
+            material.Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => ExcelImportGuideScreen(
                   onImport: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
+                    material.Navigator.pop(context);
+                    material.Navigator.pop(context);
                     _pickExcelFile(context);
                   },
                 ),
@@ -211,14 +211,14 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => material.Navigator.pop(ctx, false),
                 child: const Text('إلغاء',
                     style: TextStyle(color: Colors.grey))),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.gold,
                   foregroundColor: Colors.white),
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () => material.Navigator.pop(ctx, true),
               child: const Text('متابعة'),
             ),
           ],
@@ -255,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen>
       final stats = await provider.importFromExcel(excelFile,
           categoryId: selectedCategoryId);
       if (context.mounted) {
-        Navigator.pop(context);
+        material.Navigator.pop(context);
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -294,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen>
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.gold),
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 child: const Text('تم'),
               ),
             ],
@@ -303,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } catch (e) {
       if (context.mounted) {
-        Navigator.of(context, rootNavigator: true)
+        material.Navigator.of(context, rootNavigator: true)
             .popUntil((route) => route.settings.name != null);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('خطأ: $e'),
@@ -327,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen>
               const Text('لا توجد تصنيفات مضافة'),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
+                onPressed: () => material.Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())),
                 icon: const Icon(Icons.category),
                 label: const Text('إدارة التصنيفات'),
               ),
@@ -502,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             title: const Text('إدارة التصنيفات',
                 style: TextStyle(fontWeight: FontWeight.bold)),
-            onTap: () => Navigator.push(context,
+            onTap: () => material.Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const CategoriesScreen())),
           ),
           ListTile(
@@ -516,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             title: const Text('إدارة العملات',
                 style: TextStyle(fontWeight: FontWeight.bold)),
-            onTap: () => Navigator.push(context,
+            onTap: () => material.Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const CurrenciesScreen())),
           ),
           ListTile(
@@ -530,8 +530,8 @@ class _HomeScreenState extends State<HomeScreen>
             title: const Text('البيانات الشخصية',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
+              material.Navigator.pop(context);
+              material.Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (_) => const PersonalDataScreen())).then((_) {
@@ -551,7 +551,7 @@ class _HomeScreenState extends State<HomeScreen>
             title: const Text('استيراد من Excel',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(context);
+              material.Navigator.pop(context);
               _openExcelImportOptions(context);
             },
           ),
@@ -566,8 +566,8 @@ class _HomeScreenState extends State<HomeScreen>
             title: const Text('النسخ الاحتياطي والاستعادة',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
+              material.Navigator.pop(context);
+              material.Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (_) => const BackupOptionsScreen()));
@@ -584,8 +584,8 @@ class _HomeScreenState extends State<HomeScreen>
             title: const Text('الحماية بكلمة مرور',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
+              material.Navigator.pop(context);
+              material.Navigator.push(
                 context,
                 MaterialPageRoute(
                     builder: (_) => const AppLockSettingsScreen()),
@@ -799,7 +799,7 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => Navigator.push(
+          onTap: () => material.Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (_) =>
@@ -904,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen>
             title: const Text('تعديل الحساب',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _showEditCustomerDialog(context, customer);
             },
           ),
@@ -920,7 +920,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(
                     fontWeight: FontWeight.bold, color: AppColors.red)),
             onTap: () {
-              Navigator.pop(ctx);
+              material.Navigator.pop(ctx);
               _confirmDeleteCustomer(context, provider,
                   int.parse(customer['id'].toString()));
             },
@@ -1002,7 +1002,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 child:
                     const Text('إلغاء', style: TextStyle(color: Colors.grey))),
             ElevatedButton(
@@ -1019,7 +1019,7 @@ class _HomeScreenState extends State<HomeScreen>
                     selectedCurrency,
                     selectedCat,
                   );
-                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (ctx.mounted) material.Navigator.pop(ctx);
                 } catch (e) {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
@@ -1051,14 +1051,14 @@ class _HomeScreenState extends State<HomeScreen>
         content: const Text('هل أنت متأكد من عملية الحذف؟'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => material.Navigator.pop(ctx),
               child:
                   const Text('إلغاء', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () async {
               final ok = await provider.deleteCustomer(id);
-              if (ctx.mounted) Navigator.pop(ctx);
+              if (ctx.mounted) material.Navigator.pop(ctx);
               if (!ok && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('لا يمكن حذف حساب يحتوي على عمليات. احذف الحساب فقط بعد إزالة عملياته أو احتفظ به للأرشفة.'),
@@ -1134,7 +1134,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => material.Navigator.pop(ctx),
                 child:
                     const Text('إلغاء', style: TextStyle(color: Colors.grey))),
             ElevatedButton(
@@ -1145,7 +1145,7 @@ class _HomeScreenState extends State<HomeScreen>
                 if (nameCtrl.text.trim().isNotEmpty) {
                   provider.addCustomer(nameCtrl.text.trim(),
                       phoneCtrl.text.trim(), selectedCurrency, selectedCat);
-                  Navigator.pop(ctx);
+                  material.Navigator.pop(ctx);
                 }
               },
               child: const Text('حفظ'),
