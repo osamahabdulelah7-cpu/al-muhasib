@@ -898,27 +898,59 @@ class AutoBackupService {
 
   // Safety snapshots for restore must not depend on an optional SD-card or
   // shared-folder destination being mounted and writable.
+  static const String _prefRestoreSafetyPath = 'restore_safety_backup_path';
+
   static Future<String?> runInternalBackupNow() async {
     try {
-      // A restore safety snapshot must not advance the user's daily schedule
-      // or clear a pending SD-card error. Build and verify it independently.
       await AppDBHelper.instance.syncPersonalDataToDatabase();
       try {
-        await (await AppDBHelper.instance.database)
-            .rawQuery('PRAGMA wal_checkpoint(FULL)');
+        await (await AppDBHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
       } catch (_) {}
       final internalDir = await internalBackupDirectory();
-      final safetyBundle =
-          await BackupBundleService.createBundle(outputDirectory: internalDir);
+      final previousPath = (await SharedPreferences.getInstance()).getString(_prefRestoreSafetyPath);
+      final safetyBundle = await BackupBundleService.createBundle(
+        outputDirectory: internalDir,
+        namePrefix: 'restore_safety_',
+      );
       if (!await BackupBundleService.verifyBundle(safetyBundle)) {
         try { await safetyBundle.delete(); } catch (_) {}
-        throw Exception('فشل التحقق من نسخة الأمان الداخلية');
+        throw Exception('فشل التحقق من نسخة الأمان قبل الاستعادة');
       }
-      await _cleanOldLocalBackups(internalDir.path);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefRestoreSafetyPath, safetyBundle.path);
+      // Remove the prior safety copy only after its replacement is verified
+      // and registered. Ordinary retention never touches restore_safety_ files.
+      if (previousPath != null && previousPath != safetyBundle.path) {
+        try {
+          final previous = File(previousPath);
+          if (await previous.exists()) await previous.delete();
+        } catch (e) {
+          debugPrint('تعذر حذف نسخة الأمان السابقة بعد تجهيز البديل: $e');
+        }
+      }
       return null;
     } catch (e, st) {
-      debugPrint('فشل إنشاء نسخة الأمان الداخلية: $e\n$st');
-      return 'تعذر إنشاء نسخة الأمان الداخلية: $e';
+      debugPrint('فشل إنشاء نسخة الأمان الداخلية: $e\\n$st');
+      return 'تعذر إنشاء نسخة أمان سليمة؛ أُلغيت الاستعادة: $e';
+    }
+  }
+
+  static Future<String?> rollbackLastRestore() async {
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString(_prefRestoreSafetyPath);
+    if (path == null || path.isEmpty) return 'لا توجد نسخة أمان للتراجع عن آخر استعادة.';
+    final safetyFile = File(path);
+    try {
+      if (!await BackupBundleService.verifyBundle(safetyFile)) {
+        return 'نسخة الأمان غير موجودة أو تالفة؛ لم تتغير البيانات.';
+      }
+      await BackupBundleService.restoreBundle(safetyFile);
+      await prefs.remove(_prefRestoreSafetyPath);
+      try { if (await safetyFile.exists()) await safetyFile.delete(); } catch (_) {}
+      return null;
+    } catch (e, st) {
+      debugPrint('فشل التراجع عن آخر استعادة: $e\\n$st');
+      return 'تعذر التراجع عن آخر استعادة: $e';
     }
   }
 
