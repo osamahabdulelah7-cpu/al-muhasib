@@ -760,6 +760,39 @@ class AutoBackupService {
     }
   }
 
+  /// Keep the latest five instant snapshots in Drive independently from scheduled snapshots.
+  static Future<void> cleanOldInstantDriveBackups() async {
+    try {
+      final backups = await GoogleDriveService.listBackups();
+      if (GoogleDriveService.lastListBackupsError != null) {
+        throw Exception(GoogleDriveService.lastListBackupsError);
+      }
+      final snapshots = backups.where((b) {
+        final name = (b['name'] as String?) ?? '';
+        return (name.startsWith('GO_al_muhasib_') ||
+                name.startsWith('GO_al_muhasib(')) &&
+            p.extension(name).toLowerCase() == '.alb';
+      }).toList()
+        ..sort((a, b) {
+          final aTime = (a['createdTime'] as String?)?.trim() ?? '';
+          final bTime = (b['createdTime'] as String?)?.trim() ?? '';
+          final aKey = aTime.isNotEmpty ? aTime : (a['name'] as String? ?? '');
+          final bKey = bTime.isNotEmpty ? bTime : (b['name'] as String? ?? '');
+          return bKey.compareTo(aKey);
+        });
+      for (final old in snapshots.skip(5)) {
+        final id = old['id'] as String? ?? '';
+        if (id.isNotEmpty) {
+          final deleted = await GoogleDriveService.deleteBackup(id);
+          if (!deleted) debugPrint('تعذر حذف نسخة Drive فورية قديمة: ${old['name']}');
+        }
+      }
+    } catch (e) {
+      // Never treat a failed listing as an empty folder and delete nothing.
+      debugPrint('تعذر تنظيف النسخ الفورية القديمة على Drive: $e');
+    }
+  }
+
   static Future<void> _cleanOldDriveBackups() async {
     try {
       final backups = await GoogleDriveService.listBackups();
