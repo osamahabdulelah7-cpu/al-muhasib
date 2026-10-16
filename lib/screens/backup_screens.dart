@@ -982,7 +982,6 @@ Widget build(BuildContext context) {
           ),
         ),
         const Divider(height: 1),
-        const Divider(height: 1),
         SwitchListTile(
           value: _instantEnabled,
           activeColor: AppColors.green,
@@ -997,16 +996,6 @@ Widget build(BuildContext context) {
             if (!mounted) return;
             setState(() => _instantEnabled = value);
           },
-        ),
-        Container(
-          color: Colors.white,
-          child: ListTile(
-            leading: const Icon(Icons.flash_on, color: AppColors.green, size: 26),
-            title: const Text('عدد النسخ الفورية',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-            subtitle: Text('$_instantBackupCount / 5 ملف',
-                style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
-          ),
         ),
         Container(
           color: Colors.white,
