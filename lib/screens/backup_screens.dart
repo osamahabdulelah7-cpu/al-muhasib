@@ -84,7 +84,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   String? _userEmail;
   bool _loading = true;
   bool _hasExactAlarm = false;
-  bool _scheduledTimeEnabled = true;
 
   @override
   void initState() {
@@ -122,7 +121,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _signedIn = signedIn;
       _userEmail = GoogleDriveService.userEmail;
       _hasExactAlarm = hasExact;
-      _scheduledTimeEnabled = settings['scheduledTimeEnabled'] == true;
       _loading = false;
     });
   }
@@ -133,12 +131,10 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
     await AutoBackupService.saveSettings(
       enabled: value,
-      scheduledTimeEnabled: value,
     );
     if (!mounted) return;
     setState(() {
       _enabled = value;
-      _scheduledTimeEnabled = value;
     });
     // The scheduler is shared by local and Drive backups. Disabling one
     // destination must not cancel jobs still needed by the other.
@@ -781,30 +777,6 @@ Widget build(BuildContext context) {
                     color: AppColors.primary)),
           ]),
         ),
-        Container(
-          color: Colors.white,
-          child: SwitchListTile(
-            value: _enabled,
-            onChanged: _toggleEnabled,
-            activeColor: const Color(0xFF1976D2),
-            tileColor: Colors.white,
-            secondary: Container(
-              width: 45,
-              height: 45,
-              decoration: const BoxDecoration(
-                  color: Color(0xFFFFEBEE), shape: BoxShape.circle),
-              child: const Icon(Icons.alarm, color: Colors.red, size: 26),
-            ),
-            title: const Text('النسخ التلقائي للهاتف',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark)),
-            subtitle: const Text(
-                'نسخ تلقائي إلى مجلد حفظ البيانات عند تفعيل الجدولة',
-                style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
-          ),
-        ),
         const Divider(height: 1),
         Container(
           color: Colors.white,
@@ -869,47 +841,29 @@ Widget build(BuildContext context) {
             },
           ),
         ),
-        const Divider(height: 1),
-        SwitchListTile(
-          value: _instantEnabled,
-          activeColor: AppColors.green,
-          tileColor: Colors.white,
-          secondary: const Icon(Icons.flash_on, color: AppColors.green, size: 28),
-          title: const Text('النسخ الفوري عند تعديل البيانات',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
-          subtitle: const Text('مستقل عن النسخ التلقائي ويستخدم مجلد الحفظ نفسه',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          onChanged: (value) async {
-            await InstantBackupService.setEnabled(value);
-            if (!mounted) return;
-            setState(() => _instantEnabled = value);
-          },
-        ),
         Container(
           color: Colors.white,
-          child: ListTile(
-            leading: const Icon(Icons.flash_on, color: AppColors.green, size: 26),
-            title: const Text('عدد النسخ الفورية',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-            subtitle: Text('$_instantBackupCount / 5 ملف',
-                style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
+          child: SwitchListTile(
+            value: _enabled,
+            onChanged: _toggleEnabled,
+            activeColor: const Color(0xFF1976D2),
+            tileColor: Colors.white,
+            secondary: Container(
+              width: 45,
+              height: 45,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFEBEE), shape: BoxShape.circle),
+              child: const Icon(Icons.alarm, color: Colors.red, size: 26),
+            ),
+            title: const Text('النسخ التلقائي للهاتف',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark)),
+            subtitle: const Text(
+                'نسخ تلقائي إلى مجلد حفظ البيانات عند تفعيل الجدولة',
+                style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
           ),
-        ),
-        const Divider(height: 1),
-        SwitchListTile(
-          value: _scheduledTimeEnabled,
-          activeColor: const Color(0xFF1976D2),
-          tileColor: Colors.white,
-          secondary: const Icon(Icons.schedule, color: Color(0xFF1976D2), size: 28),
-          title: const Text('تفعيل تحديد وقت النسخ',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
-          subtitle: const Text('تشغيل أو إيقاف النسخ المرتبط بالوقت المحدد', style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
-          onChanged: _enabled ? (value) async {
-            await AutoBackupService.saveSettings(scheduledTimeEnabled: value);
-            if (!mounted) return;
-            setState(() => _scheduledTimeEnabled = value);
-            await AutoBackupService.scheduleDailyBackup();
-          } : null,
         ),
         Container(
           color: Colors.white,
@@ -936,8 +890,6 @@ Widget build(BuildContext context) {
             onTap: _pickTime,
           ),
         ),
-        const Divider(height: 1),
-        const Divider(height: 1),
         if (_enabled && !_hasExactAlarm)
           Container(
             color: Colors.orange.shade50,
@@ -1026,6 +978,43 @@ Widget build(BuildContext context) {
             subtitle: Text('$_backupCount / 5 ملف',
                 style: const TextStyle(
                     fontSize: 13, color: AppColors.textMuted)),
+          ),
+        ),
+        const Divider(height: 1),
+        const Divider(height: 1),
+        SwitchListTile(
+          value: _instantEnabled,
+          activeColor: AppColors.green,
+          tileColor: Colors.white,
+          secondary: const Icon(Icons.flash_on, color: AppColors.green, size: 28),
+          title: const Text('النسخ الفوري عند تعديل البيانات',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          subtitle: const Text('مستقل عن النسخ التلقائي ويستخدم مجلد الحفظ نفسه',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+          onChanged: (value) async {
+            await InstantBackupService.setEnabled(value);
+            if (!mounted) return;
+            setState(() => _instantEnabled = value);
+          },
+        ),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: const Icon(Icons.flash_on, color: AppColors.green, size: 26),
+            title: const Text('عدد النسخ الفورية',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+            subtitle: Text('$_instantBackupCount / 5 ملف',
+                style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
+          ),
+        ),
+        Container(
+          color: Colors.white,
+          child: ListTile(
+            leading: const Icon(Icons.flash_on, color: AppColors.green, size: 26),
+            title: const Text('عدد النسخ الفورية',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+            subtitle: Text('$_instantBackupCount / 5 ملف',
+                style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
           ),
         ),
         const SizedBox(height: 20),
