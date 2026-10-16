@@ -131,6 +131,7 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
     await AutoBackupService.saveSettings(
       enabled: value,
+      scheduledTimeEnabled: value,
     );
     if (!mounted) return;
     setState(() {
@@ -868,7 +869,7 @@ Widget build(BuildContext context) {
         Container(
           color: Colors.white,
           child: ListTile(
-            enabled: _enabled && _scheduledTimeEnabled,
+            enabled: _enabled,
             leading: Container(
               width: 45,
               height: 45,
