@@ -1164,46 +1164,6 @@ class ExcelImportGuideScreen extends StatelessWidget {
   final VoidCallback onImport;
   const ExcelImportGuideScreen({super.key, required this.onImport});
 
-  Future<void> _shareTemplate({
-    required BuildContext context,
-    required List<String> headers,
-    required String fileName,
-    required String sheetName,
-    String? accountTitle,
-  }) async {
-    try {
-      final workbook = excel_lib.Excel.createExcel();
-      final sheet = workbook[sheetName];
-      if (accountTitle != null) {
-        sheet.appendRow([excel_lib.TextCellValue(accountTitle)]);
-      }
-      sheet.appendRow(headers.map((value) => excel_lib.TextCellValue(value)).toList());
-      for (var row = 0; row < 15; row++) {
-        sheet.appendRow(List<excel_lib.CellValue?>.generate(
-          headers.length,
-          (_) => excel_lib.TextCellValue(''),
-        ));
-      }
-      final bytes = workbook.encode();
-      if (bytes == null) throw Exception('تعذر إنشاء ملف Excel');
-      final directory = await getTemporaryDirectory();
-      final file = File(p.join(directory.path, fileName));
-      await file.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
-        text: 'نموذج Excel فارغ جاهز للتعبئة والاستيراد في تطبيق المحاسب',
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تعذر تجهيز نموذج Excel: $error'),
-          backgroundColor: AppColors.red,
-        ),
-      );
-    }
-  }
-
   Widget _templateCard({
     required BuildContext context,
     required String title,
