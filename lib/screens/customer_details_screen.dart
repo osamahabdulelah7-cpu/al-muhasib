@@ -1774,7 +1774,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: rightItems,
+                    children: leftItems,
                   ),
                 ),
                 pw.SizedBox(
@@ -1799,7 +1799,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: leftItems,
+                    children: rightItems,
                   ),
                 ),              ],
             ),
