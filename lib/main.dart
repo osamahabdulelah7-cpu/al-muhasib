@@ -15,10 +15,11 @@ import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:arabic_pdf_fixer/arabic_pdf_fixer.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:saf/saf.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:excel/excel.dart' as excel_lib;
+import 'package:excel_community/excel_community.dart' as excel_lib;
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:archive/archive.dart';
@@ -31,43 +32,6 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-
-// Lightweight compatibility layer for Arabic PDF text using the bundled Cairo font.
-// Keep the PDF package on a version compatible with excel 4.0.6.
-class ShapedFont {
-  final pw.Font font;
-  const ShapedFont(this.font);
-
-  factory ShapedFont.fromBytes(Uint8List bytes, {required String name}) {
-    return ShapedFont(pw.Font.ttf(ByteData.sublistView(bytes)));
-  }
-}
-
-class ArabicText extends pw.StatelessWidget {
-  final String text;
-  final ShapedFont font;
-  final double fontSize;
-  final PdfColor color;
-  final pw.TextAlign textAlign;
-
-  ArabicText(
-    this.text, {
-    required this.font,
-    required this.fontSize,
-    required this.color,
-    required this.textAlign,
-  });
-
-  @override
-  pw.Widget build(pw.Context context) {
-    return pw.Text(
-      text,
-      style: pw.TextStyle(font: font.font, fontSize: fontSize, color: color),
-      textAlign: textAlign,
-      textDirection: pw.TextDirection.rtl,
-    );
-  }
-}
 
 part 'services/common_services.dart';
 part 'services/backup_services.dart';
