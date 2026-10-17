@@ -1427,14 +1427,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final dataStyle = excel_lib.CellStyle(
         horizontalAlign: excel_lib.HorizontalAlign.Center,
         verticalAlign: excel_lib.VerticalAlign.Center,
-        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##;[Red]-#,##0.##;0'),
+        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
         topBorder: border, bottomBorder: border,
         leftBorder: border, rightBorder: border);
       final totalStyle = excel_lib.CellStyle(
         bold: true, fontColorHex: blue,
         horizontalAlign: excel_lib.HorizontalAlign.Center,
         verticalAlign: excel_lib.VerticalAlign.Center,
-        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##;[Red]-#,##0.##;0'),
+        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
         topBorder: strongBorder, bottomBorder: strongBorder,
         leftBorder: border, rightBorder: border);
 
