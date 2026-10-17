@@ -28,7 +28,6 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:workmanager/workmanager.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -77,7 +76,6 @@ void main() {
 
     try {
       await Workmanager().initialize(callbackDispatcher);
-      await AndroidAlarmManager.initialize();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
     }
@@ -98,9 +96,7 @@ void main() {
       await Future.delayed(const Duration(seconds: 2));
       await AutoBackupService.checkAndRunBackup();
       await AutoBackupService.checkAndRunDriveBackup();
-      // Always reconcile persisted WorkManager/alarm state on startup.
-      // If both destinations are disabled, this cancels stale queued work too.
-      // If either is enabled, it registers the shared schedule once.
+      // Reconcile the persisted WorkManager schedule on startup.
       await AutoBackupService.scheduleDailyBackup();
     } catch (e, st) {
       debugPrint('⚠️ تعذر تشغيل مهام النسخ الاحتياطي عند بدء التطبيق: $e\n$st');
