@@ -26,7 +26,6 @@ class AutoBackupService {
   static const String _workManagerUniqueName = 'al_muhasib_backup_unique';
   static const String _workManagerTimedTaskName = 'al_muhasib_backup_at_time';
   static const String _workManagerTimedUniqueName = 'al_muhasib_backup_at_time_unique';
-  static const int _exactAlarmId = 7042026;
   static const String workManagerExitTaskName = 'al_muhasib_backup_on_exit';
   static const String _workManagerExitUniqueName = 'al_muhasib_backup_on_exit_unique';
   static const String _prefLastExitEnqueuedAt = 'auto_backup_exit_enqueued_at';
@@ -165,7 +164,6 @@ class AutoBackupService {
     if (!localEnabled && !driveEnabled) {
       await Workmanager().cancelByUniqueName(_workManagerUniqueName);
       await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
-      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
       return;
     }
     // تكرار النسخ الدوري أُلغي من التطبيق؛ احتفظ فقط بالجدولة المحددة.
@@ -173,102 +171,11 @@ class AutoBackupService {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefRepeatEnabled, false);
-    var exactScheduled = false;
-    try {
-      exactScheduled = await _scheduleNextExactBackup(requestPermission: true);
-    } catch (e) {
-      debugPrint('تعذر جدولة المنبّه: $e');
-    }
-    if (!exactScheduled) {
-      try {
-        await _scheduleNextTimedBackup(replacePending: true);
-      } catch (e) {
-        debugPrint('تعذر جدولة WorkManager one-off: $e');
-      }
-    } else {
-      await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
-    }
+    await _scheduleNextTimedBackup(replacePending: true);
   }
 
-  static Future<bool> _scheduleNextExactBackup({bool requestPermission = false}) async {
-    final settings = await getSettings();
-    final now = DateTime.now();
-    final targets = <DateTime>[];
-    void addTarget(bool enabled, int hour, int minute, String lastText) {
-      if (!enabled) return;
-      final target = DateTime(now.year, now.month, now.day, hour, minute);
-      final last = DateTime.tryParse(lastText);
-      final doneToday = last != null && !last.isBefore(target) && !last.isAfter(now);
-      if (now.isBefore(target)) {
-        targets.add(target);
-      } else if (!doneToday) {
-        targets.add(now.add(const Duration(minutes: 1)));
-      } else {
-        targets.add(target.add(const Duration(days: 1)));
-      }
-    }
-    addTarget(settings['enabled'] == true && settings['scheduledTimeEnabled'] == true, settings['hour'] as int,
-        settings['minute'] as int, settings['lastBackup'] as String? ?? '');
-    addTarget(settings['driveEnabled'] == true && settings['scheduledTimeEnabled'] == true, settings['driveHour'] as int,
-        settings['driveMinute'] as int, settings['driveLastBackup'] as String? ?? '');
-    if (targets.isEmpty) {
-      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
-      return false;
-    }
-    targets.sort();
-    final canSchedule = await ensureExactAlarmPermission(requestPermission: requestPermission);
-    if (!canSchedule) {
-      try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
-      return false;
-    }
-    try {
-      final scheduled = await AndroidAlarmManager.oneShotAt(
-        targets.first, _exactAlarmId, exactBackupAlarmCallback,
-        exact: true, wakeup: true, allowWhileIdle: true, rescheduleOnReboot: true,
-      );
-      if (!scheduled) return false;
-      debugPrint('✅ تم تسجيل منبّه النسخ عند ${targets.first}');
-      return true;
-    } catch (e, st) {
-      debugPrint('خطأ في المنبّه الدقيق: $e\n$st');
-      return false;
-    }
-  }
-
-  static Future<bool> ensureExactAlarmPermission({bool requestPermission = false}) async {
-    try {
-      final status = await Permission.scheduleExactAlarm.status;
-      if (status.isGranted) return true;
-      if (!requestPermission) return false;
-      final requested = await Permission.scheduleExactAlarm.request();
-      if (requested.isGranted) return true;
-      if (requested.isPermanentlyDenied) {
-        try { await openAppSettings(); } catch (_) {}
-      }
-      return false;
-    } catch (e) {
-      debugPrint('خطأ في صلاحية Exact Alarm: $e');
-      return false;
-    }
-  }
-
-  static Future<bool> requestExactAlarmPermissionFromUI() async {
-    final granted = await ensureExactAlarmPermission(requestPermission: true);
-    if (granted) await scheduleDailyBackup();
-    return granted;
-  }
-
-  static Future<bool> hasExactAlarmPermission() async {
-    try {
-      final status = await Permission.scheduleExactAlarm.status;
-      return status.isGranted;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // Periodic work is best-effort. Add a one-off request aimed at the next
-  // configured time, keeping the periodic worker as a fallback.
+  // WorkManager schedules a one-off task for the next configured backup time.
+  // Android may defer execution to optimize battery usage.
   static Future<void> _scheduleNextTimedBackup({bool replacePending = false}) async {
     final settings = await getSettings();
     final now = DateTime.now();
@@ -358,7 +265,6 @@ class AutoBackupService {
     await Workmanager().cancelByUniqueName(_workManagerUniqueName);
     await Workmanager().cancelByUniqueName(_workManagerTimedUniqueName);
     await Workmanager().cancelByUniqueName(_workManagerExitUniqueName);
-    try { await AndroidAlarmManager.cancel(_exactAlarmId); } catch (_) {}
     await NotificationService.cancelLocalNotification();
     await NotificationService.cancelDriveNotification();
     debugPrint('تم إلغاء جميع مهام النسخ المحلية وDrive المجدولة');
