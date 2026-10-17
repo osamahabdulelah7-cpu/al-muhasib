@@ -15,7 +15,7 @@ class AppDBHelper {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, filePath),
-      version: 10,
+      version: 11,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
       onConfigure: (db) async {
@@ -378,7 +378,7 @@ class AppDBHelper {
     try {
       stagedDb = await openDatabase(
         staged.path,
-        version: 10,
+        version: 11,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
@@ -405,7 +405,7 @@ class AppDBHelper {
       }
       _db = await openDatabase(
         path,
-        version: 10,
+        version: 11,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
@@ -432,7 +432,7 @@ class AppDBHelper {
         await safety.rename(path);
         _db = await openDatabase(
           path,
-          version: 10,
+          version: 11,
           onCreate: _createDB,
           onUpgrade: _upgradeDB,
           onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
