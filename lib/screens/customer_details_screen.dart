@@ -1567,8 +1567,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   // ============ PDF محسّن مع حذف تلقائي ============
   Future<void> _exportToPdf(List<Map<String, dynamic>> txs, double totalGive,
       double totalTake, double finalBal, {bool shareFile = false}) async {
-    ShapedFont? shapedFontRegular;
-    ShapedFont? shapedFontBold;
+    ShapedFont? ownedShapedFontRegular;
+    ShapedFont? ownedShapedFontBold;
     if (mounted) {
       showDialog(
         context: context,
@@ -1597,14 +1597,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final fontBold = pw.Font.ttf(fontDataBold);
 
       // Shape Arabic table text with HarfBuzz while preserving original Unicode.
-      shapedFontRegular = ShapedFont.fromBytes(
+      final shapedFontRegular = ShapedFont.fromBytes(
         fontDataRegular.buffer.asUint8List(),
         name: 'Cairo Regular',
       );
-      shapedFontBold = ShapedFont.fromBytes(
+      final shapedFontBold = ShapedFont.fromBytes(
         fontDataBold.buffer.asUint8List(),
         name: 'Cairo Bold',
       );
+      ownedShapedFontRegular = shapedFontRegular;
+      ownedShapedFontBold = shapedFontBold;
 
       final personalData = await PersonalDataService.getData();
       final logoBase64 = await PersonalDataService.getLogoBase64();
@@ -1922,8 +1924,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     } finally {
       // ShapedFont owns native HarfBuzz resources; always release them,
       // including when PDF generation or file sharing fails.
-      shapedFontRegular?.dispose();
-      shapedFontBold?.dispose();
+      ownedShapedFontRegular?.dispose();
+      ownedShapedFontBold?.dispose();
     }
   }
 
