@@ -1594,6 +1594,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
       final fontBold = pw.Font.ttf(fontDataBold);
 
+      // Shape Arabic table text with HarfBuzz while preserving original Unicode.
+      final shapedFontRegular = ShapedFont.fromBytes(
+        fontDataRegular.buffer.asUint8List(),
+        name: 'Cairo Regular',
+      );
+      final shapedFontBold = ShapedFont.fromBytes(
+        fontDataBold.buffer.asUint8List(),
+        name: 'Cairo Bold',
+      );
+
       final personalData = await PersonalDataService.getData();
       final logoBase64 = await PersonalDataService.getLogoBase64();
       final logoShape = personalData['logoShape'] as String;
@@ -1675,11 +1685,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             : (newFinalBal > 0 ? greenTotal : black);
 
         dataRows.add(pw.TableRow(children: [
-          _pdfCell(balStr, fontBold, 12, balanceNumberColor),
-          _pdfCell(isGive ? formatNumber(amt) : '-', fontBold, 12, isGive ? greenTotal : black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), fontBold, 12, isGive ? black : redTotal),
-          _pdfCell((tx['details'] ?? '').toString(), fontRegular, 12, black),
-          _pdfCell(dateOnly, fontRegular, 12, black),
+          _pdfCell(balStr, shapedFontBold, 12, balanceNumberColor),
+          _pdfCell(isGive ? formatNumber(amt) : '-', shapedFontBold, 12, isGive ? greenTotal : black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), shapedFontBold, 12, isGive ? black : redTotal),
+          _pdfCell((tx['details'] ?? '').toString(), shapedFontRegular, 12, black),
+          _pdfCell(dateOnly, shapedFontRegular, 12, black),
         ]));
       }
 
@@ -1791,11 +1801,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.TableRow(
                   decoration: pw.BoxDecoration(color: headerBg),
                   children: [
-                    _pdfCell('الرصيد', fontBold, 12, black),
-                    _pdfCell('له', fontBold, 12, black),
-                    _pdfCell('عليه', fontBold, 12, black),
-                    _pdfCell('التفاصيل', fontBold, 12, black),
-                    _pdfCell('التاريخ', fontBold, 12, black),
+                    _pdfCell('الرصيد', shapedFontBold, 12, black),
+                    _pdfCell('له', shapedFontBold, 12, black),
+                    _pdfCell('عليه', shapedFontBold, 12, black),
+                    _pdfCell('التفاصيل', shapedFontBold, 12, black),
+                    _pdfCell('التاريخ', shapedFontBold, 12, black),
                   ],
                 ),
               ],
@@ -1847,29 +1857,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: totalBg),
                 children: [
-                  _pdfCell('', fontBold, 14, black),
-                  _pdfCell(formatNumber(newTotalGive), fontBold, 14, greenTotal),
-                  _pdfCell(formatNumber(newTotalTake), fontBold, 14, redTotal),
-                  _pdfCell('إجمالي العمليات', fontBold, 14, black),
-                  _pdfCell('', fontBold, 14, black),
+                  _pdfCell('', shapedFontBold, 14, black),
+                  _pdfCell(formatNumber(newTotalGive), shapedFontBold, 14, greenTotal),
+                  _pdfCell(formatNumber(newTotalTake), shapedFontBold, 14, redTotal),
+                  _pdfCell('إجمالي العمليات', shapedFontBold, 14, black),
+                  _pdfCell('', shapedFontBold, 14, black),
                 ],
               ),
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: balanceRowColor),
                 children: [
-                  _pdfCell('', fontBold, 14, black),
+                  _pdfCell('', shapedFontBold, 14, black),
                   _pdfCell(
                       !isOnHim ? formatNumber(balanceValue) : '',
-                      fontBold,
+                      shapedFontBold,
                       14,
                       !isOnHim ? greenTotal : black),
                   _pdfCell(
                       isOnHim ? formatNumber(balanceValue) : '',
-                      fontBold,
+                      shapedFontBold,
                       14,
                       isOnHim ? redTotal : black),
-                  _pdfCell(balanceText, fontBold, 14, black),
-                  _pdfCell('', fontBold, 14, black),
+                  _pdfCell(balanceText, shapedFontBold, 14, black),
+                  _pdfCell('', shapedFontBold, 14, black),
                 ],
               ),
             ],
@@ -1913,17 +1923,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   pw.Widget _pdfCell(
-      String text, pw.Font font, double size, PdfColor color) {
+      String text, ShapedFont font, double size, PdfColor color) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(5),
-      child: pw.Text(text,
-          style: pw.TextStyle(
-              font: font,
-              fontSize: size,
-              color: color,
-              fontWeight: pw.FontWeight.bold),
-          textAlign: pw.TextAlign.center,
-          textDirection: pw.TextDirection.rtl),
+      child: ArabicText(
+        text,
+        font: font,
+        fontSize: size,
+        color: color,
+        textAlign: pw.TextAlign.center,
+      ),
     );
   }
 
