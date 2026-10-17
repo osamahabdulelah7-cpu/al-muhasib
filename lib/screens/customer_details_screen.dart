@@ -1669,11 +1669,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final lightRed = PdfColor.fromHex("#FFE0E0");
       final black = PdfColors.black;
 
-      final List<pw.TableRow> dataRows = [];
+      // Build the PDF in bounded chunks instead of retaining every TableRow
+      // and then copying the entire row list into sublists.
+      const int rowsPerPdfTable = 100;
+      final List<pw.Widget> dataTables = [];
+      var chunkRows = <pw.TableRow>[];
       double newFinalBal = 0;
       double newTotalGive = 0;
       double newTotalTake = 0;
-      for (var tx in txs) {
+
+      for (final tx in txs) {
         final bool isGive = tx['type'] == 'give';
         final double amt = (tx['amount'] as num).toDouble();
         if (isGive) {
@@ -1683,43 +1688,44 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           newFinalBal -= amt;
           newTotalTake += amt;
         }
+
         String dateOnly = tx['date'].toString().split(' ').first;
         try {
           final dt = DateTime.parse(tx['date'].toString());
           dateOnly =
-              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+              '\${dt.year}-\${dt.month.toString().padLeft(2, '0')}-\${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
-
-        final String balStr = formatNumber(newFinalBal.abs());
 
         final PdfColor balanceNumberColor = newFinalBal < 0
             ? redTotal
             : (newFinalBal > 0 ? greenTotal : black);
 
-        dataRows.add(pw.TableRow(children: [
-          _pdfCell(balStr, shapedFontBold, 12, balanceNumberColor),
-          _pdfCell(isGive ? formatNumber(amt) : '-', shapedFontBold, 12, isGive ? greenTotal : black),
-          _pdfCell(isGive ? '-' : formatNumber(amt), shapedFontBold, 12, isGive ? black : redTotal),
+        // Only the balance column is colored. "له" and "عليه" remain black.
+        chunkRows.add(pw.TableRow(children: [
+          _pdfCell(formatNumber(newFinalBal.abs()), shapedFontBold, 12, balanceNumberColor),
+          _pdfCell(isGive ? formatNumber(amt) : '-', shapedFontBold, 12, black),
+          _pdfCell(isGive ? '-' : formatNumber(amt), shapedFontBold, 12, black),
           _pdfCell((tx['details'] ?? '').toString(), shapedFontRegular, 12, black),
           _pdfCell(dateOnly, shapedFontRegular, 12, black),
         ]));
+
+        if (chunkRows.length == rowsPerPdfTable) {
+          dataTables.add(pw.Table(
+            border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(1.8),
+              1: const pw.FlexColumnWidth(1.8),
+              2: const pw.FlexColumnWidth(1.8),
+              3: const pw.FlexColumnWidth(3.5),
+              4: const pw.FlexColumnWidth(2.2),
+            },
+            children: chunkRows,
+          ));
+          chunkRows = <pw.TableRow>[];
+        }
       }
 
-      final double balanceDiff = newTotalGive - newTotalTake;
-      final String balanceText = balanceDiff == 0
-          ? 'الرصيد الإجمالي'
-          : (balanceDiff > 0 ? 'الرصيد الإجمالي - له' : 'الرصيد الإجمالي - عليه');
-      final double balanceValue = balanceDiff.abs();
-      final bool isOnHim = balanceDiff < 0;
-      final PdfColor balanceRowColor = balanceDiff < 0 ? lightRed : lightGreen;
-
-      // Split the large statement into smaller tables to reduce layout work per table.
-      const int rowsPerPdfTable = 100;
-      final List<pw.Widget> dataTables = [];
-      for (var start = 0; start < dataRows.length; start += rowsPerPdfTable) {
-        final end = (start + rowsPerPdfTable < dataRows.length)
-            ? start + rowsPerPdfTable
-            : dataRows.length;
+      if (chunkRows.isNotEmpty) {
         dataTables.add(pw.Table(
           border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
           columnWidths: {
@@ -1729,9 +1735,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             3: const pw.FlexColumnWidth(3.5),
             4: const pw.FlexColumnWidth(2.2),
           },
-          children: dataRows.sublist(start, end),
+          children: chunkRows,
         ));
       }
+
+      final double balanceDiff = newTotalGive - newTotalTake;
+      final String balanceText = balanceDiff == 0
+          ? 'الرصيد الإجمالي'
+          : (balanceDiff > 0 ? 'الرصيد الإجمالي - له' : 'الرصيد الإجمالي - عليه');
+      final double balanceValue = balanceDiff.abs();
+      final bool isOnHim = balanceDiff < 0;
+      final PdfColor balanceRowColor = balanceDiff < 0 ? lightRed : lightGreen;
 
       pw.Widget buildHeader() {
         final rightItems = <pw.Widget>[];
