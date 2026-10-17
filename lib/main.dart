@@ -15,7 +15,6 @@ import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:pdf_text_shaper/pdf_text_shaper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:saf/saf.dart';
 import 'package:share_plus/share_plus.dart';
