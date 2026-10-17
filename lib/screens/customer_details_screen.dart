@@ -1789,7 +1789,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 // in the right column and the left-side data in the left column.
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    // In RTL, start is the far-right edge: keep the personal
+                    // information anchored to the page's right margin.
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: rightItems,
                   ),
                 ),
@@ -1814,7 +1816,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ),
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: leftItems,
                   ),
                 ),
