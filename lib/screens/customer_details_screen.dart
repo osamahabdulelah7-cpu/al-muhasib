@@ -1715,7 +1715,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               font: i == 1 ? shapedFontBold : shapedFontRegular,
               fontSize: size,
               color: PdfColor.fromHex(colorHex),
-              textAlign: pw.TextAlign.right,
+              align: ShapedTextAlign.end,
             ));
           }
 
@@ -1728,7 +1728,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               font: i == 1 ? shapedFontBold : shapedFontRegular,
               fontSize: size,
               color: PdfColor.fromHex(colorHex),
-              textAlign: pw.TextAlign.right,
+              align: ShapedTextAlign.end,
             ));
           }
         }
@@ -1780,7 +1780,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 font: shapedFontBold,
                 fontSize: 14,
                 color: darkBlue,
-                textAlign: pw.TextAlign.center,
+                align: ShapedTextAlign.center,
               ),
             ),
             pw.SizedBox(height: 6),
@@ -1826,7 +1826,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       font: shapedFontRegular,
                       fontSize: 10,
                       color: black,
-                      textAlign: pw.TextAlign.right),
+                      align: ShapedTextAlign.end),
                   pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
                       style: pw.TextStyle(
                           font: fontRegular, fontSize: 10, color: black),
@@ -1835,7 +1835,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       font: shapedFontRegular,
                       fontSize: 10,
                       color: black,
-                      textAlign: pw.TextAlign.right),
+                      align: ShapedTextAlign.end),
                 ]),
           ]),
         ),
@@ -1929,7 +1929,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         font: font,
         fontSize: size,
         color: color,
-        textAlign: pw.TextAlign.center,
+        align: ShapedTextAlign.center,
       ),
     );
   }
