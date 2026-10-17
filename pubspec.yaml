@@ -19,7 +19,8 @@ dependencies:
   path: ^1.8.3
   url_launcher: ^6.2.1
 
-  pdf: ^3.10.7
+  pdf: ^3.13.0
+  pdf_text_shaper: ^1.1.0
   printing: ^5.11.1
 
   file_picker: ^8.0.0
