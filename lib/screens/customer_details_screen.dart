@@ -1455,16 +1455,33 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final dataStyle = excel_lib.CellStyle(
         horizontalAlign: excel_lib.HorizontalAlign.Center,
         verticalAlign: excel_lib.VerticalAlign.Center,
-        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
         topBorder: border, bottomBorder: border,
         leftBorder: border, rightBorder: border);
       final totalStyle = excel_lib.CellStyle(
         bold: true, fontColorHex: blue,
         horizontalAlign: excel_lib.HorizontalAlign.Center,
         verticalAlign: excel_lib.VerticalAlign.Center,
-        numberFormat: excel_lib.NumFormat.custom(formatCode: '#,##0.##'),
         topBorder: strongBorder, bottomBorder: strongBorder,
         leftBorder: border, rightBorder: border);
+
+      // Use a format without a decimal separator for whole numbers. Some
+      // spreadsheet viewers display a trailing point with '#,##0.##'.
+      excel_lib.CellStyle numberCellStyle(double value, {bool total = false}) {
+        final whole = value == value.roundToDouble();
+        return excel_lib.CellStyle(
+          bold: total,
+          fontColorHex: total ? blue : null,
+          horizontalAlign: excel_lib.HorizontalAlign.Center,
+          verticalAlign: excel_lib.VerticalAlign.Center,
+          numberFormat: excel_lib.NumFormat.custom(
+            formatCode: whole ? '#,##0' : '#,##0.##',
+          ),
+          topBorder: total ? strongBorder : border,
+          bottomBorder: total ? strongBorder : border,
+          leftBorder: border,
+          rightBorder: border,
+        );
+      }
 
       sheet.appendRow([
         excel_lib.TextCellValue('كشف حساب - ${widget.customer['name']}'),
@@ -1535,6 +1552,26 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: totalRow - 1)).cellStyle = totalStyle;
         sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: balanceRow - 1)).cellStyle = totalStyle;
       }
+
+      // Override numeric cells with integer/decimal-specific formats.
+      for (var row = 0; row < txs.length; row++) {
+        final tx = txs[row];
+        final amount = (tx['amount'] as num).toDouble();
+        final isGive = tx['type'] == 'give';
+        final balance = txs.take(row + 1).fold<double>(0, (sum, item) {
+          final value = (item['amount'] as num).toDouble();
+          return sum + (item['type'] == 'give' ? value : -value);
+        });
+        final values = [balance.abs(), isGive ? amount : 0.0, isGive ? 0.0 : amount];
+        for (var col = 0; col < values.length; col++) {
+          sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row + 2)).cellStyle = numberCellStyle(values[col]);
+        }
+      }
+      final totalValues = [finalBal.abs(), totalGive, totalTake, finalBal.abs()];
+      for (var col = 0; col < 3; col++) {
+        sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: totalRow - 1)).cellStyle = numberCellStyle(totalValues[col], total: true);
+      }
+      sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: balanceRow - 1)).cellStyle = numberCellStyle(totalValues[3], total: true);
       sheet.setColumnWidth(0, 16); // A: الرصيد
       sheet.setColumnWidth(1, 14); // B: له
       sheet.setColumnWidth(2, 14); // C: عليه
