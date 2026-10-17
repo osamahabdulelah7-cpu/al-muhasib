@@ -1588,6 +1588,32 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         } catch (_) {}
       }
 
+      // Shrink oversized custom logos before embedding them in the PDF.
+      // The header repeats on every page, so reuse one image provider as well.
+      if (logoBytes != null) {
+        try {
+          final decodedLogo = img.decodeImage(logoBytes);
+          if (decodedLogo != null &&
+              (decodedLogo.width > 256 || decodedLogo.height > 256)) {
+            final resizedLogo = img.copyResize(
+              decodedLogo,
+              width: decodedLogo.width >= decodedLogo.height
+                  ? 256
+                  : null,
+              height: decodedLogo.height > decodedLogo.width
+                  ? 256
+                  : null,
+              interpolation: img.Interpolation.average,
+            );
+            logoBytes = Uint8List.fromList(img.encodePng(resizedLogo, level: 9));
+          }
+        } catch (e) {
+          debugPrint('PDF logo optimization skipped: $e');
+        }
+      }
+      final pw.ImageProvider? logoImage =
+          logoBytes == null ? null : pw.MemoryImage(logoBytes);
+
       final pdf = pw.Document(
           theme: pw.ThemeData.withFont(
               base: fontRegular, bold: fontBold));
@@ -1661,6 +1687,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 fontSize: size,
                 color: PdfColor.fromHex(colorHex),
               ),
+              textDirection: pw.TextDirection.rtl,
             ));
           }
 
@@ -1694,7 +1721,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.SizedBox(
                   width: 60,
                   child: pw.Center(
-                    child: logoBytes != null
+                    child: logoImage != null
                         ? pw.Container(
                             width: 50,
                             height: 50,
@@ -1703,7 +1730,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   logoShape == 'circle' ? 25 : 4,
                               verticalRadius:
                                   logoShape == 'circle' ? 25 : 4,
-                              child: pw.Image(pw.MemoryImage(logoBytes),
+                              child: pw.Image(logoImage,
                                   fit: pw.BoxFit.cover),
                             ),
                           )
@@ -1726,6 +1753,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 style: pw.TextStyle(
                     font: fontBold, fontSize: 14, color: darkBlue),
                 textAlign: pw.TextAlign.center,
+                textDirection: pw.TextDirection.rtl,
               ),
             ),
             pw.SizedBox(height: 6),
@@ -1769,13 +1797,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 children: [
                   pw.Text('تطبيق المحاسب',
                       style: pw.TextStyle(
-                          font: fontRegular, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
                   pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
                       style: pw.TextStyle(
-                          font: fontRegular, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
                   pw.Text('المهندس : اسامه الاضرعي',
                       style: pw.TextStyle(
-                          font: fontRegular, fontSize: 10, color: black)),
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
                 ]),
           ]),
         ),
@@ -1870,7 +1901,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               fontSize: size,
               color: color,
               fontWeight: pw.FontWeight.bold),
-          textAlign: pw.TextAlign.center),
+          textAlign: pw.TextAlign.center,
+          textDirection: pw.TextDirection.rtl),
     );
   }
 
