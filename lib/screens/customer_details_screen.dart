@@ -1693,7 +1693,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         try {
           final dt = DateTime.parse(tx['date'].toString());
           dateOnly =
-              '\${dt.year}-\${dt.month.toString().padLeft(2, '0')}-\${dt.day.toString().padLeft(2, '0')}';
+              "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
         } catch (_) {}
 
         final PdfColor balanceNumberColor = newFinalBal < 0
