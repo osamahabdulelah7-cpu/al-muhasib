@@ -1470,7 +1470,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         final whole = value == value.roundToDouble();
         return excel_lib.CellStyle(
           bold: total,
-          fontColorHex: total ? blue : null,
+          fontColorHex: total ? blue : black,
           horizontalAlign: excel_lib.HorizontalAlign.Center,
           verticalAlign: excel_lib.VerticalAlign.Center,
           numberFormat: excel_lib.NumFormat.custom(
