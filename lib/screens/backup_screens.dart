@@ -83,7 +83,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
   bool _signedIn = false;
   String? _userEmail;
   bool _loading = true;
-  bool _hasExactAlarm = false;
 
   @override
   void initState() {
@@ -100,7 +99,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     final driveCount = await AutoBackupService.countDriveBackups();
     final signedIn = GoogleDriveService.isSignedIn ||
         await GoogleDriveService.trySilentSignIn();
-    final hasExact = await AutoBackupService.hasExactAlarmPermission();
     if (!mounted) return;
     setState(() {
       _enabled = settings['enabled'] as bool;
@@ -120,7 +118,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
       _driveBackupCount = driveCount;
       _signedIn = signedIn;
       _userEmail = GoogleDriveService.userEmail;
-      _hasExactAlarm = hasExact;
       _loading = false;
     });
   }
@@ -687,19 +684,6 @@ class _AutoBackupScreenState extends State<AutoBackupScreen> {
     }
   }
 
-  Future<void> _requestExactAlarm() async {
-    final granted = await AutoBackupService.requestExactAlarmPermissionFromUI();
-    if (!mounted) return;
-    setState(() => _hasExactAlarm = granted);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(granted
-          ? '✅ تم تفعيل النسخ الاحتياطي الدقيق'
-          : '⚠️ لم يتم تفعيل الصلاحية. النسخ قد يعمل متأخرًا.\n'
-              'افتح: الإعدادات ← التطبيقات ← المحاسب ← المنبّهات والتذكيرات.'),
-      backgroundColor: granted ? AppColors.green : Colors.orange,
-      duration: const Duration(seconds: 8),
-    ));
-  }
 
   Future<void> _confirmDeleteAccount() async {
     final confirmed = await showDialog<bool>(
@@ -891,53 +875,6 @@ Widget build(BuildContext context) {
             onTap: _pickTime,
           ),
         ),
-        if (_enabled && !_hasExactAlarm)
-          Container(
-            color: Colors.orange.shade50,
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: const [
-                  Icon(Icons.warning_amber, color: Colors.orange, size: 22),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'لضمان عمل النسخ في الوقت المحدد، يلزم تفعيل صلاحية "المنبّهات والتذكيرات".',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _requestExactAlarm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange.shade700,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    icon: const Icon(Icons.alarm_on),
-                    label: const Text('تفعيل النسخ الدقيق', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        if (_enabled && _hasExactAlarm)
-          Container(
-            color: AppColors.greenLight,
-            padding: const EdgeInsets.all(10),
-            child: Row(children: const [
-              Icon(Icons.check_circle, color: AppColors.green, size: 20),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text('النسخ الدقيق مفعّل ✓', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.greenDark)),
-              ),
-            ]),
-          ),
         Container(
           color: Colors.white,
           child: ListTile(
