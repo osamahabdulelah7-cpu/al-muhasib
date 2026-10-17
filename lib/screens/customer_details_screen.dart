@@ -1710,14 +1710,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           if (rightText.isNotEmpty) {
             final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
             final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
-            rightItems.add(pw.Text(
+            rightItems.add(ArabicText(
               rightText,
-              style: pw.TextStyle(
-                font: i == 1 ? fontBold : fontRegular,
-                fontSize: size,
-                color: PdfColor.fromHex(colorHex),
-              ),
-              textDirection: pw.TextDirection.rtl,
+              font: i == 1 ? shapedFontBold : shapedFontRegular,
+              fontSize: size,
+              color: PdfColor.fromHex(colorHex),
+              textAlign: pw.TextAlign.right,
             ));
           }
 
@@ -1725,14 +1723,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           if (leftText.isNotEmpty) {
             final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
             final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
-            leftItems.add(pw.Text(
+            leftItems.add(ArabicText(
               leftText,
-              style: pw.TextStyle(
-                font: i == 1 ? fontBold : fontRegular,
-                fontSize: size,
-                color: PdfColor.fromHex(colorHex),
-              ),
-              textDirection: pw.TextDirection.rtl,
+              font: i == 1 ? shapedFontBold : shapedFontRegular,
+              fontSize: size,
+              color: PdfColor.fromHex(colorHex),
+              textAlign: pw.TextAlign.right,
             ));
           }
         }
@@ -1779,12 +1775,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Divider(color: darkBlue, thickness: 1.5),
             pw.SizedBox(height: 4),
             pw.Center(
-              child: pw.Text(
+              child: ArabicText(
                 'كشف حساب : ${widget.customer['name']}',
-                style: pw.TextStyle(
-                    font: fontBold, fontSize: 14, color: darkBlue),
+                font: shapedFontBold,
+                fontSize: 14,
+                color: darkBlue,
                 textAlign: pw.TextAlign.center,
-                textDirection: pw.TextDirection.rtl,
               ),
             ),
             pw.SizedBox(height: 6),
@@ -1826,18 +1822,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('تطبيق المحاسب',
-                      style: pw.TextStyle(
-                          font: fontRegular, fontSize: 10, color: black),
-                      textDirection: pw.TextDirection.rtl),
+                  ArabicText('تطبيق المحاسب',
+                      font: shapedFontRegular,
+                      fontSize: 10,
+                      color: black,
+                      textAlign: pw.TextAlign.right),
                   pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
                       style: pw.TextStyle(
                           font: fontRegular, fontSize: 10, color: black),
                       textDirection: pw.TextDirection.rtl),
-                  pw.Text('المهندس : اسامه الاضرعي',
-                      style: pw.TextStyle(
-                          font: fontRegular, fontSize: 10, color: black),
-                      textDirection: pw.TextDirection.rtl),
+                  ArabicText('المهندس : اسامه الاضرعي',
+                      font: shapedFontRegular,
+                      fontSize: 10,
+                      color: black,
+                      textAlign: pw.TextAlign.right),
                 ]),
           ]),
         ),
