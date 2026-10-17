@@ -1713,6 +1713,26 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final bool isOnHim = balanceDiff < 0;
       final PdfColor balanceRowColor = balanceDiff < 0 ? lightRed : lightGreen;
 
+      // Split the large statement into smaller tables to reduce layout work per table.
+      const int rowsPerPdfTable = 100;
+      final List<pw.Widget> dataTables = [];
+      for (var start = 0; start < dataRows.length; start += rowsPerPdfTable) {
+        final end = (start + rowsPerPdfTable < dataRows.length)
+            ? start + rowsPerPdfTable
+            : dataRows.length;
+        dataTables.add(pw.Table(
+          border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1.8),
+            1: const pw.FlexColumnWidth(1.8),
+            2: const pw.FlexColumnWidth(1.8),
+            3: const pw.FlexColumnWidth(3.5),
+            4: const pw.FlexColumnWidth(2.2),
+          },
+          children: dataRows.sublist(start, end),
+        ));
+      }
+
       pw.Widget buildHeader() {
         final rightItems = <pw.Widget>[];
         final leftItems = <pw.Widget>[];
@@ -1853,6 +1873,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ),
         build: (pw.Context context) => [
           pw.SizedBox(height: 5),
+          ...dataTables,
           pw.Table(
             border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
             columnWidths: {
@@ -1863,7 +1884,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               4: const pw.FlexColumnWidth(2.2),
             },
             children: [
-              ...dataRows,
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: totalBg),
                 children: [
@@ -1878,16 +1898,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 decoration: pw.BoxDecoration(color: balanceRowColor),
                 children: [
                   _pdfCell('', shapedFontBold, 14, black),
-                  _pdfCell(
-                      !isOnHim ? formatNumber(balanceValue) : '',
-                      shapedFontBold,
-                      14,
-                      !isOnHim ? greenTotal : black),
-                  _pdfCell(
-                      isOnHim ? formatNumber(balanceValue) : '',
-                      shapedFontBold,
-                      14,
-                      isOnHim ? redTotal : black),
+                  _pdfCell(!isOnHim ? formatNumber(balanceValue) : '', shapedFontBold, 14, !isOnHim ? greenTotal : black),
+                  _pdfCell(isOnHim ? formatNumber(balanceValue) : '', shapedFontBold, 14, isOnHim ? redTotal : black),
                   _pdfCell(balanceText, shapedFontBold, 14, black),
                   _pdfCell('', shapedFontBold, 14, black),
                 ],
