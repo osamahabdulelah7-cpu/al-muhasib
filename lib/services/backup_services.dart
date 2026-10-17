@@ -74,11 +74,20 @@ class ImageStorageService {
     final rows = await db.query('transactions', columns: ['id', 'image_data', 'image_path']);
     for (final row in rows) {
       final legacy = row['image_data']?.toString() ?? '';
-      final pathValue = row['image_path']?.toString() ?? '';
-      if (legacy.isEmpty || pathValue.isNotEmpty) continue;
-      final saved = await saveBase64(legacy, 'tx_${row['id']}');
-      if (saved != null) {
-        await db.update('transactions', {'image_path': saved, 'image_data': null},
+      var pathValue = row['image_path']?.toString() ?? '';
+      if (legacy.isEmpty) continue;
+
+      // Preserve the legacy payload unless the image is safely stored on disk.
+      if (pathValue.isEmpty || await readRelative(pathValue) == null) {
+        final saved = await saveBase64(legacy, 'tx_${row['id']}');
+        if (saved == null) continue;
+        pathValue = saved;
+      }
+
+      // Clear large Base64 only after a usable image_path is confirmed.
+      if (await readRelative(pathValue) != null) {
+        await db.update('transactions',
+            {'image_path': pathValue, 'image_data': null},
             where: 'id = ?', whereArgs: [row['id']]);
       }
     }
