@@ -1569,22 +1569,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     try {
       final fontDataRegular =
           await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final fontRegular = pw.Font.ttf(fontDataRegular);
       final fontDataBold =
           await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
-      final fontRegular = ShapedFont.fromBytes(
-        fontDataRegular.buffer.asUint8List(
-          fontDataRegular.offsetInBytes,
-          fontDataRegular.lengthInBytes,
-        ),
-        name: 'Cairo Regular',
-      );
-      final fontBold = ShapedFont.fromBytes(
-        fontDataBold.buffer.asUint8List(
-          fontDataBold.offsetInBytes,
-          fontDataBold.lengthInBytes,
-        ),
-        name: 'Cairo Bold',
-      );
+      final fontBold = pw.Font.ttf(fontDataBold);
 
       final personalData = await PersonalDataService.getData();
       final logoBase64 = await PersonalDataService.getLogoBase64();
@@ -1628,7 +1616,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
       final pdf = pw.Document(
           theme: pw.ThemeData.withFont(
-              base: fontRegular.pdfFont, bold: fontBold.pdfFont));
+              base: fontRegular, bold: fontBold));
 
       final darkBlue = PdfColor.fromHex("#1E3A5F");
       final greenTotal = PdfColor.fromHex("#00A000");
@@ -1692,15 +1680,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           if (rightText.isNotEmpty) {
             final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
             final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
-            rightItems.add(ShapedText(
+            rightItems.add(pw.Text(
               rightText,
-              style: ShapedTextStyle(
+              style: pw.TextStyle(
                 font: i == 1 ? fontBold : fontRegular,
                 fontSize: size,
                 color: PdfColor.fromHex(colorHex),
-                direction: ShapedTextDirection.rightToLeft,
-                align: ShapedTextAlign.start,
               ),
+              textDirection: pw.TextDirection.rtl,
             ));
           }
 
@@ -1708,14 +1695,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           if (leftText.isNotEmpty) {
             final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
             final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
-            leftItems.add(ShapedText(
+            leftItems.add(pw.Text(
               leftText,
-              style: ShapedTextStyle(
+              style: pw.TextStyle(
                 font: i == 1 ? fontBold : fontRegular,
                 fontSize: size,
                 color: PdfColor.fromHex(colorHex),
-                direction: ShapedTextDirection.auto,
-                align: ShapedTextAlign.end,
               ),
             ));
           }
@@ -1763,15 +1748,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Divider(color: darkBlue, thickness: 1.5),
             pw.SizedBox(height: 4),
             pw.Center(
-              child: ShapedText(
+              child: pw.Text(
                 'كشف حساب : ${widget.customer['name']}',
-                style: ShapedTextStyle(
-                  font: fontBold,
-                  fontSize: 14,
-                  color: darkBlue,
-                  direction: ShapedTextDirection.rightToLeft,
-                  align: ShapedTextAlign.center,
-                ),
+                style: pw.TextStyle(
+                    font: fontBold, fontSize: 14, color: darkBlue),
+                textAlign: pw.TextAlign.center,
+                textDirection: pw.TextDirection.rtl,
               ),
             ),
             pw.SizedBox(height: 6),
@@ -1813,23 +1795,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  ShapedText('تطبيق المحاسب',
-                      style: ShapedTextStyle(
-                        font: fontRegular, fontSize: 10, color: black,
-                        direction: ShapedTextDirection.rightToLeft,
-                      )),
-                  ShapedText('${ctx.pageNumber} / ${ctx.pagesCount}',
-                      style: ShapedTextStyle(
-                        font: fontRegular, fontSize: 10, color: black,
-                        direction: ShapedTextDirection.leftToRight,
-                        align: ShapedTextAlign.center,
-                      )),
-                  ShapedText('المهندس : اسامه الاضرعي',
-                      style: ShapedTextStyle(
-                        font: fontRegular, fontSize: 10, color: black,
-                        direction: ShapedTextDirection.rightToLeft,
-                        align: ShapedTextAlign.end,
-                      )),
+                  pw.Text('تطبيق المحاسب',
+                      style: pw.TextStyle(
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
+                  pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
+                      style: pw.TextStyle(
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
+                  pw.Text('المهندس : اسامه الاضرعي',
+                      style: pw.TextStyle(
+                          font: fontRegular, fontSize: 10, color: black),
+                      textDirection: pw.TextDirection.rtl),
                 ]),
           ]),
         ),
@@ -1880,8 +1857,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
 
       final bytes = await pdf.save();
-      fontRegular.dispose();
-      fontBold.dispose();
       if (mounted) material.Navigator.of(context, rootNavigator: true).pop();
       final tempDir = Directory(p.join((await getTemporaryDirectory()).path, 'pdf'));
       if (!await tempDir.exists()) await tempDir.create(recursive: true);
@@ -1917,19 +1892,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   pw.Widget _pdfCell(
-      String text, ShapedFont font, double size, PdfColor color) {
+      String text, pw.Font font, double size, PdfColor color) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(5),
-      child: ShapedText(
-        text,
-        style: ShapedTextStyle(
-          font: font,
-          fontSize: size,
-          color: color,
-          direction: ShapedTextDirection.rightToLeft,
-          align: ShapedTextAlign.center,
-        ),
-      ),
+      child: pw.Text(text,
+          style: pw.TextStyle(
+              font: font,
+              fontSize: size,
+              color: color,
+              fontWeight: pw.FontWeight.bold),
+          textAlign: pw.TextAlign.center,
+          textDirection: pw.TextDirection.rtl),
     );
   }
 
