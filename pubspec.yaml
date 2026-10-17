@@ -40,6 +40,7 @@ dependencies:
 
   # حزمة الصور
   image_picker: ^1.0.7
+  image: ^4.3.0
 
   # حزمة المهام الخلفية
   workmanager: ^0.10.10
