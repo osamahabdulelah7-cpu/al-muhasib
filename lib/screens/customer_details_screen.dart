@@ -1681,7 +1681,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
             final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
             rightItems.add(pw.Text(
-              rightText,
+              ArabicReshaper.instance.reshape(rightText),
               style: pw.TextStyle(
                 font: i == 1 ? fontBold : fontRegular,
                 fontSize: size,
@@ -1696,7 +1696,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
             final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
             leftItems.add(pw.Text(
-              leftText,
+              ArabicReshaper.instance.reshape(leftText),
               style: pw.TextStyle(
                 font: i == 1 ? fontBold : fontRegular,
                 fontSize: size,
@@ -1749,7 +1749,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.SizedBox(height: 4),
             pw.Center(
               child: pw.Text(
-                'كشف حساب : ${widget.customer['name']}',
+                ArabicReshaper.instance.reshape('كشف حساب : ${widget.customer['name']}'),
                 style: pw.TextStyle(
                     font: fontBold, fontSize: 14, color: darkBlue),
                 textAlign: pw.TextAlign.center,
@@ -1795,7 +1795,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('تطبيق المحاسب',
+                  pw.Text(ArabicReshaper.instance.reshape('تطبيق المحاسب'),
                       style: pw.TextStyle(
                           font: fontRegular, fontSize: 10, color: black),
                       textDirection: pw.TextDirection.rtl),
@@ -1803,7 +1803,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       style: pw.TextStyle(
                           font: fontRegular, fontSize: 10, color: black),
                       textDirection: pw.TextDirection.rtl),
-                  pw.Text('المهندس : اسامه الاضرعي',
+                  pw.Text(ArabicReshaper.instance.reshape('المهندس : اسامه الاضرعي'),
                       style: pw.TextStyle(
                           font: fontRegular, fontSize: 10, color: black),
                       textDirection: pw.TextDirection.rtl),
@@ -1895,7 +1895,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       String text, pw.Font font, double size, PdfColor color) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(5),
-      child: pw.Text(text,
+      child: pw.Text(ArabicReshaper.instance.reshape(text),
           style: pw.TextStyle(
               font: font,
               fontSize: size,
