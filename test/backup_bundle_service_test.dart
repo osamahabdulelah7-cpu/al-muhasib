@@ -73,7 +73,7 @@ Future<File> _makeBundle({
         ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
   }
 
-  final encoded = ZipEncoder().encode(archive)!;
+  final encoded = ZipEncoder().encode(archive);
   final dir = await Directory.systemTemp.createTemp('al_muhasib_test_');
   final file = File('${dir.path}/test.alb');
   await file.writeAsBytes(encoded, flush: true);
