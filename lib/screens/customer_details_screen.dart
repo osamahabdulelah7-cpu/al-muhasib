@@ -1785,10 +1785,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
+                // With RTL text direction, keep the right-side personal data
+                // in the right column and the left-side data in the left column.
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: leftItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: rightItems,
                   ),
                 ),
                 pw.SizedBox(
@@ -1812,10 +1814,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ),
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: rightItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: leftItems,
                   ),
-                ),              ],
+                ),
+              ],
             ),
             pw.SizedBox(height: 6),
             pw.Divider(color: darkBlue, thickness: 1.5),
