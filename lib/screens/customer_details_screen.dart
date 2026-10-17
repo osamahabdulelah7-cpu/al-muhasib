@@ -1554,15 +1554,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       }
 
       // Override numeric cells with integer/decimal-specific formats.
+      double styledRunningBalance = 0;
       for (var row = 0; row < txs.length; row++) {
         final tx = txs[row];
         final amount = (tx['amount'] as num).toDouble();
         final isGive = tx['type'] == 'give';
-        final balance = txs.take(row + 1).fold<double>(0, (sum, item) {
-          final value = (item['amount'] as num).toDouble();
-          return sum + (item['type'] == 'give' ? value : -value);
-        });
-        final values = [balance.abs(), isGive ? amount : 0.0, isGive ? 0.0 : amount];
+        styledRunningBalance += isGive ? amount : -amount;
+        final values = [styledRunningBalance.abs(), isGive ? amount : 0.0, isGive ? 0.0 : amount];
         for (var col = 0; col < values.length; col++) {
           sheet.cell(excel_lib.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row + 2)).cellStyle = numberCellStyle(values[col]);
         }
