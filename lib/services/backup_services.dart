@@ -184,7 +184,7 @@ class BackupBundleService {
     archive.addFile(ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
 
     final encoded = ZipEncoder().encode(archive);
-    if (encoded == null || encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
+    if (encoded.isEmpty) throw Exception('تعذر إنشاء ملف النسخة الاحتياطية');
     final outDir = outputDirectory ?? await getTemporaryDirectory();
     return writeEncodedBundleForTesting(encoded, outDir, namePrefix: namePrefix);
   }
