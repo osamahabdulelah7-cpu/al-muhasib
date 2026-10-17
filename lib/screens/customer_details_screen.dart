@@ -1414,6 +1414,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
   }
 
+  // Convert whole amounts to integer Excel cells so they never display a decimal point.
+  excel_lib.CellValue _createNumberCell(double value) {
+    if (value == value.roundToDouble()) {
+      return excel_lib.IntCellValue(value.toInt());
+    }
+    return excel_lib.DoubleCellValue(value);
+  }
+
   // ============ تصدير كشف الحساب إلى Excel ============
   Future<void> _exportToExcel(
       List<Map<String, dynamic>> txs,
@@ -1485,9 +1493,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           dateOnly = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
         } catch (_) {}
         sheet.appendRow([
-          excel_lib.DoubleCellValue(runningBalance.abs()),
-          excel_lib.DoubleCellValue(isGive ? amount : 0),
-          excel_lib.DoubleCellValue(isGive ? 0 : amount),
+          _createNumberCell(runningBalance.abs()),
+          _createNumberCell(isGive ? amount : 0),
+          _createNumberCell(isGive ? 0 : amount),
           excel_lib.TextCellValue((tx['details'] ?? '').toString()),
           excel_lib.TextCellValue(dateOnly),
         ]);
@@ -1495,9 +1503,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
       final totalRow = txs.length + 3;
       sheet.appendRow([
-        excel_lib.DoubleCellValue(finalBal.abs()),
-        excel_lib.DoubleCellValue(totalGive),
-        excel_lib.DoubleCellValue(totalTake),
+        _createNumberCell(finalBal.abs()),
+        _createNumberCell(totalGive),
+        _createNumberCell(totalTake),
         excel_lib.TextCellValue('إجمالي العمليات'),
         excel_lib.TextCellValue(''),
       ]);
@@ -1505,7 +1513,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final balanceLabel = finalBal == 0 ? 'الرصيد الإجمالي' :
           (finalBal > 0 ? 'الرصيد الإجمالي - له' : 'الرصيد الإجمالي - عليه');
       sheet.appendRow([
-        excel_lib.DoubleCellValue(finalBal.abs()),
+        _createNumberCell(finalBal.abs()),
         excel_lib.TextCellValue(''),
         excel_lib.TextCellValue(''),
         excel_lib.TextCellValue(balanceLabel),
