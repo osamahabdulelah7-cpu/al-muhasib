@@ -111,6 +111,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     required List<String> suggestions,
     required TextEditingController controller,
     required VoidCallback onSelected,
+    required VoidCallback onDismiss,
   }) {
     if (suggestions.isEmpty) return null;
     final anchorContext = anchorKey.currentContext;
@@ -125,7 +126,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final listHeight = visibleCount * 48.0;
     final top = (fieldTop - listHeight - 6).clamp(8.0, double.infinity).toDouble();
     final entry = OverlayEntry(builder: (overlayContext) {
-      return Positioned(
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDismiss,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
         left: fieldLeft,
         top: top,
         width: fieldWidth,
@@ -169,6 +179,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ),
           ),
         ),
+          ),
+        ],
       );
     });
     overlay.insert(entry);
@@ -307,6 +319,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               anchorKey: detailsFieldKey,
                               suggestions: combined,
                               controller: detailsCtrl,
+                              onDismiss: () {
+                                suggestionsOverlay?.remove();
+                                suggestionsOverlay = null;
+                              },
                               onSelected: () {
                                 suggestionsOverlay?.remove();
                                 suggestionsOverlay = null;
@@ -597,6 +613,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               anchorKey: detailsFieldKey,
                               suggestions: combined,
                               controller: detailsCtrl,
+                              onDismiss: () {
+                                suggestionsOverlay?.remove();
+                                suggestionsOverlay = null;
+                              },
                               onSelected: () {
                                 suggestionsOverlay?.remove();
                                 suggestionsOverlay = null;
