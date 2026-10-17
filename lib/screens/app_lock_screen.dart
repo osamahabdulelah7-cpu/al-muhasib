@@ -88,8 +88,12 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      if (_lockConfigured) setState(() => _locked = true);
+    // Do not lock when the user merely opens Android's recent-apps screen
+    // or switches temporarily to another app. A cold app launch is locked
+    // by _refreshLockState(initial: true). If Flutter detaches this engine
+    // while the app is being closed, lock the gate before any possible reuse.
+    if (state == AppLifecycleState.detached && _lockConfigured && mounted) {
+      setState(() => _locked = true);
     }
   }
 
