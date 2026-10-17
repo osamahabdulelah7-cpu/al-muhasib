@@ -300,10 +300,9 @@ void callbackDispatcher() {
         }
       }
       try {
-        final exact = await AutoBackupService._scheduleNextExactBackup();
-        if (!exact) await AutoBackupService._scheduleNextTimedBackup();
+        await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
       } catch (e) {
-        debugPrint('تعذر إعادة الجدولة: $e');
+        debugPrint('تعذر إعادة جدولة WorkManager: $e');
       }
       return !shouldRetry;
     } catch (e, st) {
