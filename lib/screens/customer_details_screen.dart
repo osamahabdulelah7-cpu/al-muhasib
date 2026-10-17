@@ -1702,6 +1702,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 fontSize: size,
                 color: PdfColor.fromHex(colorHex),
               ),
+              textDirection: pw.TextDirection.rtl,
             ));
           }
         }
