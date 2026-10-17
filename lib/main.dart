@@ -28,7 +28,6 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:workmanager/workmanager.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 
