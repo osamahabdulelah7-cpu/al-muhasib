@@ -243,47 +243,6 @@ class NotificationService {
 // ====================================================
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
-@pragma('vm:entry-point')
-Future<void> exactBackupAlarmCallback() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  ui.DartPluginRegistrant.ensureInitialized();
-  try {
-    await NotificationService.initialize(requestPermission: false);
-  } catch (e) {
-    debugPrint('تعذر تهيئة الإشعارات: $e');
-  }
-  try {
-    await AppDBHelper.instance.database;
-  } catch (e) {
-    debugPrint('تعذر فتح قاعدة البيانات: $e');
-  }
-  try {
-    final settings = await AutoBackupService.getSettings();
-    if (settings['enabled'] == true) {
-      final err = await AutoBackupService.performScheduledBackup();
-      if (err != null) {
-        try { await NotificationService.showTemporaryFailure('تعذر النسخ المحلي', err); } catch (_) {}
-      } else {
-        try { await NotificationService.showTemporarySuccess('📁 النسخ المحلي', 'تم بنجاح'); } catch (_) {}
-      }
-    }
-    if (settings['driveEnabled'] == true && await GoogleDriveService.trySilentSignIn()) {
-      final err = await AutoBackupService.checkAndRunDriveBackup();
-      if (err != null) {
-        try { await NotificationService.showTemporaryFailure('تعذر نسخ Drive', err); } catch (_) {}
-      }
-    }
-  } catch (e, st) {
-    debugPrint('فشل المنبّه: $e\n$st');
-  } finally {
-    try {
-      final exact = await AutoBackupService._scheduleNextExactBackup();
-      if (!exact) await AutoBackupService._scheduleNextTimedBackup(replacePending: true);
-    } catch (e) {
-      debugPrint('تعذر إعادة الجدولة: $e');
-    }
-  }
-}
 
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
