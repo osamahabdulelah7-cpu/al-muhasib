@@ -1791,26 +1791,36 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           if (rightText.isNotEmpty) {
             final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
             final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
-            rightItems.add(ArabicText(
-              rightText,
-              font: i == 1 ? shapedFontBold : shapedFontRegular,
-              fontSize: size,
-              color: PdfColor.fromHex(colorHex),
-              align: ShapedTextAlign.end,
-            ));
+            rightItems.add(
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: ArabicText(
+                  rightText,
+                  font: i == 1 ? shapedFontBold : shapedFontRegular,
+                  fontSize: size,
+                  color: PdfColor.fromHex(colorHex),
+                  align: ShapedTextAlign.end,
+                ),
+              ),
+            );
           }
 
           final leftText = (personalData['leftLine$i'] ?? '').toString();
           if (leftText.isNotEmpty) {
             final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
             final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
-            leftItems.add(ArabicText(
-              leftText,
-              font: i == 1 ? shapedFontBold : shapedFontRegular,
-              fontSize: size,
-              color: PdfColor.fromHex(colorHex),
-              align: ShapedTextAlign.end,
-            ));
+            leftItems.add(
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: ArabicText(
+                  leftText,
+                  font: i == 1 ? shapedFontBold : shapedFontRegular,
+                  fontSize: size,
+                  color: PdfColor.fromHex(colorHex),
+                  align: ShapedTextAlign.end,
+                ),
+              ),
+            );
           }
         }
 
