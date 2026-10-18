@@ -1830,14 +1830,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // With RTL text direction, keep the right-side personal data
-                // in the right column and the left-side data in the left column.
+                // The PDF Row is RTL: its first child is laid out on the
+                // physical left. Keep leftItems on the left and rightItems
+                // on the physical right edge of the page.
                 pw.Expanded(
                   child: pw.Column(
-                    // In RTL, start is the far-right edge: keep the personal
-                    // information anchored to the page's right margin.
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: rightItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: leftItems,
                   ),
                 ),
                 pw.SizedBox(
@@ -1861,8 +1860,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ),
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: leftItems,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: rightItems,
                   ),
                 ),
               ],
