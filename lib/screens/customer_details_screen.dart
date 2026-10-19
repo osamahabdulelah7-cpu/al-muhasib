@@ -1794,13 +1794,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             rightItems.add(
               pw.Container(
                 width: double.infinity,
-                alignment: pw.Alignment.centerRight, // جعل النص ملاصقاً لليمين
+                // centerStart تعني بداية السطر (اليمين في العربي)
+                alignment: pw.AlignmentDirectional.centerStart, 
                 child: ArabicText(
                   rightText,
                   font: i == 1 ? shapedFontBold : shapedFontRegular,
                   fontSize: size,
                   color: PdfColor.fromHex(colorHex),
-                  align: ShapedTextAlign.end, // النص ينتهي عند اليمين
+                  align: ShapedTextAlign.start, // محاذاة لليمين
                 ),
               ),
             );
@@ -1813,13 +1814,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             leftItems.add(
               pw.Container(
                 width: double.infinity,
-                alignment: pw.Alignment.centerLeft, // جعل النص ملاصقاً لليسار
+                // centerEnd تعني نهاية السطر (اليسار في العربي)
+                alignment: pw.AlignmentDirectional.centerEnd, 
                 child: ArabicText(
                   leftText,
                   font: i == 1 ? shapedFontBold : shapedFontRegular,
                   fontSize: size,
                   color: PdfColor.fromHex(colorHex),
-                  align: ShapedTextAlign.start, // النص يبدأ من اليسار
+                  align: ShapedTextAlign.end, // محاذاة لليسار
                 ),
               ),
             );
@@ -1829,38 +1831,38 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         return pw.Container(
           padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Column(children: [
-            // MultiPage is RTL: first Expanded is on the physical right.
             pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, // يوزع العناصر على الأطراف
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
+                // الجزء الأيمن (بيانات اليمين)
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.stretch, // تمدد بعرض المساحة المتاحة
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                     children: rightItems,
                   ),
                 ),
+                // الشعار في المنتصف (بعرض ثابت)
                 pw.SizedBox(
-                  width: 60,
+                  width: 80,
                   child: pw.Center(
                     child: logoImage != null
                         ? pw.Container(
-                            width: 50,
-                            height: 50,
+                            width: 60,
+                            height: 60,
                             child: pw.ClipRRect(
-                              horizontalRadius:
-                                  logoShape == 'circle' ? 25 : 4,
-                              verticalRadius:
-                                  logoShape == 'circle' ? 25 : 4,
-                              child: pw.Image(logoImage,
-                                  fit: pw.BoxFit.cover),
+                              horizontalRadius: logoShape == 'circle' ? 30 : 4,
+                              verticalRadius: logoShape == 'circle' ? 30 : 4,
+                              child: pw.Image(logoImage, fit: pw.BoxFit.cover),
                             ),
                           )
                         : pw.SizedBox(),
                   ),
                 ),
+                // الجزء الأيسر (بيانات اليسار)
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.stretch, // تمدد بعرض المساحة المتاحة
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                     children: leftItems,
                   ),
                 ),
