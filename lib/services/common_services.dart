@@ -283,15 +283,30 @@ class CustomerSmsAutoService {
       final frequency = prefs.getString('customer_sms_frequency_$id') ?? 'daily';
       final hour = prefs.getInt('customer_sms_hour_$id') ?? 9;
       final minute = prefs.getInt('customer_sms_minute_$id') ?? 0;
-      if (now.hour * 60 + now.minute < hour * 60 + minute) continue;
-      if (frequency == 'weekly' &&
-          now.weekday != (prefs.getInt('customer_sms_weekday_$id') ?? 1)) continue;
-      if (frequency == 'monthly' &&
-          now.day != (prefs.getInt('customer_sms_monthday_$id') ?? 1)) continue;
-
-      final dateKey = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      final sentKey = 'customer_sms_last_sent_$id';
-      if (prefs.getString(sentKey) == dateKey) continue;
+      final targetMinutes = hour * 60 + minute;
+      final currentMinutes = now.hour * 60 + now.minute;
+      final weekday = prefs.getInt('customer_sms_weekday_$id') ?? 1;
+      final monthDay = prefs.getInt('customer_sms_monthday_$id') ?? 1;
+      // إذا كان الهاتف مغلقاً عند الموعد، أرسل بعد تشغيله في أول فحص لاحق،
+      // مع منع تكرار الرسالة في الفترة نفسها.
+      bool due;
+      String periodKey;
+      if (frequency == 'weekly') {
+        due = now.weekday > weekday ||
+            (now.weekday == weekday && currentMinutes >= targetMinutes);
+        final monday = now.subtract(Duration(days: now.weekday - 1));
+        periodKey = 'week_${monday.year}_${monday.month}_${monday.day}';
+      } else if (frequency == 'monthly') {
+        due = now.day > monthDay ||
+            (now.day == monthDay && currentMinutes >= targetMinutes);
+        periodKey = 'month_${now.year}_${now.month}';
+      } else {
+        due = currentMinutes >= targetMinutes;
+        periodKey = 'day_${now.year}_${now.month}_${now.day}';
+      }
+      if (!due) continue;
+      final sentKey = 'customer_sms_last_period_$id';
+      if (prefs.getString(sentKey) == periodKey) continue;
 
       final tx = await db.rawQuery(
         '''SELECT COALESCE(SUM(CASE WHEN t.type = 'give' THEN t.amount ELSE -t.amount END), 0) AS balance
@@ -312,7 +327,7 @@ class CustomerSmsAutoService {
       final message = 'عزيزي العميل: $name\\nعليكم مبلغ: $amount $currency لحسابنا';
       try {
         await Telephony.instance.sendSms(to: phone, message: message);
-        await prefs.setString(sentKey, dateKey);
+        await prefs.setString(sentKey, periodKey);
       } catch (e) {
         failed = true;
         debugPrint('تعذر إرسال SMS تلقائي للعميل $id: $e');
