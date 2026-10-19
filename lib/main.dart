@@ -76,8 +76,9 @@ void main() {
 
     try {
       await Workmanager().initialize(callbackDispatcher);
+      await CustomerSmsAutoService.schedule();
     } catch (e, st) {
-      debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
+      debugPrint('⚠️ تعذر تهيئة WorkManager أو جدولة رسائل العملاء: $e\n$st');
     }
 
     try {
