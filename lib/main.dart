@@ -29,7 +29,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:telephony/telephony.dart';
+import 'package:telephony/telephony.dart' hide NetworkType;
 
 
 part 'services/common_services.dart';
