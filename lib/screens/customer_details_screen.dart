@@ -1794,13 +1794,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             rightItems.add(
               pw.Container(
                 width: double.infinity,
-                alignment: pw.Alignment.centerRight,
+                alignment: pw.Alignment.centerRight, // جعل النص ملاصقاً لليمين
                 child: ArabicText(
                   rightText,
                   font: i == 1 ? shapedFontBold : shapedFontRegular,
                   fontSize: size,
                   color: PdfColor.fromHex(colorHex),
-                  align: ShapedTextAlign.end,
+                  align: ShapedTextAlign.end, // النص ينتهي عند اليمين
                 ),
               ),
             );
@@ -1813,13 +1813,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             leftItems.add(
               pw.Container(
                 width: double.infinity,
-                alignment: pw.Alignment.centerLeft,
+                alignment: pw.Alignment.centerLeft, // جعل النص ملاصقاً لليسار
                 child: ArabicText(
                   leftText,
                   font: i == 1 ? shapedFontBold : shapedFontRegular,
                   fontSize: size,
                   color: PdfColor.fromHex(colorHex),
-                  align: ShapedTextAlign.end,
+                  align: ShapedTextAlign.start, // النص يبدأ من اليسار
                 ),
               ),
             );
@@ -1830,13 +1830,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Column(children: [
             // MultiPage is RTL: first Expanded is on the physical right.
-            // Keep rightItems at the right page margin and leftItems at left.
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch, // تمدد بعرض المساحة المتاحة
                     children: rightItems,
                   ),
                 ),
@@ -1861,7 +1860,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ),
                 pw.Expanded(
                   child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch, // تمدد بعرض المساحة المتاحة
                     children: leftItems,
                   ),
                 ),
