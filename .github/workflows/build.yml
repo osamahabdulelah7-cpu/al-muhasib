@@ -56,18 +56,18 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
           test -s android/app/release.keystore
 
-      - name: Build Release APK only
+      - name: Build split Release APKs only
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: flutter build apk --release --no-tree-shake-icons
+        run: flutter build apk --release --split-per-abi --no-tree-shake-icons
 
-      - name: Upload Release APK
+      - name: Upload split Release APKs
         uses: actions/upload-artifact@v5
         with:
-          name: Al-Mohaseb-Release-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: Al-Mohaseb-Release-APKs
+          path: build/app/outputs/flutter-apk/app-*-release.apk
           if-no-files-found: error
           retention-days: 14
 
