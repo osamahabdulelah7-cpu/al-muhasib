@@ -2183,7 +2183,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'هذه الإعدادات تخص هذا العميل وحده. الإرسال التلقائي الفعلي يحتاج ربط مهمة الخلفية وصلاحية SMS قبل الاعتماد عليه.',
+                  'هذه الإعدادات تخص هذا العميل وحده. يعتمد الإرسال على صلاحية SMS وجدولة Android، وقد يؤخر النظام التنفيذ حسب البطارية.',
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
