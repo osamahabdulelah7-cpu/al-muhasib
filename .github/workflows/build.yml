@@ -4,7 +4,7 @@ permissions:
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "feature/customer-automatic-messages" ]
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -34,6 +34,30 @@ jobs:
           cache: true
       - name: Resolve dependencies
         run: flutter pub get
+      # telephony 0.2.0 predates Android's required Gradle namespace declaration.
+      # Patch the resolved package in the CI cache; application source remains untouched.
+      - name: Patch legacy telephony Android namespace
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          matches = list(Path.home().glob('.pub-cache/hosted/pub.dev/telephony-0.2.0/android/build.gradle'))
+          if not matches:
+              matches = list(Path.home().glob('.pub-cache/hosted/*/telephony-0.2.0/android/build.gradle'))
+          if not matches:
+              print('telephony 0.2.0 Android build.gradle was not found')
+              sys.exit(1)
+          path = matches[0]
+          text = path.read_text()
+          if 'namespace' not in text:
+              if 'android {' not in text:
+                  print('Could not find android block in telephony build.gradle')
+                  sys.exit(1)
+              text = text.replace('android {', 'android {\\n    namespace "com.shounakmulay.telephony"', 1)
+              path.write_text(text)
+          print(f'Namespace verified in {path}')
+          PY
+
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --fatal-warnings
       - name: Run tests
