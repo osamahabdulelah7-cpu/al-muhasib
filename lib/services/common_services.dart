@@ -241,105 +241,6 @@ class NotificationService {
 }
 
 // ====================================================
-// الرسائل التلقائية للعملاء عبر SMS
-// ====================================================
-class CustomerSmsAutoService {
-  static const String taskName = 'al_muhasib_customer_sms_auto';
-  static const String uniqueName = 'al_muhasib_customer_sms_auto_periodic';
-
-  static Future<void> schedule() async {
-    await Workmanager().registerPeriodicTask(
-      uniqueName,
-      taskName,
-      frequency: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-      constraints: Constraints(
-        networkType: NetworkType.notRequired,
-        requiresBatteryNotLow: false,
-        requiresCharging: false,
-        requiresDeviceIdle: false,
-        requiresStorageNotLow: false,
-      ),
-      backoffPolicy: BackoffPolicy.linear,
-      backoffPolicyDelay: const Duration(minutes: 15),
-    );
-  }
-
-  static Future<bool> runDueMessages() async {
-    final prefs = await SharedPreferences.getInstance();
-    final db = await AppDBHelper.instance.database;
-    final now = DateTime.now();
-    final customers = await db.query('customers');
-    bool failed = false;
-
-    for (final customer in customers) {
-      final id = customer['id']?.toString();
-      if (id == null || prefs.getBool('customer_sms_auto_enabled_$id') != true) continue;
-
-      final phoneRaw = customer['phone']?.toString() ?? '';
-      final phone = phoneRaw.replaceAll(RegExp(r'[^\d+]'), '');
-      if (phone.isEmpty) continue;
-
-      final frequency = prefs.getString('customer_sms_frequency_$id') ?? 'daily';
-      final hour = prefs.getInt('customer_sms_hour_$id') ?? 9;
-      final minute = prefs.getInt('customer_sms_minute_$id') ?? 0;
-      final targetMinutes = hour * 60 + minute;
-      final currentMinutes = now.hour * 60 + now.minute;
-      final weekday = prefs.getInt('customer_sms_weekday_$id') ?? 1;
-      final monthDay = prefs.getInt('customer_sms_monthday_$id') ?? 1;
-      // إذا كان الهاتف مغلقاً عند الموعد، أرسل بعد تشغيله في أول فحص لاحق،
-      // مع منع تكرار الرسالة في الفترة نفسها.
-      bool due;
-      String periodKey;
-      if (frequency == 'weekly') {
-        due = now.weekday > weekday ||
-            (now.weekday == weekday && currentMinutes >= targetMinutes);
-        final monday = now.subtract(Duration(days: now.weekday - 1));
-        periodKey = 'week_${monday.year}_${monday.month}_${monday.day}';
-      } else if (frequency == 'monthly') {
-        final lastDay = DateTime(now.year, now.month + 1, 0).day;
-        final effectiveMonthDay = monthDay > lastDay ? lastDay : monthDay;
-        due = now.day > effectiveMonthDay ||
-            (now.day == effectiveMonthDay && currentMinutes >= targetMinutes);
-        periodKey = 'month_${now.year}_${now.month}';
-      } else {
-        due = currentMinutes >= targetMinutes;
-        periodKey = 'day_${now.year}_${now.month}_${now.day}';
-      }
-      if (!due) continue;
-      final sentKey = 'customer_sms_last_period_$id';
-      if (prefs.getString(sentKey) == periodKey) continue;
-
-      final tx = await db.rawQuery(
-        '''SELECT COALESCE(SUM(CASE WHEN t.type = 'give' THEN t.amount ELSE -t.amount END), 0) AS balance
-           FROM transactions t
-           INNER JOIN customers c ON c.id = t.customer_id
-           WHERE t.customer_id = ? AND t.currency = c.currency''',
-        [customer['id']],
-      );
-      final balance = tx.isEmpty ? 0.0 : ((tx.first['balance'] as num?)?.toDouble() ?? 0.0);
-
-      // في منطق التطبيق الحالي، الرصيد السالب يعني أن العميل مدين لنا.
-      // لا ترسل مطالبة عندما يصبح الرصيد صفراً أو موجباً.
-      if (balance >= 0) continue;
-
-      final name = (customer['name'] ?? '').toString().trim();
-      final currency = (customer['currency'] ?? '').toString().trim();
-      final amount = formatNumber(balance.abs());
-      final message = 'عزيزي العميل: $name\nعليكم مبلغ: $amount $currency لحسابنا';
-      try {
-        await Telephony.instance.sendSms(to: phone, message: message);
-        await prefs.setString(sentKey, periodKey);
-      } catch (e) {
-        failed = true;
-        debugPrint('تعذر إرسال SMS تلقائي للعميل $id: $e');
-      }
-    }
-    return !failed;
-  }
-}
-
-// ====================================================
 // ✅ دالة معالجة المهام في الخلفية (Workmanager)
 // ====================================================
 
@@ -351,14 +252,6 @@ void callbackDispatcher() {
       await NotificationService.initialize(requestPermission: false);
     } catch (e) {
       debugPrint('تعذر تهيئة الإشعارات: $e');
-    }
-    if (task == CustomerSmsAutoService.taskName) {
-      try {
-        return await CustomerSmsAutoService.runDueMessages();
-      } catch (e, st) {
-        debugPrint('تعذر فحص رسائل العملاء التلقائية: $e\\n$st');
-        return false;
-      }
     }
     try {
       await AppDBHelper.instance.database;
