@@ -9,9 +9,10 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+# Give every workflow run its own concurrency group so new builds do not cancel older runs.
 concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
+  group: build-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   verify-and-build:
