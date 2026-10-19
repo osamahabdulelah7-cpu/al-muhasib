@@ -1829,16 +1829,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         return pw.Container(
           padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Column(children: [
-            // Explicit LTR direction makes the physical page edges deterministic
-            // even though the surrounding Arabic PDF uses RTL text direction.
+            // MultiPage is RTL: first Expanded is on the physical right.
+            // Keep rightItems at the right page margin and leftItems at left.
             pw.Row(
-              textDirection: pw.TextDirection.ltr,
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: leftItems,
+                    children: rightItems,
                   ),
                 ),
                 pw.SizedBox(
@@ -1863,7 +1862,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: rightItems,
+                    children: leftItems,
                   ),
                 ),
               ],
