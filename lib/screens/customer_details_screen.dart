@@ -2076,7 +2076,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'[^\\d+]'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     // Isolate the amount's digits so RTL rendering does not move punctuation.
     final message = _customerBalanceMessage(balance).replaceAllMapped(
       RegExp(r'[+-]?[0-9][0-9,،.]*'),
@@ -2115,7 +2115,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
     // wa.me requires an international number containing digits only.
     // Remove formatting characters and the leading plus, but do not guess a country code.
-    final phone = rawPhone.replaceAll(RegExp(r'\\D'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'\D'), '');
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('رقم هاتف العميل غير صالح'),
