@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="sms" />
+        </intent>
         <package android:name="com.google.android.gms" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
