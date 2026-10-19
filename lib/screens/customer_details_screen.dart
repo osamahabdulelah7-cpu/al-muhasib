@@ -2054,8 +2054,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 title: const Text('تفعيل الرسائل التلقائية'),
                 value: enabled,
                 onChanged: (value) async {
+                  if (value) {
+                    final granted = await Telephony.instance.requestSmsPermissions ?? false;
+                    if (!granted) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('يلزم السماح بصلاحية SMS لتفعيل الإرسال التلقائي'),
+                          backgroundColor: AppColors.red,
+                        ));
+                      }
+                      return;
+                    }
+                  }
                   setDialogState(() => enabled = value);
                   await prefs.setBool('customer_sms_auto_enabled_$customerId', value);
+                  if (value) {
+                    await CustomerSmsAutoService.schedule();
+                  }
                   if (value && dialogContext.mounted) {
                     material.Navigator.pop(dialogContext);
                     await _showSmsScheduleDialog(customerId, prefs);
@@ -2188,6 +2203,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 await prefs.setInt('customer_sms_hour_$customerId', hour);
                 await prefs.setInt('customer_sms_minute_$customerId', minute);
                 await prefs.setBool('customer_sms_auto_enabled_$customerId', true);
+                await CustomerSmsAutoService.schedule();
                 if (dialogContext.mounted) material.Navigator.pop(dialogContext);
               },
               child: const Text('حفظ'),
