@@ -40,7 +40,7 @@ jobs:
       - run: flutter test --reporter expanded
       - run: dart run flutter_launcher_icons
       - run: flutter build apk --debug --no-tree-shake-icons
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: success()
         with:
           name: al-mohaseb-debug-apk
