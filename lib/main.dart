@@ -29,7 +29,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:telephony/telephony.dart' hide NetworkType;
 
 
 part 'services/common_services.dart';
@@ -76,9 +75,8 @@ void main() {
 
     try {
       await Workmanager().initialize(callbackDispatcher);
-      await CustomerSmsAutoService.schedule();
     } catch (e, st) {
-      debugPrint('⚠️ تعذر تهيئة WorkManager أو جدولة رسائل العملاء: $e\n$st');
+      debugPrint('⚠️ تعذر تهيئة WorkManager: $e\n$st');
     }
 
     try {
