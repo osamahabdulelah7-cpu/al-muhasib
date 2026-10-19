@@ -64,7 +64,7 @@ jobs:
         run: flutter build apk --release --split-per-abi --no-tree-shake-icons
 
       - name: Upload split Release APKs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: Al-Mohaseb-Release-APKs
           path: build/app/outputs/flutter-apk/app-*-release.apk
