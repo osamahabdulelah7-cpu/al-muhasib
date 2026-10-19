@@ -2076,9 +2076,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'[^\\d+]'), '');
+    // Isolate the amount's digits so RTL rendering does not move punctuation.
     final message = _customerBalanceMessage(balance).replaceAllMapped(
-      RegExp(r'(?<!\\w)[+-]?[0-9][0-9,،.]*'),
+      RegExp(r'[+-]?[0-9][0-9,،.]*'),
       (match) => '\u2066${match.group(0)}\u2069',
     );
     final uri = Uri(
@@ -2087,9 +2088,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       queryParameters: {'body': message},
     );
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else if (mounted) {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('تعذر فتح تطبيق الرسائل على هذا الجهاز'),
           backgroundColor: AppColors.red,
@@ -2108,19 +2108,39 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
     if (rawPhone == null || rawPhone.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
-          backgroundColor: AppColors.red));
+        content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
+        backgroundColor: AppColors.red,
+      ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'[^\\d+]'), '');
+    // wa.me requires an international number containing digits only.
+    // Remove formatting characters and the leading plus, but do not guess a country code.
+    final phone = rawPhone.replaceAll(RegExp(r'\\D'), '');
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('رقم هاتف العميل غير صالح'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
     final message = _customerBalanceMessage(balance);
-    final Uri url =
-        Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+    final Uri url = Uri.https('wa.me', '/$phone', {'text': message});
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح محادثة واتساب لهذا الرقم'),
+          backgroundColor: AppColors.red,
+        ));
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح محادثة واتساب لهذا الرقم'),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    }
   }
 }
 
