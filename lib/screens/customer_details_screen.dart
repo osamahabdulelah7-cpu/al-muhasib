@@ -2037,176 +2037,30 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _showMessagingOptions(double balance) async {
-    final customerId = widget.customer['id'].toString();
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    bool enabled = prefs.getBool('customer_sms_auto_enabled_$customerId') ?? false;
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('رسائل العميل', textAlign: TextAlign.right),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('تفعيل الرسائل التلقائية'),
-                value: enabled,
-                onChanged: (value) async {
-                  if (value) {
-                    final granted = await Telephony.instance.requestSmsPermissions ?? false;
-                    if (!granted) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('يلزم السماح بصلاحية SMS لتفعيل الإرسال التلقائي'),
-                          backgroundColor: AppColors.red,
-                        ));
-                      }
-                      return;
-                    }
-                  }
-                  setDialogState(() => enabled = value);
-                  await prefs.setBool('customer_sms_auto_enabled_$customerId', value);
-                  if (value) {
-                    await CustomerSmsAutoService.schedule();
-                  }
-                  if (value && dialogContext.mounted) {
-                    material.Navigator.pop(dialogContext);
-                    await _showSmsScheduleDialog(customerId, prefs);
-                  }
-                },
-              ),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.sms_outlined),
-                title: const Text('رسالة نصية SMS'),
-                onTap: () {
-                  material.Navigator.pop(dialogContext);
-                  _sendSmsManually(widget.customer['phone']?.toString(), balance);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.chat),
-                title: const Text('رسالة واتساب'),
-                onTap: () {
-                  material.Navigator.pop(dialogContext);
-                  _sendWhatsApp(widget.customer['phone']?.toString(), balance);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showSmsScheduleDialog(
-      String customerId, SharedPreferences prefs) async {
-    String frequency = prefs.getString('customer_sms_frequency_$customerId') ?? 'daily';
-    int weekday = prefs.getInt('customer_sms_weekday_$customerId') ?? 1;
-    int monthDay = prefs.getInt('customer_sms_monthday_$customerId') ?? 1;
-    int hour = prefs.getInt('customer_sms_hour_$customerId') ?? 9;
-    int minute = prefs.getInt('customer_sms_minute_$customerId') ?? 0;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('جدولة الرسائل التلقائية', textAlign: TextAlign.right),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  value: frequency,
-                  decoration: const InputDecoration(labelText: 'التكرار'),
-                  items: const [
-                    DropdownMenuItem(value: 'daily', child: Text('كل يوم')),
-                    DropdownMenuItem(value: 'weekly', child: Text('كل أسبوع')),
-                    DropdownMenuItem(value: 'monthly', child: Text('كل شهر')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => frequency = value);
-                  },
-                ),
-                if (frequency == 'weekly')
-                  DropdownButtonFormField<int>(
-                    value: weekday,
-                    decoration: const InputDecoration(labelText: 'يوم الأسبوع'),
-                    items: const [
-                      DropdownMenuItem(value: 1, child: Text('الاثنين')),
-                      DropdownMenuItem(value: 2, child: Text('الثلاثاء')),
-                      DropdownMenuItem(value: 3, child: Text('الأربعاء')),
-                      DropdownMenuItem(value: 4, child: Text('الخميس')),
-                      DropdownMenuItem(value: 5, child: Text('الجمعة')),
-                      DropdownMenuItem(value: 6, child: Text('السبت')),
-                      DropdownMenuItem(value: 7, child: Text('الأحد')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setDialogState(() => weekday = value);
-                    },
-                  ),
-                if (frequency == 'monthly')
-                  DropdownButtonFormField<int>(
-                    value: monthDay,
-                    decoration: const InputDecoration(labelText: 'يوم الشهر'),
-                    items: List.generate(31, (i) => DropdownMenuItem(
-                      value: i + 1, child: Text((i + 1).toString()))),
-                    onChanged: (value) {
-                      if (value != null) setDialogState(() => monthDay = value);
-                    },
-                  ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.access_time),
-                        label: Text('${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}'),
-                        onPressed: () async {
-                          final picked = await showTimePicker(
-                            context: dialogContext,
-                            initialTime: TimeOfDay(hour: hour, minute: minute),
-                          );
-                          if (picked != null) {
-                            setDialogState(() {
-                              hour = picked.hour;
-                              minute = picked.minute;
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'هذه الإعدادات تخص هذا العميل وحده. يعتمد الإرسال على صلاحية SMS وجدولة Android، وقد يؤخر النظام التنفيذ حسب البطارية.',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => material.Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                await prefs.setString('customer_sms_frequency_$customerId', frequency);
-                await prefs.setInt('customer_sms_weekday_$customerId', weekday);
-                await prefs.setInt('customer_sms_monthday_$customerId', monthDay);
-                await prefs.setInt('customer_sms_hour_$customerId', hour);
-                await prefs.setInt('customer_sms_minute_$customerId', minute);
-                await prefs.setBool('customer_sms_auto_enabled_$customerId', true);
-                await CustomerSmsAutoService.schedule();
-                if (dialogContext.mounted) material.Navigator.pop(dialogContext);
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('رسائل العميل', textAlign: TextAlign.right),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.sms_outlined),
+              title: const Text('رسالة نصية SMS'),
+              onTap: () {
+                material.Navigator.pop(dialogContext);
+                _sendSmsManually(widget.customer['phone']?.toString(), balance);
               },
-              child: const Text('حفظ'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.chat),
+              title: const Text('رسالة واتساب'),
+              onTap: () {
+                material.Navigator.pop(dialogContext);
+                _sendWhatsApp(widget.customer['phone']?.toString(), balance);
+              },
             ),
           ],
         ),
@@ -2223,7 +2077,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       return;
     }
     final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
-    final message = _customerBalanceMessage(balance);
+    final message = _customerBalanceMessage(balance).replaceAllMapped(
+      RegExp(r'(?<!\\w)[+-]?[0-9][0-9,،.]*'),
+      (match) => '\u2066${match.group(0)}\u2069',
+    );
     final uri = Uri(
       scheme: 'sms',
       path: phone,
