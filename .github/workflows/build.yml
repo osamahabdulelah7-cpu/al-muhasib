@@ -34,8 +34,6 @@ jobs:
           cache: true
       - name: Resolve dependencies
         run: flutter pub get
-      - name: Resolve dependency lockfile in CI
-        run: flutter pub get
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --fatal-warnings
       - name: Run tests
