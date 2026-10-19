@@ -277,7 +277,7 @@ class CustomerSmsAutoService {
       if (id == null || prefs.getBool('customer_sms_auto_enabled_$id') != true) continue;
 
       final phoneRaw = customer['phone']?.toString() ?? '';
-      final phone = phoneRaw.replaceAll(RegExp(r'[^\\d+]'), '');
+      final phone = phoneRaw.replaceAll(RegExp(r'[^\d+]'), '');
       if (phone.isEmpty) continue;
 
       final frequency = prefs.getString('customer_sms_frequency_$id') ?? 'daily';
@@ -297,8 +297,10 @@ class CustomerSmsAutoService {
         final monday = now.subtract(Duration(days: now.weekday - 1));
         periodKey = 'week_${monday.year}_${monday.month}_${monday.day}';
       } else if (frequency == 'monthly') {
-        due = now.day > monthDay ||
-            (now.day == monthDay && currentMinutes >= targetMinutes);
+        final lastDay = DateTime(now.year, now.month + 1, 0).day;
+        final effectiveMonthDay = monthDay > lastDay ? lastDay : monthDay;
+        due = now.day > effectiveMonthDay ||
+            (now.day == effectiveMonthDay && currentMinutes >= targetMinutes);
         periodKey = 'month_${now.year}_${now.month}';
       } else {
         due = currentMinutes >= targetMinutes;
