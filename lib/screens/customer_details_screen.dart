@@ -2031,9 +2031,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final name = (widget.customer['name'] ?? '').toString().trim();
     final currency = (widget.customer['currency'] ?? '').toString().trim();
     if (balance < 0) {
-      return 'عزيزي العميل: $name\\nعليكم مبلغ: ${formatNumber(balance.abs())} $currency لحسابنا';
+      return 'عزيزي العميل: $name\nعليكم مبلغ: ${formatNumber(balance.abs())} $currency لحسابنا';
     }
-    return 'عزيزي العميل: $name\\nلكم مبلغ: ${formatNumber(balance.abs())} $currency في حسابنا';
+    return 'عزيزي العميل: $name\nلكم مبلغ: ${formatNumber(balance.abs())} $currency في حسابنا';
   }
 
   Future<void> _showMessagingOptions(double balance) async {
@@ -2206,7 +2206,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'[^\\d+]'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     final message = _customerBalanceMessage(balance);
     final uri = Uri(
       scheme: 'sms',
