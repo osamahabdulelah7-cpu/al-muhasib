@@ -1792,7 +1792,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             final colorHex = (personalData['rightColor$i'] ?? '#000000').toString();
             final size = (personalData['rightSize$i'] as num?)?.toDouble() ?? 10.0;
             rightItems.add(
-              pw.Align(
+              pw.Container(
+                width: double.infinity,
                 alignment: pw.Alignment.centerRight,
                 child: ArabicText(
                   rightText,
@@ -1810,7 +1811,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             final colorHex = (personalData['leftColor$i'] ?? '#000000').toString();
             final size = (personalData['leftSize$i'] as num?)?.toDouble() ?? 10.0;
             leftItems.add(
-              pw.Align(
+              pw.Container(
+                width: double.infinity,
                 alignment: pw.Alignment.centerLeft,
                 child: ArabicText(
                   leftText,
@@ -1830,8 +1832,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // In an RTL row, the first Expanded occupies the physical
-                // right side. Anchor rightItems to the page's right margin.
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
