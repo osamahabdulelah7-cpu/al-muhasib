@@ -326,7 +326,7 @@ class CustomerSmsAutoService {
       final name = (customer['name'] ?? '').toString().trim();
       final currency = (customer['currency'] ?? '').toString().trim();
       final amount = formatNumber(balance.abs());
-      final message = 'عزيزي العميل: $name\\nعليكم مبلغ: $amount $currency لحسابنا';
+      final message = 'عزيزي العميل: $name\nعليكم مبلغ: $amount $currency لحسابنا';
       try {
         await Telephony.instance.sendSms(to: phone, message: message);
         await prefs.setString(sentKey, periodKey);
