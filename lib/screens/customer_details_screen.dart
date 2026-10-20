@@ -1046,9 +1046,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.chat, color: Colors.black, size: 26),
-            tooltip: 'إرسال رسالة للعميل عبر واتساب',
-            onPressed: () => _sendWhatsApp(
-                widget.customer['phone']?.toString(), finalBalance),
+            tooltip: 'رسائل العميل',
+            onPressed: () => _showMessagingOptions(finalBalance),
           ),
           IconButton(
             icon: Icon(_isSearchingTransactions ? Icons.close : Icons.search,
@@ -2028,25 +2027,113 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  String _customerBalanceMessage(double balance) {
+    final name = (widget.customer['name'] ?? '').toString().trim();
+    final currency = (widget.customer['currency'] ?? '').toString().trim();
+    if (balance < 0) {
+      return 'عزيزي العميل: $name\nعليكم مبلغ: ${formatNumber(balance.abs())} $currency لحسابنا';
+    }
+    return 'عزيزي العميل: $name\nلكم مبلغ: ${formatNumber(balance.abs())} $currency في حسابنا';
+  }
+
+  Future<void> _showMessagingOptions(double balance) async {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('رسائل العميل', textAlign: TextAlign.right),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.sms_outlined),
+              title: const Text('رسالة نصية SMS'),
+              onTap: () {
+                material.Navigator.pop(dialogContext);
+                _sendSmsManually(widget.customer['phone']?.toString(), balance);
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.chat),
+              title: const Text('رسالة واتساب'),
+              onTap: () {
+                material.Navigator.pop(dialogContext);
+                _sendWhatsApp(widget.customer['phone']?.toString(), balance);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendSmsManually(String? rawPhone, double balance) async {
+    if (rawPhone == null || rawPhone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
+    final message = _customerBalanceMessage(balance).replaceAllMapped(
+      RegExp(r'[+-]?[0-9][0-9,،.]*'),
+      (match) => '\u2066${match.group(0)}\u2069',
+    );
+    final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(message)}');
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح تطبيق الرسائل على هذا الجهاز'),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح تطبيق الرسائل'),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    }
+  }
+
   Future<void> _sendWhatsApp(String? rawPhone, double balance) async {
     if (rawPhone == null || rawPhone.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
-          backgroundColor: AppColors.red));
+        content: Text('لا يوجد رقم هاتف مضاف لهذا الحساب'),
+        backgroundColor: AppColors.red,
+      ));
       return;
     }
-    String phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
-    String status = balance >= 0 ? "لك في حسابنا" : "عليكم لحسابنا";
-    String message = "كشف حساب:\n"
-        "العميل: ${widget.customer['name']}\n"
-        "المبلغ الحالي: ${formatNumber(balance.abs())} ${widget.customer['currency']} ($status)";
-    final Uri url =
-        Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+    final phone = rawPhone.replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('رقم هاتف العميل غير صالح'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+    final message = _customerBalanceMessage(balance);
+    final url = Uri.https('wa.me', '/$phone', {'text': message});
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح محادثة واتساب لهذا الرقم'),
+          backgroundColor: AppColors.red,
+        ));
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تعذر فتح محادثة واتساب لهذا الرقم'),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    }
   }
 }
 
