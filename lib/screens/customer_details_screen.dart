@@ -2082,10 +2082,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       RegExp(r'[+-]?[0-9][0-9,،.]*'),
       (match) => '\u2066${match.group(0)}\u2069',
     );
-    final uri = Uri(
-      scheme: 'sms',
-      path: phone,
-      queryParameters: {'body': message},
+    // Build the SMS URI with percent-encoding so spaces become %20, not
+    // literal '+' characters in messaging apps that don't decode form encoding.
+    final uri = Uri.parse(
+      'sms:$phone?body=${Uri.encodeComponent(message)}',
     );
     try {
       final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
