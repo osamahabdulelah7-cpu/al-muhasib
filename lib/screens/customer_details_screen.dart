@@ -2031,9 +2031,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final name = (widget.customer['name'] ?? '').toString().trim();
     final currency = (widget.customer['currency'] ?? '').toString().trim();
     if (balance < 0) {
-      return 'عزيزي العميل: $name\\nعليكم مبلغ: ${formatNumber(balance.abs())} $currency لحسابنا';
+      return 'عزيزي العميل: $name\nعليكم مبلغ: ${formatNumber(balance.abs())} $currency لحسابنا';
     }
-    return 'عزيزي العميل: $name\\nلكم مبلغ: ${formatNumber(balance.abs())} $currency في حسابنا';
+    return 'عزيزي العميل: $name\nلكم مبلغ: ${formatNumber(balance.abs())} $currency في حسابنا';
   }
 
   Future<void> _showMessagingOptions(double balance) async {
@@ -2076,10 +2076,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'[^\\d+]'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     final message = _customerBalanceMessage(balance).replaceAllMapped(
       RegExp(r'[+-]?[0-9][0-9,،.]*'),
-      (match) => '\\u2066${match.group(0)}\\u2069',
+      (match) => '\u2066${match.group(0)}\\u2069',
     );
     final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(message)}');
     try {
@@ -2108,7 +2108,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ));
       return;
     }
-    final phone = rawPhone.replaceAll(RegExp(r'\\D'), '');
+    final phone = rawPhone.replaceAll(RegExp(r'\D'), '');
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('رقم هاتف العميل غير صالح'),
