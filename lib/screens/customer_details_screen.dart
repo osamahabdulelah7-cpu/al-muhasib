@@ -2079,7 +2079,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
     final message = _customerBalanceMessage(balance).replaceAllMapped(
       RegExp(r'[+-]?[0-9][0-9,،.]*'),
-      (match) => '\u2066${match.group(0)}\\u2069',
+      (match) => '\u2066${match.group(0)}\u2069',
     );
     final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(message)}');
     try {
