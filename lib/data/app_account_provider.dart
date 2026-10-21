@@ -214,7 +214,7 @@ class AppAccountProvider extends ChangeNotifier {
         if (customer.isEmpty) throw StateError('الحساب غير موجود');
         final currency = customer.first['currency']?.toString() ?? '';
         if (currency.trim().isEmpty) throw StateError('عملة الحساب غير محددة');
-        await txn.insert('transactions', {
+        final transactionId = await txn.insert('transactions', {
           'customer_id': customerId,
           'amount': amount,
           'type': type,
@@ -224,6 +224,16 @@ class AppAccountProvider extends ChangeNotifier {
           'image_path': imagePath,
           'currency': currency,
         });
+        await SmartMerchantAuditService.record(
+          db: txn,
+          action: 'add',
+          customerId: customerId,
+          transactionId: transactionId,
+          after: {
+            'amount': amount, 'type': type, 'details': details,
+            'date': _normalizeDate(date), 'currency': currency,
+          },
+        );
         final latest = await txn.query('transactions',
             columns: ['date'],
             where: 'customer_id = ?',
@@ -267,6 +277,13 @@ class AppAccountProvider extends ChangeNotifier {
             where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId], limit: 1);
         if (existing.isEmpty) throw StateError('العملية غير موجودة');
         oldImagePath = existing.first['image_path']?.toString();
+        final beforeAudit = <String, Object?>{
+          'amount': existing.first['amount'],
+          'type': existing.first['type'],
+          'details': existing.first['details'],
+          'date': existing.first['date'],
+          'currency': existing.first['currency'],
+        };
         await txn.update(
             'transactions',
             {
@@ -279,6 +296,18 @@ class AppAccountProvider extends ChangeNotifier {
             },
             where: 'id = ? AND customer_id = ?',
             whereArgs: [id, customerId]);
+        await SmartMerchantAuditService.record(
+          db: txn,
+          action: 'update',
+          customerId: customerId,
+          transactionId: id,
+          before: beforeAudit,
+          after: {
+            'amount': amount, 'type': type, 'details': details,
+            'date': _normalizeDate(date),
+            'currency': existing.first['currency'],
+          },
+        );
         final latest = await txn.query(
           'transactions',
           columns: ['date'],
@@ -316,6 +345,19 @@ class AppAccountProvider extends ChangeNotifier {
           limit: 1);
       if (existing.isEmpty) throw StateError('العملية غير موجودة');
       oldImagePath = existing.first['image_path']?.toString();
+      await SmartMerchantAuditService.record(
+        db: txn,
+        action: 'delete',
+        customerId: customerId,
+        transactionId: id,
+        before: {
+          'amount': existing.first['amount'],
+          'type': existing.first['type'],
+          'details': existing.first['details'],
+          'date': existing.first['date'],
+          'currency': existing.first['currency'],
+        },
+      );
       await txn.delete('transactions',
           where: 'id = ? AND customer_id = ?', whereArgs: [id, customerId]);
       final latest = await txn.query(
