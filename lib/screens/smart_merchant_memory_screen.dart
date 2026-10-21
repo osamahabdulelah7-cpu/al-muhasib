@@ -229,6 +229,30 @@ class _SmartMerchantMemoryScreenState extends State<SmartMerchantMemoryScreen> {
                                   leading: Icon(action == 'add' ? Icons.add_circle_outline : action == 'update' ? Icons.edit_outlined : Icons.delete_outline),
                                   title: Text('$label — ${a['customer_name'] ?? 'حساب محذوف'}'),
                                   subtitle: Text('${_date(a['created_at'])} • رقم العملية: ${a['transaction_id'] ?? '—'}'),
+                                  onTap: () {
+                                    showDialog<void>(
+                                      context: context,
+                                      builder: (dialogContext) => AlertDialog(
+                                        title: Text('$label — ${a['customer_name'] ?? 'حساب محذوف'}'),
+                                        content: SingleChildScrollView(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Text('قبل التغيير', style: TextStyle(fontWeight: FontWeight.bold)),
+                                              SelectableText(a['before_json']?.toString() ?? 'لا توجد بيانات سابقة'),
+                                              const SizedBox(height: 12),
+                                              const Text('بعد التغيير', style: TextStyle(fontWeight: FontWeight.bold)),
+                                              SelectableText(a['after_json']?.toString() ?? 'لا توجد بيانات لاحقة'),
+                                              const SizedBox(height: 12),
+                                              Text('وقت التسجيل: ${a['created_at'] ?? ''}', style: const TextStyle(color: Colors.black54)),
+                                            ],
+                                          ),
+                                        ),
+                                        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق'))],
+                                      ),
+                                    );
+                                  },
                                 );
                               }).toList()),
                       ),
