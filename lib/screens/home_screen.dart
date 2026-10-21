@@ -559,6 +559,26 @@ class _HomeScreenState extends State<HomeScreen>
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.psychology_alt, color: Colors.deepPurple),
+            ),
+            title: const Text('ذاكرة التاجر الذكية',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('مراجعة العمليات وتفسير الأرصدة'),
+            onTap: () {
+              material.Navigator.pop(context);
+              material.Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const SmartMerchantMemoryScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
                   color: AppColors.green.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.cloud_sync, color: AppColors.green),
