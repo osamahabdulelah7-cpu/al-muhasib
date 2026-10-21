@@ -43,6 +43,7 @@ part 'screens/home_screen.dart';
 part 'screens/backup_screens.dart';
 part 'screens/customer_details_screen.dart';
 part 'screens/management_screens.dart';
+part 'screens/smart_merchant_memory_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
