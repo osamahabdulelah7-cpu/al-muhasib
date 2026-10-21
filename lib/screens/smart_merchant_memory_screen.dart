@@ -1,5 +1,42 @@
 part of '../main.dart';
 
+
+/// سجل تدقيق محلي لتغييرات العمليات. لا يخزن صور العمليات ولا كلمات مرور.
+class SmartMerchantAuditService {
+  static Future<void> _ensure(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS smart_merchant_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transaction_id INTEGER,
+        customer_id INTEGER,
+        action TEXT NOT NULL,
+        before_json TEXT,
+        after_json TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> record({
+    required DatabaseExecutor db,
+    required String action,
+    required int customerId,
+    int? transactionId,
+    Map<String, Object?>? before,
+    Map<String, Object?>? after,
+  }) async {
+    await _ensure(db);
+    await db.insert('smart_merchant_audit', {
+      'transaction_id': transactionId,
+      'customer_id': customerId,
+      'action': action,
+      'before_json': before == null ? null : jsonEncode(before),
+      'after_json': after == null ? null : jsonEncode(after),
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+}
+
 /// قراءة محلية فقط: لا تعدّل العمليات أو الأرصدة تلقائياً.
 class SmartMerchantMemoryScreen extends StatefulWidget {
   const SmartMerchantMemoryScreen({super.key});
@@ -13,7 +50,8 @@ class _SmartMerchantMemoryScreenState extends State<SmartMerchantMemoryScreen> {
   String? _error;
   List<Map<String, Object?>> _duplicates = [];
   List<Map<String, Object?>> _customers = [];
-  List<Map<String, Object?>> _recentTransactions = [];
+  List<Map<String, Object?>> _recentTransactions = [];  List<Map<String, Object?>> _auditEntries = [];
+
   int? _selectedCustomerId;
 
   @override
@@ -27,6 +65,14 @@ class _SmartMerchantMemoryScreenState extends State<SmartMerchantMemoryScreen> {
     try {
       final db = await AppDBHelper.instance.database;
       // Exact amount/type/customer/currency with dates within 48 hours.
+      await SmartMerchantAuditService._ensure(db);
+      final auditRows = await db.rawQuery('''
+        SELECT a.id, a.transaction_id, a.customer_id, a.action,
+               a.before_json, a.after_json, a.created_at, c.name AS customer_name
+        FROM smart_merchant_audit a
+        LEFT JOIN customers c ON c.id = a.customer_id
+        ORDER BY datetime(a.created_at) DESC, a.id DESC LIMIT 100
+      ''');
       final duplicateRows = await db.rawQuery('''
         SELECT c.name AS customer_name, t.customer_id, t.amount, t.type,
                t.currency, COUNT(*) AS occurrences,
@@ -58,6 +104,7 @@ class _SmartMerchantMemoryScreenState extends State<SmartMerchantMemoryScreen> {
       if (!mounted) return;
       setState(() {
         _duplicates = duplicateRows;
+        _auditEntries = auditRows;
         _customers = customers;
         _recentTransactions = recent;
         _selectedCustomerId ??= customers.isEmpty ? null : int.tryParse(customers.first['id'].toString());
@@ -170,6 +217,21 @@ class _SmartMerchantMemoryScreenState extends State<SmartMerchantMemoryScreen> {
                             }),
                         ],
                       ],
+                      const Padding(padding: EdgeInsets.fromLTRB(4, 18, 4, 6), child: Text('سجل مراجعة التغييرات', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+                      Card(
+                        child: _auditEntries.isEmpty
+                            ? const Padding(padding: EdgeInsets.all(14), child: Text('سيظهر هنا سجل إضافة العمليات وتعديلها وحذفها منذ تفعيل هذه الميزة. لا يتضمن السجل تغييرات قديمة حدثت قبل التفعيل.'))
+                            : Column(children: _auditEntries.map((a) {
+                                final action = a['action']?.toString() ?? '';
+                                final label = action == 'add' ? 'إضافة عملية' : action == 'update' ? 'تعديل عملية' : action == 'delete' ? 'حذف عملية' : action;
+                                return ListTile(
+                                  dense: true,
+                                  leading: Icon(action == 'add' ? Icons.add_circle_outline : action == 'update' ? Icons.edit_outlined : Icons.delete_outline),
+                                  title: Text('$label — ${a['customer_name'] ?? 'حساب محذوف'}'),
+                                  subtitle: Text('${_date(a['created_at'])} • رقم العملية: ${a['transaction_id'] ?? '—'}'),
+                                );
+                              }).toList()),
+                      ),
                       const SizedBox(height: 12),
                       const Text('ملاحظة: هذه اقتراحات للمراجعة فقط؛ لا تُعدّل الميزة البيانات ولا تحذف أي عملية تلقائياً.', style: TextStyle(color: Colors.black54)),
                     ],
