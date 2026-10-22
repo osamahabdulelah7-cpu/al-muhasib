@@ -19,6 +19,10 @@
 -keep class com.google.android.gms.common.** { *; }
 -dontwarn com.google.android.gms.**
 
+# Google Play Core (used by Play Core integrations)
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
+
 # googleapis
 -keep class com.google.api.services.drive.** { *; }
 -dontwarn com.google.api.services.drive.**
