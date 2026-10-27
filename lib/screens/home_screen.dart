@@ -11,6 +11,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   String searchQuery = '';
   bool isSearching = false;
+  final Map<int, String> _selectedCurrencyByCategory = {};
   Timer? _autoBackupTimer;
   TextEditingController? searchController;
   TabController? _tabController;
@@ -615,10 +616,26 @@ class _HomeScreenState extends State<HomeScreen>
                     (name.contains(searchQuery) || phone.contains(searchQuery));
               }).toList();
 
-              // لا يجوز جمع أرصدة بعملات مختلفة في إجمالي واحد.
-              // لذلك نحسب الإجماليات بشكل مستقل لكل عملة.
+              // اعرض عملة واحدة في كل مرة داخل التصنيف، مع حفظ الاختيار لكل تصنيف.
+              final currencies = categoryCustomers
+                  .map((c) => (c['currency'] ?? 'غير محددة').toString())
+                  .toSet()
+                  .toList();
+              final selectedCurrency = currencies.isEmpty
+                  ? ''
+                  : (_selectedCurrencyByCategory[currentCatId] != null &&
+                          currencies.contains(_selectedCurrencyByCategory[currentCatId])
+                      ? _selectedCurrencyByCategory[currentCatId]!
+                      : currencies.first);
+              final visibleCustomers = currencies.length > 1
+                  ? categoryCustomers
+                      .where((c) => (c['currency'] ?? 'غير محددة').toString() ==
+                          selectedCurrency)
+                      .toList()
+                  : categoryCustomers;
+
               final Map<String, Map<String, double>> currencyTotals = {};
-              for (var cust in categoryCustomers) {
+              for (var cust in visibleCustomers) {
                 final int cId = int.parse(cust['id'].toString());
                 final String currency =
                     (cust['currency'] ?? 'غير محددة').toString();
@@ -633,8 +650,38 @@ class _HomeScreenState extends State<HomeScreen>
               }
 
               return Column(children: [
+                if (currencies.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 5, 10, 2),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: currencies.map((currency) {
+                          final selected = currency == selectedCurrency;
+                          return ChoiceChip(
+                            label: Text(currency,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: selected ? Colors.white : AppColors.primary,
+                                )),
+                            selected: selected,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            onSelected: (_) {
+                              setState(() {
+                                _selectedCurrencyByCategory[currentCatId] = currency;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
                 Expanded(
-                  child: categoryCustomers.isEmpty
+                  child: visibleCustomers.isEmpty
                       ? Center(
                           child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -649,9 +696,9 @@ class _HomeScreenState extends State<HomeScreen>
                             ]))
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(vertical: 6),
-                          itemCount: categoryCustomers.length,
+                          itemCount: visibleCustomers.length,
                           itemBuilder: (ctx, i) => _buildCustomerCard(
-                              context, provider, categoryCustomers[i]),
+                              context, provider, visibleCustomers[i]),
                         ),
                 ),
                 Container(
@@ -702,14 +749,6 @@ class _HomeScreenState extends State<HomeScreen>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(
-                                    currency,
-                                    style: const TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
