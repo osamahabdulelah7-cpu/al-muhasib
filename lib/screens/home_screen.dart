@@ -740,7 +740,6 @@ class _HomeScreenState extends State<HomeScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: currencyTotals.entries.map((entry) {
-                            final currency = entry.key;
                             final totalGive = entry.value['give'] ?? 0.0;
                             final totalTake = entry.value['take'] ?? 0.0;
                             final netBalance = totalGive - totalTake;
